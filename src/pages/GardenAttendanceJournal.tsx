@@ -1,0 +1,619 @@
+import React, { useState, useMemo, useCallback } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { GardenAttendanceCell } from '@/components/attendance/GardenAttendanceCell';
+import { useEnrollments } from '@/hooks/useEnrollments';
+import { useActivities } from '@/hooks/useActivities';
+import { useGroups } from '@/hooks/useGroups';
+import { useSetAttendance, useAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
+import { useUpsertFinanceTransaction, useDeleteFinanceTransaction } from '@/hooks/useFinanceTransactions';
+import { supabase } from '@/integrations/supabase/client';
+import { calculateDailyAccrual } from '@/lib/gardenAttendance';
+import { 
+  getDaysInMonth, 
+  formatShortDate, 
+  getWeekdayShort, 
+  isWeekend,
+  formatDateString
+} from '@/lib/attendance';
+import type { AttendanceStatus } from '@/lib/attendance';
+import { cn } from '@/lib/utils';
+import { useQueryClient } from '@tanstack/react-query';
+
+const MONTHS = [
+  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
+  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
+];
+
+export default function GardenAttendanceJournal() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
+  const [controllerActivityId, setControllerActivityId] = useState<string>('');
+
+  const queryClient = useQueryClient();
+  const { data: activities = [] } = useActivities();
+  const { data: groups = [] } = useGroups();
+  
+  // Find controller activity (Garden Attendance Journal)
+  const controllerActivity = useMemo(() => {
+    return activities.find(activity => {
+      const config = activity.config as any;
+      return config && config.base_tariff_ids && Array.isArray(config.base_tariff_ids) && config.base_tariff_ids.length > 0;
+    });
+  }, [activities]);
+
+  // Auto-select controller activity
+  useMemo(() => {
+    if (controllerActivity && !controllerActivityId) {
+      setControllerActivityId(controllerActivity.id);
+    }
+  }, [controllerActivity, controllerActivityId]);
+
+  // Get enrollments for controller activity
+  const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
+    activityId: controllerActivityId, 
+    activeOnly: true 
+  });
+
+  // Get attendance data for the month
+  const { data: attendanceData = [], isLoading: attendanceLoading } = useAttendance({ 
+    activityId: controllerActivityId, 
+    month, 
+    year 
+  });
+
+  // Get all activities as map for quick lookup
+  const activitiesMap = useMemo(() => {
+    const map = new Map<string, typeof activities[0]>();
+    activities.forEach(activity => {
+      map.set(activity.id, activity);
+    });
+    return map;
+  }, [activities]);
+
+  // Get all enrollments for students (for calculateDailyAccrual)
+  const { data: allEnrollments = [] } = useEnrollments({ activeOnly: true });
+
+  const setAttendance = useSetAttendance();
+  const deleteAttendance = useDeleteAttendance();
+  const upsertTransaction = useUpsertFinanceTransaction();
+  const deleteTransaction = useDeleteFinanceTransaction();
+
+  const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+
+  // Filter enrollments by groups
+  const filteredEnrollments = useMemo(() => {
+    if (selectedGroups.has('all')) {
+      return enrollments;
+    }
+    
+    return enrollments.filter(enrollment => {
+      const groupId = enrollment.students?.group_id;
+      if (!groupId) {
+        return selectedGroups.has('none');
+      }
+      return selectedGroups.has(groupId);
+    });
+  }, [enrollments, selectedGroups]);
+
+  // Group and sort enrollments
+  const groupedEnrollments = useMemo(() => {
+    const groupsMap = new Map<string, typeof enrollments>();
+    const noGroupEnrollments: typeof enrollments = [];
+
+    filteredEnrollments.forEach(enrollment => {
+      const groupId = enrollment.students?.group_id;
+      if (!groupId) {
+        noGroupEnrollments.push(enrollment);
+      } else {
+        if (!groupsMap.has(groupId)) {
+          groupsMap.set(groupId, []);
+        }
+        groupsMap.get(groupId)!.push(enrollment);
+      }
+    });
+
+    // Sort children alphabetically in each group
+    groupsMap.forEach((enrollments, groupId) => {
+      enrollments.sort((a, b) => 
+        a.students.full_name.localeCompare(b.students.full_name, 'uk-UA')
+      );
+    });
+
+    noGroupEnrollments.sort((a, b) => 
+      a.students.full_name.localeCompare(b.students.full_name, 'uk-UA')
+    );
+
+    return { groupsMap, noGroupEnrollments };
+  }, [filteredEnrollments]);
+
+  // Get represented groups
+  const representedGroups = useMemo(() => {
+    const groupIds = new Set<string>();
+    enrollments.forEach(enrollment => {
+      if (enrollment.students?.group_id) {
+        groupIds.add(enrollment.students.group_id);
+      }
+    });
+    return groups.filter(g => groupIds.has(g.id));
+  }, [enrollments, groups]);
+
+  // Create attendance map
+  const attendanceMap = useMemo(() => {
+    const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null }>();
+    attendanceData.forEach((a: any) => {
+      const key = `${a.enrollment_id}-${a.date}`;
+      map.set(key, { 
+        status: a.status, 
+        amount: a.charged_amount || 0,
+        value: a.value || null
+      });
+    });
+    return map;
+  }, [attendanceData]);
+
+  // Handle status change
+  const handleStatusChange = useCallback(async (
+    enrollmentId: string,
+    studentId: string,
+    date: string,
+    status: AttendanceStatus | null,
+    value: number | null = null
+  ) => {
+    if (!controllerActivityId || !controllerActivity) {
+      console.warn('Controller activity not found');
+      return;
+    }
+
+    // Get student's all enrollments for calculateDailyAccrual
+    const studentEnrollments = allEnrollments.filter(e => e.student_id === studentId);
+
+    // Calculate accrual using calculateDailyAccrual
+    let calculatedAmount = 0;
+    let calculatedValue: number | null = null;
+    let baseTariffAmount = 0;
+    let foodTariffAmount = 0;
+    let baseActivityId: string | null = null;
+    let foodActivityId: string | null = null;
+
+    if (status !== null) {
+      const accrualResult = calculateDailyAccrual(
+        studentId,
+        date,
+        controllerActivityId,
+        studentEnrollments,
+        activitiesMap,
+        status
+      );
+
+      if (accrualResult) {
+        calculatedAmount = accrualResult.amount;
+        calculatedValue = accrualResult.amount;
+        
+        // Calculate base tariff daily amount (always M/D, regardless of presence/absence)
+        if (accrualResult.baseTariff !== null && accrualResult.workingDaysInMonth > 0) {
+          baseTariffAmount = accrualResult.baseTariff / accrualResult.workingDaysInMonth;
+          baseTariffAmount = Math.max(0, Math.round(baseTariffAmount * 100) / 100);
+        }
+        
+        // Food tariff amount (only for absent status, as refund/positive transaction)
+        if (status === 'absent' && accrualResult.foodTariff !== null && accrualResult.foodTariff > 0) {
+          foodTariffAmount = accrualResult.foodTariff;
+        }
+        
+        // Find base and food activity IDs
+        const config = (controllerActivity?.config as any) || {};
+        const baseTariffIds = config.base_tariff_ids || [];
+        const foodTariffIds = config.food_tariff_ids || [];
+        
+        const baseEnrollment = studentEnrollments.find(e => 
+          e.is_active && baseTariffIds.includes(e.activity_id)
+        );
+        if (baseEnrollment) {
+          baseActivityId = baseEnrollment.activity_id;
+        }
+        
+        const foodEnrollment = studentEnrollments.find(e => 
+          e.is_active && foodTariffIds.includes(e.activity_id)
+        );
+        if (foodEnrollment) {
+          foodActivityId = foodEnrollment.activity_id;
+        }
+      } else {
+        // If config not found or base tariff not found, log warning but continue
+        console.warn(`[Garden Attendance] Could not calculate accrual for student ${studentId} on ${date}. Config or base tariff not found.`);
+      }
+    }
+
+    // Update or create attendance record
+    if (status === null) {
+      // Delete attendance and all related transactions
+      try {
+        // First, delete all finance transactions for this student and date
+        // This ensures we delete all transactions regardless of activity type
+        const { data: allTransactions, error: transactionsError } = await supabase
+          .from('finance_transactions')
+          .select('id, type, activity_id')
+          .eq('student_id', studentId)
+          .eq('date', date);
+        
+        if (transactionsError && transactionsError.code !== 'PGRST116') {
+          console.error('Error finding transactions for deletion:', transactionsError);
+        } else if (allTransactions && allTransactions.length > 0) {
+          // Delete all transactions found for this student and date
+          for (const transaction of allTransactions) {
+            try {
+              await deleteTransaction.mutateAsync(transaction.id);
+            } catch (deleteError) {
+              console.error(`Error deleting transaction ${transaction.id}:`, deleteError);
+            }
+          }
+        }
+        
+        // Then delete attendance record
+        await deleteAttendance.mutateAsync({ enrollmentId, date });
+      } catch (error) {
+        console.error('Error deleting attendance and transactions:', error);
+      }
+    } else {
+      // Create or update attendance
+      try {
+        await setAttendance.mutateAsync({
+          enrollment_id: enrollmentId,
+          date,
+          status: status || null,
+          charged_amount: calculatedAmount,
+          value: calculatedValue,
+          notes: null,
+          manual_value_edit: false,
+        });
+
+        // Create or update finance transactions for base tariff and food tariff separately
+        // Base tariff transaction (always M/D, regardless of presence/absence)
+        if (baseActivityId && baseTariffAmount > 0) {
+          await upsertTransaction.mutateAsync({
+            type: 'income',
+            student_id: studentId,
+            activity_id: baseActivityId,
+            staff_id: null,
+            amount: baseTariffAmount,
+            date,
+            description: `Нарахування за відвідування (${status === 'present' ? 'присутність' : status === 'absent' ? 'відсутність' : 'відвідування'})`,
+            category: 'Навчання',
+          });
+        }
+        
+        // Food tariff transaction (only for absent status, as expense/refund to parents)
+        // If status is present, delete food transaction if exists
+        if (foodActivityId) {
+          if (status === 'absent' && foodTariffAmount > 0) {
+            // Create food transaction for absent status (expense - refund to parents)
+            await upsertTransaction.mutateAsync({
+              type: 'expense',
+              student_id: studentId,
+              activity_id: foodActivityId,
+              staff_id: null,
+              amount: foodTariffAmount,
+              date,
+              description: `Повернення за харчування (відсутність)`,
+              category: 'Навчання',
+            });
+          } else if (status === 'present') {
+            // Delete food transaction if status changed to present
+            const { data: foodTransaction, error: foodError } = await supabase
+              .from('finance_transactions')
+              .select('id')
+              .eq('student_id', studentId)
+              .eq('activity_id', foodActivityId)
+              .eq('date', date)
+              .eq('type', 'expense')
+              .maybeSingle();
+            
+            if (foodError && foodError.code !== 'PGRST116') {
+              console.error('Error finding food transaction:', foodError);
+            } else if (foodTransaction?.id) {
+              await deleteTransaction.mutateAsync(foodTransaction.id);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error setting attendance:', error);
+      }
+    }
+
+    // Invalidate queries and force refetch
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['attendance'] }),
+      queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
+      queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+    ]);
+    // Принудительно перезапрашиваем активные запросы дашборда
+    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
+  }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient]);
+
+  const handlePrevMonth = () => {
+    if (month === 0) {
+      setMonth(11);
+      setYear(year - 1);
+    } else {
+      setMonth(month - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (month === 11) {
+      setMonth(0);
+      setYear(year + 1);
+    } else {
+      setMonth(month + 1);
+    }
+  };
+
+  const handleGroupToggle = (groupId: string) => {
+    const newSelected = new Set(selectedGroups);
+    
+    if (groupId === 'all') {
+      if (newSelected.has('all')) {
+        newSelected.clear();
+      } else {
+        newSelected.clear();
+        newSelected.add('all');
+      }
+    } else {
+      newSelected.delete('all');
+      if (newSelected.has(groupId)) {
+        newSelected.delete(groupId);
+      } else {
+        newSelected.add(groupId);
+      }
+      
+      if (newSelected.size === representedGroups.length + (groupedEnrollments.noGroupEnrollments.length > 0 ? 1 : 0)) {
+        newSelected.clear();
+        newSelected.add('all');
+      }
+    }
+    
+    setSelectedGroups(newSelected);
+  };
+
+  const isLoading = enrollmentsLoading || attendanceLoading;
+
+  if (!controllerActivity) {
+    return (
+      <>
+        <PageHeader title="Журнал відвідування v1" description="Управляюча активність не знайдена" />
+        <div className="p-8">
+          <div className="rounded-xl bg-card border border-border p-6 text-center text-muted-foreground">
+            <p>Не знайдено активності з налаштованим config (base_tariff_ids)</p>
+            <p className="text-sm mt-2">Створіть активність та налаштуйте config для журналу відвідування</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <>
+        <PageHeader title="Журнал відвідування v1" />
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </>
+    );
+  }
+
+  if (enrollments.length === 0) {
+    return (
+      <>
+        <PageHeader title="Журнал відвідування v1" />
+        <div className="p-8">
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+            <p>Немає записів на цю активність</p>
+            <p className="text-sm">Додайте дітей у картці учня</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader 
+        title="Журнал відвідування v1" 
+        description={`${controllerActivity.name} - ${MONTHS[month]} ${year}`}
+      />
+      
+      <div className="p-8">
+        {/* Month navigation */}
+        <div className="flex items-center justify-between mb-6">
+          <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <h2 className="text-lg font-semibold">
+            {MONTHS[month]} {year}
+          </h2>
+          <Button variant="outline" size="icon" onClick={handleNextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Group filters */}
+        <div className="mb-4 p-4 border rounded-lg bg-card">
+          <Label className="mb-3 block font-medium">Фільтр по групах:</Label>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="filter-all"
+                checked={selectedGroups.has('all')}
+                onCheckedChange={() => handleGroupToggle('all')}
+              />
+              <Label htmlFor="filter-all" className="cursor-pointer font-normal">
+                Всі групи
+              </Label>
+            </div>
+            {representedGroups.map((group) => (
+              <div key={group.id} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`filter-${group.id}`}
+                  checked={selectedGroups.has(group.id)}
+                  onCheckedChange={() => handleGroupToggle(group.id)}
+                />
+                <Label htmlFor={`filter-${group.id}`} className="cursor-pointer font-normal flex items-center gap-2">
+                  <div 
+                    className="h-3 w-3 rounded-full"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  {group.name}
+                </Label>
+              </div>
+            ))}
+            {groupedEnrollments.noGroupEnrollments.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="filter-none"
+                  checked={selectedGroups.has('none')}
+                  onCheckedChange={() => handleGroupToggle('none')}
+                />
+                <Label htmlFor="filter-none" className="cursor-pointer font-normal">
+                  Без групи
+                </Label>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Grid */}
+        {filteredEnrollments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+            <p>Немає дітей за обраними фільтрами</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto border rounded-xl">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-muted/50">
+                  <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground min-w-[200px]">
+                    Учень
+                  </th>
+                  {days.map((day) => (
+                    <th
+                      key={formatDateString(day)}
+                      className={cn(
+                        "px-1 py-2 text-center text-xs font-medium min-w-[100px]",
+                        isWeekend(day) ? 'text-muted-foreground/50 bg-muted/30' : 'text-muted-foreground'
+                      )}
+                    >
+                      <div>{getWeekdayShort(day)}</div>
+                      <div className="font-semibold">{formatShortDate(day)}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {/* Grouped enrollments */}
+                {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
+                  const group = groups.find(g => g.id === groupId);
+                  return (
+                    <React.Fragment key={groupId}>
+                      {/* Group header */}
+                      <tr className="bg-muted/50 border-t-2 border-b">
+                        <td colSpan={days.length + 1} className="px-4 py-2 font-semibold text-sm">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="h-4 w-4 rounded-full"
+                              style={{ backgroundColor: group?.color || '#gray' }}
+                            />
+                            Група: {group?.name || 'Невідома група'}
+                          </div>
+                        </td>
+                      </tr>
+                      {/* Children in group */}
+                      {groupEnrollments.map((enrollment) => (
+                        <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                          <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                            {enrollment.students.full_name}
+                          </td>
+                          {days.map((day) => {
+                            const dateStr = formatDateString(day);
+                            const key = `${enrollment.id}-${dateStr}`;
+                            const attendance = attendanceMap.get(key);
+                            
+                            return (
+                              <td key={dateStr} className="p-1 text-center">
+                                <GardenAttendanceCell
+                                  status={attendance?.status || null}
+                                  amount={attendance?.amount || null}
+                                  value={attendance?.value || null}
+                                  isWeekend={isWeekend(day)}
+                                  onChange={(status, value) => handleStatusChange(
+                                    enrollment.id,
+                                    enrollment.student_id,
+                                    dateStr,
+                                    status,
+                                    value
+                                  )}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })}
+                
+                {/* Children without group */}
+                {groupedEnrollments.noGroupEnrollments.length > 0 && (
+                  <React.Fragment>
+                    <tr className="bg-muted/50 border-t-2 border-b">
+                      <td colSpan={days.length + 1} className="px-4 py-2 font-semibold text-sm">
+                        Без групи
+                      </td>
+                    </tr>
+                    {groupedEnrollments.noGroupEnrollments.map((enrollment) => (
+                      <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                        <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                          {enrollment.students.full_name}
+                        </td>
+                        {days.map((day) => {
+                          const dateStr = formatDateString(day);
+                          const key = `${enrollment.id}-${dateStr}`;
+                          const attendance = attendanceMap.get(key);
+                          
+                          return (
+                            <td key={dateStr} className="p-1 text-center">
+                              <GardenAttendanceCell
+                                status={attendance?.status || null}
+                                amount={attendance?.amount || null}
+                                value={attendance?.value || null}
+                                isWeekend={isWeekend(day)}
+                                onChange={(status, value) => handleStatusChange(
+                                  enrollment.id,
+                                  enrollment.student_id,
+                                  dateStr,
+                                  status,
+                                  value
+                                )}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

@@ -1,0 +1,800 @@
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { ArrowLeft, Pencil, User, Wallet, Calendar, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { StaffForm } from '@/components/staff/StaffForm';
+import { useStaffMember, useUpdateStaff } from '@/hooks/useStaff';
+import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend } from '@/lib/attendance';
+import { StaffBillingRulesEditor } from '@/components/staff/StaffBillingRulesEditor';
+import { StaffManualRateHistoryEditor } from '@/components/staff/StaffManualRateHistoryEditor';
+import { DeductionsEditor } from '@/components/staff/DeductionsEditor';
+import {
+  useStaffBillingRules,
+  useCreateStaffBillingRule,
+  useDeleteStaffBillingRule,
+  useStaffManualRateHistory,
+  useCreateStaffManualRateHistory,
+  useDeleteStaffManualRateHistory,
+  useStaffJournalEntries,
+  useStaffPayouts,
+  useCreateStaffPayout,
+  getStaffBillingRuleForDate,
+  type StaffBillingRule,
+  type StaffManualRateHistory,
+  type Deduction,
+} from '@/hooks/useStaffBilling';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { cn } from '@/lib/utils';
+import { useActivities } from '@/hooks/useActivities';
+import { useMemo } from 'react';
+
+export default function StaffDetail() {
+  const { id } = useParams<{ id: string }>();
+  const { data: staff, isLoading: staffLoading } = useStaffMember(id!);
+  const updateStaff = useUpdateStaff();
+  const { data: billingRules = [] } = useStaffBillingRules(id);
+  const { data: manualRateHistory = [] } = useStaffManualRateHistory(id);
+  const createBillingRule = useCreateStaffBillingRule();
+  const deleteBillingRule = useDeleteStaffBillingRule();
+  const createManualRateHistory = useCreateStaffManualRateHistory();
+  const deleteManualRateHistory = useDeleteStaffManualRateHistory();
+
+  type StaffBillingRuleInput = Omit<StaffBillingRule, 'id' | 'staff_id' | 'created_at' | 'updated_at'>;
+  type StaffManualRateHistoryInput = Omit<StaffManualRateHistory, 'id' | 'staff_id' | 'created_at' | 'updated_at'>;
+  
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [financialTab, setFinancialTab] = useState<'rules' | 'manual-rates' | 'deductions' | 'history'>('rules');
+  const [billingRulesState, setBillingRulesState] = useState<StaffBillingRuleInput[]>([]);
+  const [manualRateHistoryState, setManualRateHistoryState] = useState<StaffManualRateHistoryInput[]>([]);
+  const [deductionsState, setDeductionsState] = useState<Deduction[]>([]);
+  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Financial Calendar state
+  const now = new Date();
+  const [calendarYear, setCalendarYear] = useState(now.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(now.getMonth());
+  const [selectedPayoutDate, setSelectedPayoutDate] = useState<string | null>(null);
+  const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
+  
+  // Financial Calendar data
+  const { data: journalEntries = [] } = useStaffJournalEntries(id, calendarMonth, calendarYear);
+  const { data: payouts = [] } = useStaffPayouts(id);
+  const { data: activities = [] } = useActivities();
+  const createPayout = useCreateStaffPayout();
+  
+  const payoutSchema = z.object({
+    amount: z.number().min(0.01, 'Сума має бути більше 0'),
+    payout_date: z.string().min(1, 'Оберіть дату'),
+    notes: z.string().optional(),
+  });
+  
+  type PayoutFormData = z.infer<typeof payoutSchema>;
+  
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<PayoutFormData>({
+    resolver: zodResolver(payoutSchema),
+    defaultValues: {
+      amount: 0,
+      payout_date: new Date().toISOString().split('T')[0],
+      notes: '',
+    },
+  });
+
+  useEffect(() => {
+    if (staff) {
+      setDeductionsState((staff.deductions as Deduction[]) || []);
+    }
+  }, [staff]);
+
+  useEffect(() => {
+    // Initialize with empty array for new rules
+    setBillingRulesState([]);
+    setManualRateHistoryState([]);
+  }, []);
+
+  const handleUpdateProfile = (data: any) => {
+    if (!id) return;
+    updateStaff.mutate({ id, ...data });
+    setEditProfileOpen(false);
+  };
+
+  const handleSaveBillingRules = () => {
+    if (!id) return;
+
+    // Save each new rule
+    billingRulesState.forEach((rule) => {
+      createBillingRule.mutate({
+        staff_id: id,
+        activity_id: rule.activity_id,
+        rate_type: rule.rate_type,
+        rate: rule.rate,
+        effective_from: effectiveFrom,
+        effective_to: null,
+      });
+    });
+    
+    // Reset state after saving
+    setBillingRulesState([]);
+  };
+
+  const handleSaveManualRateHistory = () => {
+    if (!id) return;
+
+    // Save each new entry
+    manualRateHistoryState.forEach((entry) => {
+      createManualRateHistory.mutate({
+        staff_id: id,
+        manual_rate_type: entry.manual_rate_type,
+        manual_rate_value: entry.manual_rate_value,
+        effective_from: effectiveFrom,
+        effective_to: null,
+      });
+    });
+    
+    // Reset state after saving
+    setManualRateHistoryState([]);
+  };
+
+  const handleSaveDeductions = () => {
+    if (!id) return;
+    updateStaff.mutate({
+      id,
+      deductions: deductionsState,
+    });
+  };
+
+  const handleDeleteBillingRule = (ruleId: string) => {
+    if (!id) return;
+    deleteBillingRule.mutate({ id: ruleId, staffId: id });
+  };
+
+  const handleDeleteManualRateHistory = (entryId: string) => {
+    if (!id) return;
+    deleteManualRateHistory.mutate({ id: entryId, staffId: id });
+  };
+  
+  // Financial Calendar handlers
+  const handlePrevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear(calendarYear - 1);
+    } else {
+      setCalendarMonth(calendarMonth - 1);
+    }
+  };
+  
+  const handleNextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear(calendarYear + 1);
+    } else {
+      setCalendarMonth(calendarMonth + 1);
+    }
+  };
+  
+  const handlePayoutCellClick = (date: string) => {
+    setSelectedPayoutDate(date);
+    setIsPayoutDialogOpen(true);
+    reset({
+      amount: 0,
+      payout_date: date,
+      notes: '',
+    });
+  };
+  
+  const handlePayoutSubmit = async (data: PayoutFormData) => {
+    if (!id) return;
+    
+    try {
+      await createPayout.mutateAsync({
+        staff_id: id,
+        amount: data.amount,
+        payout_date: data.payout_date,
+        notes: data.notes || null,
+      });
+      reset();
+      setIsPayoutDialogOpen(false);
+      setSelectedPayoutDate(null);
+    } catch (error) {
+      // Error handling is done in the mutation
+    }
+  };
+
+  if (staffLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!staff) {
+    return (
+      <div className="p-8">
+        <p className="text-muted-foreground">Співробітника не знайдено</p>
+        <Button asChild variant="outline" className="mt-4">
+          <Link to="/staff">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Назад до списку
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        title={staff.full_name}
+        actions={
+          <Button variant="outline" asChild>
+            <Link to="/staff">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Назад
+            </Link>
+          </Button>
+        }
+      />
+
+      <div className="p-8">
+        <div className="grid gap-8 lg:grid-cols-3">
+          {/* Staff Info */}
+          <div className="lg:col-span-1">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                      <User className="h-8 w-8 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle>{staff.full_name}</CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">{staff.position}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditProfileOpen(true)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Статус</p>
+                  <Badge
+                    variant={staff.is_active ? 'default' : 'secondary'}
+                    className="mt-1"
+                  >
+                    {staff.is_active ? 'Активний' : 'Неактивний'}
+                  </Badge>
+                </div>
+                <Separator />
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Дата створення</p>
+                  <p className="mt-1 text-sm">{formatDate(staff.created_at)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Financial Conditions */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Wallet className="h-5 w-5" />
+                  Фінансові умови
+                </CardTitle>
+                <CardDescription>
+                  Налаштуйте індивідуальні ставки та комісії для співробітника
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs value={financialTab} onValueChange={(v) => setFinancialTab(v as 'rules' | 'manual-rates' | 'deductions' | 'history')}>
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="rules">Індивідуальні ставки (auto)</TabsTrigger>
+                    <TabsTrigger value="manual-rates">Ставки для ручного режиму</TabsTrigger>
+                    <TabsTrigger value="deductions">Динамічні комісії</TabsTrigger>
+                    <TabsTrigger value="history">Фінансова історія</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="rules" className="mt-6">
+                    <StaffBillingRulesEditor
+                      rules={billingRulesState}
+                      onChange={setBillingRulesState}
+                      effectiveFrom={effectiveFrom}
+                      onEffectiveFromChange={setEffectiveFrom}
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <Button variant="outline" onClick={() => setBillingRulesState([])}>
+                        Скасувати
+                      </Button>
+                      <Button onClick={handleSaveBillingRules} disabled={billingRulesState.length === 0}>
+                        Зберегти ставки
+                      </Button>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="manual-rates" className="mt-6">
+                    <StaffManualRateHistoryEditor
+                      history={manualRateHistoryState}
+                      onChange={setManualRateHistoryState}
+                      effectiveFrom={effectiveFrom}
+                      onEffectiveFromChange={setEffectiveFrom}
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <Button variant="outline" onClick={() => setManualRateHistoryState([])}>
+                        Скасувати
+                      </Button>
+                      <Button onClick={handleSaveManualRateHistory} disabled={manualRateHistoryState.length === 0}>
+                        Зберегти ставки
+                      </Button>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="deductions" className="mt-6">
+                    <DeductionsEditor
+                      deductions={deductionsState}
+                      onChange={setDeductionsState}
+                    />
+                    <div className="mt-4 flex justify-end gap-3">
+                      <Button variant="outline" onClick={() => setDeductionsState((staff.deductions as Deduction[]) || [])}>
+                        Скасувати
+                      </Button>
+                      <Button onClick={handleSaveDeductions}>
+                        Зберегти комісії
+                      </Button>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="history" className="mt-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">Фінансова історія</h3>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Нарахування по активностях та виплати за місяць
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <span className="text-sm font-medium min-w-[150px] text-center">
+                            {['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'][calendarMonth]} {calendarYear}
+                          </span>
+                          <Button variant="outline" size="icon" onClick={handleNextMonth}>
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      <FinancialCalendarTable
+                        staffId={id!}
+                        month={calendarMonth}
+                        year={calendarYear}
+                        journalEntries={journalEntries}
+                        payouts={payouts}
+                        activities={activities}
+                        onPayoutCellClick={handlePayoutCellClick}
+                      />
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+
+            {/* Billing Rules History */}
+            {billingRules.length > 0 && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle>Історія ставок (автоматичний режим)</CardTitle>
+                  <CardDescription>
+                    Список усіх налаштованих ставок з датами дії для автоматичного режиму
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Активність</TableHead>
+                        <TableHead>Тип</TableHead>
+                        <TableHead>Значення</TableHead>
+                        <TableHead>Діє з</TableHead>
+                        <TableHead>Діє до</TableHead>
+                        <TableHead></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {billingRules.map((rule) => (
+                        <TableRow key={rule.id}>
+                          <TableCell>
+                            {rule.activity_id ? (
+                              <Badge variant="outline" className="bg-blue-50">
+                                {rule.activity?.name || 'Конкретна активність'}
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">Всі активності (глобально)</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {rule.rate_type === 'fixed' ? 'Фіксована' :
+                             rule.rate_type === 'percent' ? 'Відсоток' :
+                             'За заняття'}
+                          </TableCell>
+                          <TableCell>
+                            {rule.rate_type === 'percent' 
+                              ? `${rule.rate}%`
+                              : formatCurrency(rule.rate)}
+                          </TableCell>
+                          <TableCell>{formatDate(rule.effective_from)}</TableCell>
+                          <TableCell>
+                            {rule.effective_to ? formatDate(rule.effective_to) : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteBillingRule(rule.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Manual Rate History */}
+            {manualRateHistory.length > 0 && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle>Історія ставок (ручний режим)</CardTitle>
+                  <CardDescription>
+                    Список усіх налаштованих ставок з датами дії для ручного режиму
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Тип</TableHead>
+                        <TableHead>Значення</TableHead>
+                        <TableHead>Діє з</TableHead>
+                        <TableHead>Діє до</TableHead>
+                        <TableHead></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {manualRateHistory.map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell>
+                            {entry.manual_rate_type === 'hourly' ? 'Почасово' : 'За заняття'}
+                          </TableCell>
+                          <TableCell>
+                            {formatCurrency(entry.manual_rate_value)}
+                            {entry.manual_rate_type === 'hourly' ? ' / год' : ' / заняття'}
+                          </TableCell>
+                          <TableCell>{formatDate(entry.effective_from)}</TableCell>
+                          <TableCell>
+                            {entry.effective_to ? formatDate(entry.effective_to) : '—'}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteManualRateHistory(entry.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Payout Dialog */}
+      <Dialog open={isPayoutDialogOpen} onOpenChange={setIsPayoutDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Реєстрація виплати</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(handlePayoutSubmit)} className="space-y-4">
+            <div>
+              <Label htmlFor="payout_amount">Сума (₴)</Label>
+              <Input
+                id="payout_amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                {...register('amount', { valueAsNumber: true })}
+              />
+              {errors.amount && (
+                <p className="text-sm text-red-500 mt-1">{errors.amount.message}</p>
+              )}
+            </div>
+            
+            <div>
+              <Label htmlFor="payout_date">Дата виплати</Label>
+              <Input
+                id="payout_date"
+                type="date"
+                {...register('payout_date')}
+              />
+              {errors.payout_date && (
+                <p className="text-sm text-red-500 mt-1">{errors.payout_date.message}</p>
+              )}
+            </div>
+            
+            <div>
+              <Label htmlFor="payout_notes">Примітки (необов'язково)</Label>
+              <Textarea
+                id="payout_notes"
+                {...register('notes')}
+                rows={3}
+              />
+            </div>
+            
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsPayoutDialogOpen(false);
+                  setSelectedPayoutDate(null);
+                }}
+              >
+                Скасувати
+              </Button>
+              <Button type="submit" disabled={createPayout.isPending}>
+                {createPayout.isPending ? 'Збереження...' : 'Зберегти'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <StaffForm
+        open={editProfileOpen}
+        onOpenChange={setEditProfileOpen}
+        onSubmit={handleUpdateProfile}
+        initialData={staff}
+        isLoading={updateStaff.isPending}
+      />
+    </>
+  );
+}
+
+// Financial Calendar Table Component
+interface FinancialCalendarTableProps {
+  staffId: string;
+  month: number;
+  year: number;
+  journalEntries: any[];
+  payouts: any[];
+  activities: any[];
+  onPayoutCellClick: (date: string) => void;
+}
+
+function FinancialCalendarTable({ 
+  staffId, 
+  month, 
+  year, 
+  journalEntries, 
+  payouts, 
+  activities,
+  onPayoutCellClick 
+}: FinancialCalendarTableProps) {
+  const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  
+  // Group journal entries by activity (including manual entries)
+  const entriesByActivity = useMemo(() => {
+    const map = new Map<string, Map<string, number>>(); // activity_id -> date -> amount
+    
+    journalEntries.forEach(entry => {
+      const activityId = entry.activity_id || 'manual'; // Use 'manual' for entries without activity_id
+      if (!map.has(activityId)) {
+        map.set(activityId, new Map());
+      }
+      const activityMap = map.get(activityId)!;
+      const dateStr = entry.date;
+      const currentAmount = activityMap.get(dateStr) || 0;
+      activityMap.set(dateStr, currentAmount + (Number(entry.amount) || 0));
+    });
+    
+    return map;
+  }, [journalEntries]);
+  
+  // Group payouts by date (filter by month) with notes, dates and amounts
+  const payoutsByDate = useMemo(() => {
+    const amountMap = new Map<string, number>();
+    const notesMap = new Map<string, Array<{ note: string; date: string; amount: number }>>(); // date -> array of { note, date, amount }
+    
+    const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+    const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+    
+    payouts.forEach(payout => {
+      if (payout.payout_date >= startDate && payout.payout_date <= endDate) {
+        const currentAmount = amountMap.get(payout.payout_date) || 0;
+        amountMap.set(payout.payout_date, currentAmount + payout.amount);
+        
+        // Collect notes with dates and amounts for this date
+        const existingNotes = notesMap.get(payout.payout_date) || [];
+        notesMap.set(payout.payout_date, [...existingNotes, { 
+          note: payout.notes ? payout.notes.trim() : '', 
+          date: payout.payout_date,
+          amount: payout.amount
+        }]);
+      }
+    });
+    return { amounts: amountMap, notes: notesMap };
+  }, [payouts, month, year]);
+  
+  // Get unique activities from journal entries + manual entries row
+  const activityRows = useMemo(() => {
+    const activityIds = Array.from(entriesByActivity.keys()).filter(id => id !== 'manual');
+    const activityList = activityIds.map(id => activities.find(a => a.id === id)).filter(Boolean);
+    
+    // Add manual entries row if there are manual entries
+    const hasManualEntries = entriesByActivity.has('manual');
+    if (hasManualEntries) {
+      return [...activityList, { id: 'manual', name: 'Ручні записи' }];
+    }
+    
+    return activityList;
+  }, [entriesByActivity, activities]);
+  
+  const getDateString = (date: Date) => {
+    return date.toISOString().split('T')[0];
+  };
+
+  return (
+    <TooltipProvider>
+      <div className="border rounded-lg overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[200px] sticky left-0 bg-background z-10">Активність / Виплати</TableHead>
+            {days.map((date, index) => {
+              const dateStr = getDateString(date);
+              const isWeekendDay = isWeekend(date);
+              return (
+                <TableHead 
+                  key={dateStr} 
+                  className={cn(
+                    "text-center min-w-[60px]",
+                    isWeekendDay && "bg-muted/50"
+                  )}
+                >
+                  <div className="flex flex-col">
+                    <span className="text-xs text-muted-foreground">{getWeekdayShort(date)}</span>
+                    <span className="text-sm font-medium">{date.getDate()}</span>
+                  </div>
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {/* Activity rows */}
+          {activityRows.length > 0 ? (
+            activityRows.map(activity => {
+              const activityEntries = entriesByActivity.get(activity.id) || new Map();
+              return (
+                <TableRow key={activity.id}>
+                  <TableCell className="font-medium sticky left-0 bg-background z-10">{activity.name}</TableCell>
+                  {days.map((date) => {
+                    const dateStr = getDateString(date);
+                    const amount = activityEntries.get(dateStr) || 0;
+                    return (
+                      <TableCell 
+                        key={dateStr} 
+                        className={cn(
+                          "text-center",
+                          isWeekend(date) && "bg-muted/30"
+                        )}
+                      >
+                        {amount > 0 ? formatCurrency(amount) : '—'}
+                      </TableCell>
+                    );
+                  })}
+                </TableRow>
+              );
+            })
+          ) : (
+            <TableRow>
+              <TableCell colSpan={days.length + 1} className="text-center text-muted-foreground py-4">
+                Немає нарахувань по активностях за цей місяць
+              </TableCell>
+            </TableRow>
+          )}
+          
+          {/* Payouts row - always visible */}
+          <TableRow className="bg-muted/20 font-semibold">
+            <TableCell className="font-semibold sticky left-0 bg-muted/20 z-10">Виплати</TableCell>
+            {days.map((date) => {
+              const dateStr = getDateString(date);
+              const amount = payoutsByDate.amounts.get(dateStr) || 0;
+              const notes = payoutsByDate.notes.get(dateStr) || [];
+              const hasNotes = notes.length > 0;
+              
+              const cellContent = amount > 0 ? (
+                <span className="text-red-600 font-semibold">{formatCurrency(amount)}</span>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              );
+              
+              return (
+                <TableCell 
+                  key={dateStr} 
+                  className={cn(
+                    "text-center cursor-pointer hover:bg-primary/10",
+                    isWeekend(date) && "bg-muted/30"
+                  )}
+                  onClick={() => onPayoutCellClick(dateStr)}
+                >
+                  {hasNotes ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>{cellContent}</div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs">
+                        <div className="space-y-2">
+                          <p className="font-semibold">Виплати:</p>
+                          {notes.map((item, index) => (
+                            <div key={index} className="space-y-0.5 border-b border-border/50 pb-1 last:border-0 last:pb-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs text-muted-foreground">{formatDate(item.date)}</p>
+                                <p className="text-sm font-semibold text-red-600">{formatCurrency(item.amount)}</p>
+                              </div>
+                              {item.note && (
+                                <p className="text-sm">{item.note}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    cellContent
+                  )}
+                </TableCell>
+              );
+            })}
+          </TableRow>
+        </TableBody>
+      </Table>
+    </div>
+    </TooltipProvider>
+  );
+}

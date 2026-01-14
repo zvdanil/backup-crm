@@ -1,0 +1,109 @@
+import { Link, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { 
+  LayoutDashboard, 
+  Users, 
+  BookOpen, 
+  Calendar,
+  UserCog,
+  Menu,
+  X,
+  GraduationCap,
+  UsersRound,
+  Receipt,
+  Wallet,
+  ClipboardList,
+  UtensilsCrossed
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+
+const navigation = [
+  { name: 'Дашборд', href: '/', icon: LayoutDashboard },
+  { name: 'Діти', href: '/students', icon: Users },
+  { name: 'Активності', href: '/activities', icon: BookOpen },
+  { name: 'Журнал', href: '/attendance', icon: Calendar },
+  { name: 'Журнал відвідування', href: '/garden-attendance', icon: ClipboardList },
+  { name: 'Відомість харчування', href: '/nutrition-report', icon: UtensilsCrossed },
+  { name: 'Групи', href: '/groups', icon: UsersRound },
+  { name: 'Персонал', href: '/staff', icon: UserCog },
+  { name: 'Журнал витрат', href: '/staff-expenses', icon: Receipt },
+  { name: 'Ведомість', href: '/staff-payroll', icon: Wallet },
+];
+
+interface AppLayoutProps {
+  children: React.ReactNode;
+}
+
+export function AppLayout({ children }: AppLayoutProps) {
+  const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const isActive = (href: string) => {
+    if (href === '/') {
+      return location.pathname === '/';
+    }
+    return location.pathname.startsWith(href);
+  };
+
+  const NavLinks = () => (
+    <>
+      {navigation.map((item) => (
+        <Link
+          key={item.name}
+          to={item.href}
+          onClick={() => setMobileMenuOpen(false)}
+          className={cn(
+            'flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+            isActive(item.href)
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+          )}
+        >
+          <item.icon className="h-4 w-4" />
+          {item.name}
+        </Link>
+      ))}
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Horizontal Header */}
+      <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-2">
+            <GraduationCap className="h-8 w-8 text-primary" />
+            <span className="text-lg font-semibold text-foreground">КіндерCRM</span>
+          </Link>
+
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center gap-1">
+            <NavLinks />
+          </nav>
+
+          {/* Mobile Menu */}
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="md:hidden">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[250px]">
+              <div className="flex flex-col gap-2 mt-8">
+                <NavLinks />
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <main className="flex-1 w-full">
+        {children}
+      </main>
+    </div>
+  );
+}

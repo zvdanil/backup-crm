@@ -1,0 +1,1237 @@
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { EnhancedAttendanceCell } from './EnhancedAttendanceCell';
+import { useEnrollments } from '@/hooks/useEnrollments';
+import { useAttendance, useSetAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
+import { useActivity } from '@/hooks/useActivities';
+import { useGroups } from '@/hooks/useGroups';
+import { useCreateFinanceTransaction } from '@/hooks/useFinanceTransactions';
+import { useStaff } from '@/hooks/useStaff';
+import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate } from '@/hooks/useStaffBilling';
+import { calculateStaffSalary } from '@/lib/staffSalary';
+import { 
+  getDaysInMonth, 
+  formatShortDate, 
+  getWeekdayShort, 
+  isWeekend, 
+  calculateChargedAmount, 
+  formatCurrency,
+  calculateValueFromBillingRules,
+  calculateHourlyValueFromRule,
+  formatDateString
+} from '@/lib/attendance';
+import type { AttendanceStatus } from '@/lib/attendance';
+import { useActivityPriceHistory, getBillingRulesForDate } from '@/hooks/useActivities';
+import { cn } from '@/lib/utils';
+
+const MONTHS = [
+  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
+  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
+];
+
+interface AttendanceGridProps {
+  activityId: string;
+}
+
+export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
+
+  const { data: activity } = useActivity(activityId);
+  const { data: priceHistory } = useActivityPriceHistory(activityId);
+  const { data: allStaffBillingRules = [] } = useAllStaffBillingRulesForActivity(activityId);
+  const { data: groups = [] } = useGroups();
+  const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
+    activityId, 
+    activeOnly: true 
+  });
+  const { data: attendanceData = [], isLoading: attendanceLoading } = useAttendance({ 
+    activityId, 
+    month, 
+    year 
+  });
+  const { data: allStaff = [] } = useStaff();
+  const setAttendance = useSetAttendance();
+  const deleteAttendance = useDeleteAttendance();
+  const createTransaction = useCreateFinanceTransaction();
+  const upsertStaffJournalEntry = useUpsertStaffJournalEntry();
+  const deleteStaffJournalEntry = useDeleteStaffJournalEntry();
+
+  const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+
+  // Фільтрація записів по групах
+  const filteredEnrollments = useMemo(() => {
+    if (selectedGroups.has('all')) {
+      return enrollments;
+    }
+    
+    return enrollments.filter(enrollment => {
+      const groupId = enrollment.students?.group_id;
+      if (!groupId) {
+        // Діти без групи показуються, якщо вибрано "Без групи"
+        return selectedGroups.has('none');
+      }
+      return selectedGroups.has(groupId);
+    });
+  }, [enrollments, selectedGroups]);
+
+  // Групування та сортування записів
+  const groupedEnrollments = useMemo(() => {
+    const groupsMap = new Map<string, typeof enrollments>();
+    const noGroupEnrollments: typeof enrollments = [];
+
+    filteredEnrollments.forEach(enrollment => {
+      const groupId = enrollment.students?.group_id;
+      if (!groupId) {
+        noGroupEnrollments.push(enrollment);
+      } else {
+        if (!groupsMap.has(groupId)) {
+          groupsMap.set(groupId, []);
+        }
+        groupsMap.get(groupId)!.push(enrollment);
+      }
+    });
+
+    // Сортуємо дітей в алфавітному порядку в кожній групі
+    groupsMap.forEach((enrollments, groupId) => {
+      enrollments.sort((a, b) => 
+        a.students.full_name.localeCompare(b.students.full_name, 'uk-UA')
+      );
+    });
+
+    // Сортуємо дітей без групи
+    noGroupEnrollments.sort((a, b) => 
+      a.students.full_name.localeCompare(b.students.full_name, 'uk-UA')
+    );
+
+    return { groupsMap, noGroupEnrollments };
+  }, [filteredEnrollments]);
+
+  // Отримуємо список всіх груп, представлених у записах
+  const representedGroups = useMemo(() => {
+    const groupIds = new Set<string>();
+    enrollments.forEach(enrollment => {
+      if (enrollment.students?.group_id) {
+        groupIds.add(enrollment.students.group_id);
+      }
+    });
+    return groups.filter(g => groupIds.has(g.id));
+  }, [enrollments, groups]);
+
+  const attendanceMap = useMemo(() => {
+    const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; manual_value_edit: boolean }>();
+    attendanceData.forEach((a: any) => {
+      const key = `${a.enrollment_id}-${a.date}`;
+      map.set(key, { 
+        status: a.status, 
+        amount: a.charged_amount || 0,
+        value: a.value || null,
+        manual_value_edit: a.manual_value_edit || false
+      });
+    });
+    return map;
+  }, [attendanceData]);
+
+  // Створюємо мапу staff для швидкого доступу
+  const staffMap = useMemo(() => {
+    const map = new Map<string, typeof allStaff[0]>();
+    allStaff.forEach(staff => {
+      map.set(staff.id, staff);
+    });
+    return map;
+  }, [allStaff]);
+
+  // Створюємо мапу staff_billing_rules для швидкого доступу (по staff_id)
+  const staffBillingRulesMap = useMemo(() => {
+    const map = new Map<string, typeof allStaffBillingRules>();
+    allStaffBillingRules.forEach(rule => {
+      const existing = map.get(rule.staff_id) || [];
+      existing.push(rule);
+      map.set(rule.staff_id, existing);
+    });
+    return map;
+  }, [allStaffBillingRules]);
+
+  // Створюємо мапу activity_id -> staff_id для швидкого пошуку вчителя за активністю
+  // Функція для пошуку teacher_id через staff_billing_rules для конкретної активності та дати
+  const getTeacherIdForActivity = useCallback((activityId: string, date: string): string | null => {
+    // Знаходимо всі правила для цієї активності (де activity_id співпадає або null для глобальних)
+    const relevantRules = allStaffBillingRules.filter(rule => {
+      // Перевіряємо, чи правило відповідає активності (конкретна активність або глобальна)
+      if (rule.activity_id !== null && rule.activity_id !== activityId) {
+        return false;
+      }
+      
+      // Перевіряємо, чи правило активне на цю дату
+      const dateObj = new Date(date);
+      const fromDate = new Date(rule.effective_from);
+      const toDate = rule.effective_to ? new Date(rule.effective_to) : null;
+      
+      return dateObj >= fromDate && (!toDate || dateObj < toDate);
+    });
+
+    if (relevantRules.length === 0) return null;
+
+    // Пріоритет: спочатку шукаємо конкретні правила для активності, потім глобальні
+    const specificRule = relevantRules.find(r => r.activity_id === activityId);
+    if (specificRule) {
+      return specificRule.staff_id;
+    }
+
+    // Якщо немає конкретного правила, беремо перше глобальне (activity_id === null)
+    const globalRule = relevantRules.find(r => r.activity_id === null);
+    return globalRule ? globalRule.staff_id : null;
+  }, [allStaffBillingRules]);
+
+  // Отримуємо billing rules для активності на дату
+  const getActivityBillingRulesForDate = useCallback((date: string) => {
+    if (!activity) return null;
+    return priceHistory 
+      ? getBillingRulesForDate(activity, priceHistory, date)
+      : activity.billing_rules;
+  }, [activity, priceHistory]);
+
+  // Auto-journal: автоматично проставляти "П" у робочі дні
+  useEffect(() => {
+    console.log('[Auto-journal] useEffect triggered', {
+      activityId,
+      auto_journal: activity?.auto_journal,
+      enrollmentsLoading,
+      attendanceLoading,
+      filteredEnrollmentsCount: filteredEnrollments.length,
+      attendanceMapSize: attendanceMap.size,
+      daysCount: days.length,
+      activity: activity ? { id: activity.id, name: activity.name, auto_journal: activity.auto_journal } : null,
+    });
+
+    if (!activity?.auto_journal) {
+      console.log('[Auto-journal] SKIP: auto_journal is false or activity is undefined');
+      return;
+    }
+
+    if (enrollmentsLoading) {
+      console.log('[Auto-journal] SKIP: enrollmentsLoading is true');
+      return;
+    }
+
+    if (attendanceLoading) {
+      console.log('[Auto-journal] SKIP: attendanceLoading is true');
+      return;
+    }
+
+    console.log('[Auto-journal] Starting auto-fill process');
+
+    const autoFillPromises: Promise<any>[] = [];
+    const staffJournalPromises: Promise<any>[] = [];
+
+    let processedCells = 0;
+    let skippedWeekends = 0;
+    let skippedExisting = 0;
+    let skippedExistingWithStatus = 0;
+    let skippedExistingWithValue = 0;
+    let addedToPromises = 0;
+
+    filteredEnrollments.forEach((enrollment) => {
+      days.forEach((day) => {
+        processedCells++;
+        if (isWeekend(day)) {
+          skippedWeekends++;
+          return;
+        }
+        
+        const dateStr = formatDateString(day);
+        const key = `${enrollment.id}-${dateStr}`;
+        const existing = attendanceMap.get(key);
+        
+        // Не перезаписуємо ручні відмітки (ні статус, ні значення)
+        // Якщо є статус або значення - пропускаємо
+        if (existing) {
+          if (existing.status) {
+            skippedExistingWithStatus++;
+            return;
+          }
+          if (existing.value !== null && existing.value !== undefined && existing.value !== 0) {
+            skippedExistingWithValue++;
+            console.log('[Auto-journal] SKIP cell (existing value):', {
+              key,
+              enrollmentId: enrollment.id,
+              date: dateStr,
+              existingStatus: existing.status,
+              existingValue: existing.value,
+            });
+            return;
+          }
+          skippedExisting++;
+        }
+
+        if (!existing || (!existing.status && (existing.value === null || existing.value === undefined || existing.value === 0))) {
+          addedToPromises++;
+          // Отримуємо billing_rules для дати (з урахуванням історії)
+          const billingRulesForDate = activity && priceHistory 
+            ? getBillingRulesForDate(activity, priceHistory, dateStr)
+            : activity?.billing_rules;
+          
+          // Розраховуємо value на основі billing_rules для статусу 'present'
+          const calculatedValue = calculateValueFromBillingRules(
+            dateStr,
+            'present',
+            null,
+            enrollment.custom_price,
+            enrollment.discount_percent || 0,
+            billingRulesForDate || null
+          );
+          
+          // Використовуємо calculatedValue для charged_amount
+          const chargedAmount = calculatedValue !== null ? calculatedValue : 0;
+          
+          console.log('[Auto-journal] Adding attendance mutation:', {
+            key,
+            enrollmentId: enrollment.id,
+            date: dateStr,
+            calculatedValue,
+            chargedAmount,
+            billingRulesForDate: billingRulesForDate ? 'present' : null,
+            customPrice: enrollment.custom_price,
+          });
+          
+          autoFillPromises.push(
+            setAttendance.mutateAsync({
+              enrollment_id: enrollment.id,
+              date: dateStr,
+              status: 'present',
+              charged_amount: chargedAmount,
+              value: calculatedValue,
+              notes: null,
+              manual_value_edit: false,
+            }).then(() => {
+              console.log('[Auto-journal] Successfully created attendance:', { key, enrollmentId: enrollment.id, date: dateStr });
+            }).catch((error) => {
+              console.error('[Auto-journal] Failed to create attendance:', { key, enrollmentId: enrollment.id, date: dateStr, error });
+            })
+          );
+
+          // Знаходимо teacher через staff_billing_rules для цієї активності та дати
+          const teacherId = getTeacherIdForActivity(activityId, dateStr);
+          
+          // Якщо знайдено teacher_id, створюємо запис в staff_journal_entries
+          // Тільки якщо у співробітника включено автоматичне нарахування
+          if (teacherId) {
+            const staff = staffMap.get(teacherId);
+            if (staff && staff.accrual_mode === 'auto') {
+              const activityBillingRules = getActivityBillingRulesForDate(dateStr);
+              const staffRules = staffBillingRulesMap.get(teacherId) || [];
+              const staffBillingRule = getStaffBillingRuleForDate(staffRules, dateStr, activityId);
+              
+              const salaryCalculation = calculateStaffSalary({
+                staff,
+                activity,
+                date: dateStr,
+                attendanceValue: calculatedValue,
+                attendanceStatus: 'present',
+                staffBillingRule,
+                activityBillingRules,
+                deductions: (staff.deductions as any) || [],
+              });
+              
+              if (salaryCalculation && salaryCalculation.finalAmount > 0) {
+                console.log('Attempting to save staff accrual (auto-journal) for', teacherId, 'activity:', activityId, 'date:', dateStr, 'amount:', salaryCalculation.finalAmount);
+                staffJournalPromises.push(
+                  upsertStaffJournalEntry.mutateAsync({
+                    staff_id: teacherId,
+                    activity_id: activityId,
+                    date: dateStr,
+                    amount: salaryCalculation.finalAmount,
+                    base_amount: salaryCalculation.baseAmount,
+                    deductions_applied: salaryCalculation.deductionsApplied,
+                    is_manual_override: false,
+                    notes: 'Автоматичне нарахування з журналу',
+                  }).then(() => {
+                    console.log('Successfully saved staff accrual (auto-journal) for', teacherId);
+                  }).catch((error) => {
+                    console.error('Failed to save staff accrual (auto-journal):', error);
+                  })
+                );
+              }
+            }
+          }
+        }
+      });
+    });
+
+    // Виконуємо всі запити одночасно
+    console.log('[Auto-journal] Processing summary:', {
+      processedCells,
+      skippedWeekends,
+      skippedExisting,
+      skippedExistingWithStatus,
+      skippedExistingWithValue,
+      addedToPromises,
+      autoFillPromisesCount: autoFillPromises.length,
+      staffJournalPromisesCount: staffJournalPromises.length,
+    });
+
+    if (autoFillPromises.length > 0) {
+      console.log('[Auto-journal] Executing', autoFillPromises.length, 'attendance mutations');
+      Promise.allSettled(autoFillPromises).then((results) => {
+        const fulfilled = results.filter(r => r.status === 'fulfilled').length;
+        const rejected = results.filter(r => r.status === 'rejected').length;
+        console.log('[Auto-journal] Attendance mutations completed:', {
+          fulfilled,
+          rejected,
+          total: results.length,
+        });
+        if (rejected > 0) {
+          console.error('[Auto-journal] Some attendance mutations failed:', results.filter(r => r.status === 'rejected'));
+        }
+        // Після збереження attendance, створюємо staff journal entries
+        if (staffJournalPromises.length > 0) {
+          console.log('[Auto-journal] Executing', staffJournalPromises.length, 'staff journal mutations');
+          Promise.allSettled(staffJournalPromises).then((staffResults) => {
+            const staffFulfilled = staffResults.filter(r => r.status === 'fulfilled').length;
+            const staffRejected = staffResults.filter(r => r.status === 'rejected').length;
+            console.log('[Auto-journal] Staff journal mutations completed:', {
+              fulfilled: staffFulfilled,
+              rejected: staffRejected,
+              total: staffResults.length,
+            });
+            if (staffRejected > 0) {
+              console.error('[Auto-journal] Some staff journal mutations failed:', staffResults.filter(r => r.status === 'rejected'));
+            }
+          });
+        }
+      });
+    } else {
+      console.log('[Auto-journal] No attendance mutations to execute');
+    }
+  }, [activity?.auto_journal, days, filteredEnrollments, attendanceMap, setAttendance, enrollmentsLoading, attendanceLoading, activity, getActivityBillingRulesForDate, staffMap, staffBillingRulesMap, upsertStaffJournalEntry, activityId, getTeacherIdForActivity]);
+
+  // Підсумки для кожного учня
+  const studentTotals = useMemo(() => {
+    const totals: Record<string, { present: number; sick: number; absent: number; values: number }> = {};
+    
+    filteredEnrollments.forEach((enrollment) => {
+      totals[enrollment.id] = { present: 0, sick: 0, absent: 0, values: 0 };
+      
+      days.forEach((day) => {
+        const dateStr = formatDateString(day);
+        const key = `${enrollment.id}-${dateStr}`;
+        const attendance = attendanceMap.get(key);
+        
+        // Якщо є статус - рахуємо статус
+        if (attendance?.status) {
+          if (attendance.status === 'present') totals[enrollment.id].present++;
+          else if (attendance.status === 'sick') totals[enrollment.id].sick++;
+          else if (attendance.status === 'absent') totals[enrollment.id].absent++;
+        }
+        // Якщо немає статусу, але є значення - рахуємо значення
+        else if (attendance?.value !== null && attendance?.value !== undefined && attendance.value !== 0) {
+          totals[enrollment.id].values += attendance.value;
+        }
+      });
+    });
+    
+    return totals;
+  }, [filteredEnrollments, days, attendanceMap]);
+
+  // Ітоги за день
+  const dailyTotals = useMemo(() => {
+    const totals: Record<string, { present: number; sick: number; absent: number; values: number }> = {};
+    
+    days.forEach((day) => {
+      const dateStr = formatDateString(day);
+      totals[dateStr] = { present: 0, sick: 0, absent: 0, values: 0 };
+      
+      filteredEnrollments.forEach((enrollment) => {
+        const key = `${enrollment.id}-${dateStr}`;
+        const attendance = attendanceMap.get(key);
+        
+        // Якщо є статус - рахуємо статус
+        if (attendance?.status) {
+          if (attendance.status === 'present') totals[dateStr].present++;
+          else if (attendance.status === 'sick') totals[dateStr].sick++;
+          else if (attendance.status === 'absent') totals[dateStr].absent++;
+        }
+        // Якщо немає статусу, але є значення - рахуємо значення
+        else if (attendance?.value !== null && attendance?.value !== undefined && attendance.value !== 0) {
+          totals[dateStr].values += attendance.value;
+        }
+      });
+    });
+    
+    return totals;
+  }, [filteredEnrollments, days, attendanceMap]);
+
+  // Оплата педагогу за день - використовуємо нову систему calculateStaffSalary
+  const teacherPayments = useMemo(() => {
+    const payments: Record<string, number> = {};
+    
+    days.forEach((day) => {
+      const dateStr = formatDateString(day);
+      payments[dateStr] = 0;
+      
+      filteredEnrollments.forEach((enrollment) => {
+        const key = `${enrollment.id}-${dateStr}`;
+        const attendance = attendanceMap.get(key);
+        
+        // Знаходимо teacher через staff_billing_rules для цієї активності та дати
+        const teacherId = getTeacherIdForActivity(activityId, dateStr);
+        
+        if (!teacherId) return;
+        
+        const staff = staffMap.get(teacherId);
+        if (!staff) return;
+        
+        // Отримуємо billing rules для дати
+        const activityBillingRules = getActivityBillingRulesForDate(dateStr);
+        
+        // Отримуємо staff billing rules для цього staff та активності на дату
+        const staffRules = staffBillingRulesMap.get(teacherId) || [];
+        const staffBillingRule = getStaffBillingRuleForDate(staffRules, dateStr, activityId);
+        
+        // Розраховуємо зарплату через нову систему
+        const salaryCalculation = calculateStaffSalary({
+          staff,
+          activity,
+          date: dateStr,
+          attendanceValue: attendance?.value || attendance?.amount || null,
+          attendanceStatus: attendance?.status || null,
+          staffBillingRule,
+          activityBillingRules,
+          deductions: (staff.deductions as any) || [],
+        });
+        
+        if (salaryCalculation && salaryCalculation.finalAmount > 0) {
+          payments[dateStr] += salaryCalculation.finalAmount;
+        }
+      });
+    });
+    
+    return payments;
+  }, [filteredEnrollments, days, attendanceMap, getActivityBillingRulesForDate, staffMap, staffBillingRulesMap, activityId, getTeacherIdForActivity]);
+
+  const handlePrevMonth = () => {
+    if (month === 0) {
+      setMonth(11);
+      setYear(year - 1);
+    } else {
+      setMonth(month - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (month === 11) {
+      setMonth(0);
+      setYear(year + 1);
+    } else {
+      setMonth(month + 1);
+    }
+  };
+
+  const handleStatusChange = async (
+    enrollmentId: string, 
+    date: string, 
+    status: AttendanceStatus | null,
+    value: number | null,
+    _activityPrice: number, // Deprecated: не використовується, залишено для сумісності
+    customPrice: number | null,
+    discountPercent: number,
+    enrollment?: any
+  ) => {
+    // Якщо обидва null - видаляємо запис
+    if (status === null && (value === null || value === undefined || value === 0)) {
+      // Перевіряємо, чи була відмітка зі статусом 'present' або зі значенням, щоб видалити нарахування
+      const existing = attendanceMap.get(`${enrollmentId}-${date}`);
+      const wasPresent = existing?.status === 'present';
+      const hadValue = existing?.value !== null && existing?.value !== undefined && existing.value > 0;
+      
+      // Якщо була відмітка 'present' або було значення, видаляємо нарахування з staff_journal_entries
+      if (wasPresent || hadValue) {
+        const teacherIdForDeletion = getTeacherIdForActivity(activityId, date);
+        
+        if (teacherIdForDeletion) {
+          console.log('Attempting to delete staff accrual (on full delete) for', teacherIdForDeletion, 'activity:', activityId, 'date:', date, 'wasPresent:', wasPresent, 'hadValue:', hadValue);
+          try {
+            await deleteStaffJournalEntry.mutateAsync({
+              staff_id: teacherIdForDeletion,
+              activity_id: activityId,
+              date,
+            });
+            console.log('Successfully deleted staff accrual (on full delete) for', teacherIdForDeletion);
+          } catch (error) {
+            console.warn('Failed to delete staff journal entry (on full delete):', error);
+          }
+        }
+      }
+      
+      // Видаляємо відмітку відвідування
+      try {
+        await deleteAttendance.mutateAsync({ enrollmentId, date });
+      } catch (error) {
+        console.error('Failed to delete attendance:', error);
+      }
+      return;
+    }
+
+    // Якщо є значення, але немає статусу - зберігаємо тільки значення
+    if ((status === null) && value !== null && value !== undefined && value !== 0) {
+      // Отримуємо існуючу відмітку для перевірки manual_value_edit
+      const existing = attendanceMap.get(`${enrollmentId}-${date}`);
+      
+      // Отримуємо billing_rules для дати (з урахуванням історії)
+      const billingRulesForDate = activity && priceHistory 
+        ? getBillingRulesForDate(activity, priceHistory, date)
+        : activity?.billing_rules;
+      
+      // Розраховуємо value на основі billing_rules для "value" (hourly)
+      const calculatedValue = calculateHourlyValueFromRule(
+        date,
+        value,
+        customPrice,
+        discountPercent,
+        billingRulesForDate || null
+      );
+      
+      // Перевіряємо чи був це ручний ввід (value не співпадає з розрахованим)
+      const isManualEdit = existing?.manual_value_edit || (calculatedValue !== null && Math.abs((calculatedValue || 0) - value) > 0.01);
+      
+      try {
+        await setAttendance.mutateAsync({
+          enrollment_id: enrollmentId,
+          date,
+          status: null,
+          charged_amount: 0,
+          value: calculatedValue !== null ? calculatedValue : value,
+          notes: null,
+          manual_value_edit: isManualEdit,
+        });
+
+        // Якщо є значення, може створити запис в staff_journal_entries (якщо налаштовано)
+        // Знаходимо teacher через staff_billing_rules для цієї активності та дати
+        // Тільки якщо у співробітника включено автоматичне нарахування
+        if (enrollment && activity) {
+          const teacherId = getTeacherIdForActivity(activityId, date);
+          
+          if (teacherId) {
+            const staff = staffMap.get(teacherId);
+            if (staff && staff.accrual_mode === 'auto') {
+              const activityBillingRules = getActivityBillingRulesForDate(date);
+              const staffRules = staffBillingRulesMap.get(teacherId) || [];
+              const staffBillingRule = getStaffBillingRuleForDate(staffRules, date, activityId);
+              
+              const finalValue = calculatedValue !== null ? calculatedValue : value;
+              const salaryCalculation = calculateStaffSalary({
+                staff,
+                activity,
+                date,
+                attendanceValue: finalValue,
+                attendanceStatus: null,
+                staffBillingRule,
+                activityBillingRules,
+                deductions: (staff.deductions as any) || [],
+              });
+              
+              if (salaryCalculation && salaryCalculation.finalAmount > 0) {
+                console.log('Attempting to save staff accrual (value only) for', teacherId, 'activity:', activityId, 'date:', date, 'amount:', salaryCalculation.finalAmount);
+                
+                // Зберігаємо в staff_journal_entries
+                try {
+                  await upsertStaffJournalEntry.mutateAsync({
+                    staff_id: teacherId,
+                    activity_id: activityId,
+                    date,
+                    amount: salaryCalculation.finalAmount,
+                    base_amount: salaryCalculation.baseAmount,
+                    deductions_applied: salaryCalculation.deductionsApplied,
+                    is_manual_override: false,
+                    notes: 'Автоматичне нарахування з журналу',
+                  });
+                  console.log('Successfully saved staff accrual (value only) for', teacherId);
+                } catch (error) {
+                  console.error('Failed to save staff accrual (value only):', error);
+                }
+                
+                // Створюємо транзакцію на зарплату (тип 'expense')
+                createTransaction.mutate({
+                  type: 'expense',
+                  student_id: null,
+                  activity_id: activityId,
+                  staff_id: teacherId,
+                  amount: salaryCalculation.finalAmount,
+                  date: date,
+                  description: `Зарплата за заняття ${enrollment.students?.full_name || ''} (значення: ${finalValue})`,
+                  category: 'Зарплата',
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Помилка вже обробляється в useSetAttendance
+      }
+      return;
+    }
+
+    // Якщо є статус - використовуємо передане value (якщо є) або розраховуємо його
+    if (status !== null) {
+      // Якщо value вже передано з компонента - використовуємо його
+      // Інакше розраховуємо value на основі billing_rules
+      let finalValue = value;
+      
+      if (finalValue === null || finalValue === undefined) {
+        // Отримуємо billing_rules для дати (з урахуванням історії)
+        const billingRulesForDate = activity && priceHistory 
+          ? getBillingRulesForDate(activity, priceHistory, date)
+          : activity?.billing_rules;
+        
+        // Розраховуємо value на основі billing_rules для статусу
+        finalValue = calculateValueFromBillingRules(
+          date,
+          status,
+          null, // Для статусу valueInput не потрібен
+          customPrice,
+          discountPercent,
+          billingRulesForDate || null
+        );
+      }
+      
+      // Використовуємо finalValue для charged_amount (завжди з billing_rules)
+      // Якщо finalValue є null - використовуємо 0 (не має бути fallback на стару логіку)
+      const chargedAmount = finalValue !== null ? finalValue : 0;
+      
+      // Перевіряємо чи була це ручна зміна (якщо раніше було manual_value_edit)
+      // І перевіряємо попередній статус ДО збереження
+      const existing = attendanceMap.get(`${enrollmentId}-${date}`);
+      const isManualEdit = existing?.manual_value_edit || false;
+      const wasPresent = existing?.status === 'present';
+      
+      try {
+        await setAttendance.mutateAsync({
+          enrollment_id: enrollmentId,
+          date,
+          status,
+          charged_amount: chargedAmount,
+          value: finalValue, // Використовуємо передане або розраховане value
+          notes: null,
+          manual_value_edit: isManualEdit,
+        });
+        
+        // Знаходимо teacher через staff_billing_rules для цієї активності та дати (для видалення)
+        const teacherIdForDeletion = wasPresent ? getTeacherIdForActivity(activityId, date) : null;
+        
+        // Якщо статус змінився з 'present' на інший - видаляємо запис з staff_journal_entries
+        if (wasPresent && status !== 'present' && teacherIdForDeletion) {
+          console.log('Attempting to delete staff accrual for', teacherIdForDeletion, 'activity:', activityId, 'date:', date, 'because status changed from present to', status);
+          try {
+            await deleteStaffJournalEntry.mutateAsync({
+              staff_id: teacherIdForDeletion,
+              activity_id: activityId,
+              date,
+            });
+            console.log('Successfully deleted staff accrual for', teacherIdForDeletion);
+          } catch (error) {
+            // Можливо запису не існує - це нормально
+            console.warn('Failed to delete staff journal entry:', error);
+          }
+        }
+        
+        // Авто-синхронізація: генеруємо витрату на зарплату при відмітці "П"
+        // Знаходимо teacher через staff_billing_rules для цієї активності та дати
+        // Тільки якщо у співробітника включено автоматичне нарахування
+        if (status === 'present' && enrollment && activity) {
+          const teacherId = getTeacherIdForActivity(activityId, date);
+          
+          if (teacherId) {
+            const staff = staffMap.get(teacherId);
+            if (staff && staff.accrual_mode === 'auto') {
+              const activityBillingRules = getActivityBillingRulesForDate(date);
+              const staffRules = staffBillingRulesMap.get(teacherId) || [];
+              const staffBillingRule = getStaffBillingRuleForDate(staffRules, date, activityId);
+              
+              const finalValueForSalary = finalValue !== null ? finalValue : chargedAmount;
+              const salaryCalculation = calculateStaffSalary({
+                staff,
+                activity,
+                date,
+                attendanceValue: finalValueForSalary,
+                attendanceStatus: status,
+                staffBillingRule,
+                activityBillingRules,
+                deductions: (staff.deductions as any) || [],
+              });
+              
+              if (salaryCalculation && salaryCalculation.finalAmount > 0) {
+                console.log('Attempting to save staff accrual for', teacherId, 'activity:', activityId, 'date:', date, 'amount:', salaryCalculation.finalAmount);
+                
+                // Зберігаємо в staff_journal_entries
+                try {
+                  await upsertStaffJournalEntry.mutateAsync({
+                    staff_id: teacherId,
+                    activity_id: activityId,
+                    date,
+                    amount: salaryCalculation.finalAmount,
+                    base_amount: salaryCalculation.baseAmount,
+                    deductions_applied: salaryCalculation.deductionsApplied,
+                    is_manual_override: false,
+                    notes: 'Автоматичне нарахування з журналу',
+                  });
+                  console.log('Successfully saved staff accrual for', teacherId);
+                } catch (error) {
+                  console.error('Failed to save staff accrual:', error);
+                }
+                
+                // Створюємо транзакцію на зарплату (тип 'expense')
+                createTransaction.mutate({
+                  type: 'expense',
+                  student_id: null,
+                  activity_id: activityId,
+                  staff_id: teacherId,
+                  amount: salaryCalculation.finalAmount,
+                  date: date,
+                  description: `Зарплата за заняття ${enrollment.students?.full_name || ''} (значення: ${finalValueForSalary})`,
+                  category: 'Зарплата',
+                });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Помилка вже обробляється в useSetAttendance
+      }
+    }
+  };
+
+  const isLoading = enrollmentsLoading || attendanceLoading;
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  const handleGroupToggle = (groupId: string) => {
+    const newSelected = new Set(selectedGroups);
+    
+    if (groupId === 'all') {
+      if (newSelected.has('all')) {
+        newSelected.clear();
+      } else {
+        newSelected.clear();
+        newSelected.add('all');
+      }
+    } else {
+      newSelected.delete('all');
+      if (newSelected.has(groupId)) {
+        newSelected.delete(groupId);
+      } else {
+        newSelected.add(groupId);
+      }
+      
+      // Якщо всі групи вибрані окрім 'all', автоматично додаємо 'all'
+      if (newSelected.size === representedGroups.length + (groupedEnrollments.noGroupEnrollments.length > 0 ? 1 : 0)) {
+        newSelected.clear();
+        newSelected.add('all');
+      }
+    }
+    
+    setSelectedGroups(newSelected);
+  };
+
+  if (enrollments.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+        <p>Немає записів на цю активність</p>
+        <p className="text-sm">Додайте дітей у картці учня</p>
+      </div>
+    );
+  }
+
+  if (filteredEnrollments.length === 0) {
+    return (
+      <div className="animate-fade-in">
+        {/* Month navigation */}
+        <div className="flex items-center justify-between mb-6">
+          <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <h2 className="text-lg font-semibold">
+            {MONTHS[month]} {year}
+          </h2>
+          <Button variant="outline" size="icon" onClick={handleNextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Filters */}
+        <div className="mb-4 p-4 border rounded-lg bg-card">
+          <Label className="mb-3 block font-medium">Фільтр по групах:</Label>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="filter-all"
+                checked={selectedGroups.has('all')}
+                onCheckedChange={() => handleGroupToggle('all')}
+              />
+              <Label htmlFor="filter-all" className="cursor-pointer font-normal">
+                Всі групи
+              </Label>
+            </div>
+            {representedGroups.map((group) => (
+              <div key={group.id} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`filter-${group.id}`}
+                  checked={selectedGroups.has(group.id)}
+                  onCheckedChange={() => handleGroupToggle(group.id)}
+                />
+                <Label htmlFor={`filter-${group.id}`} className="cursor-pointer font-normal flex items-center gap-2">
+                  <div 
+                    className="h-3 w-3 rounded-full"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  {group.name}
+                </Label>
+              </div>
+            ))}
+            {groupedEnrollments.noGroupEnrollments.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="filter-none"
+                  checked={selectedGroups.has('none')}
+                  onCheckedChange={() => handleGroupToggle('none')}
+                />
+                <Label htmlFor="filter-none" className="cursor-pointer font-normal">
+                  Без групи
+                </Label>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+          <p>Немає дітей за обраними фільтрами</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-fade-in">
+      {/* Month navigation */}
+      <div className="flex items-center justify-between mb-6">
+        <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <h2 className="text-lg font-semibold">
+          {MONTHS[month]} {year}
+        </h2>
+        <Button variant="outline" size="icon" onClick={handleNextMonth}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Filters */}
+      <div className="mb-4 p-4 border rounded-lg bg-card">
+        <Label className="mb-3 block font-medium">Фільтр по групах:</Label>
+        <div className="flex flex-wrap gap-4">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="filter-all"
+              checked={selectedGroups.has('all')}
+              onCheckedChange={() => handleGroupToggle('all')}
+            />
+            <Label htmlFor="filter-all" className="cursor-pointer font-normal">
+              Всі групи
+            </Label>
+          </div>
+          {representedGroups.map((group) => (
+            <div key={group.id} className="flex items-center space-x-2">
+              <Checkbox
+                id={`filter-${group.id}`}
+                checked={selectedGroups.has(group.id)}
+                onCheckedChange={() => handleGroupToggle(group.id)}
+              />
+              <Label htmlFor={`filter-${group.id}`} className="cursor-pointer font-normal flex items-center gap-2">
+                <div 
+                  className="h-3 w-3 rounded-full"
+                  style={{ backgroundColor: group.color }}
+                />
+                {group.name}
+              </Label>
+            </div>
+          ))}
+          {groupedEnrollments.noGroupEnrollments.length > 0 && (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="filter-none"
+                checked={selectedGroups.has('none')}
+                onCheckedChange={() => handleGroupToggle('none')}
+              />
+              <Label htmlFor="filter-none" className="cursor-pointer font-normal">
+                Без групи
+              </Label>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Grid */}
+      <div className="overflow-x-auto border rounded-xl">
+        <table className="w-full border-collapse">
+          <thead>
+            {/* Рядки ітогів за день - тепер над заголовком */}
+            <tr className="bg-muted/30 border-t-2 font-semibold">
+              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">П: Присутні</th>
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
+                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
+                return (
+                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                    {totals.present}
+                  </th>
+                );
+              })}
+              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
+                {Object.values(studentTotals).reduce((sum, t) => sum + t.present, 0)}
+              </th>
+            </tr>
+            <tr className="bg-muted/30 font-semibold">
+              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Х: Хворі</th>
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
+                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
+                return (
+                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                    {totals.sick}
+                  </th>
+                );
+              })}
+              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
+                {Object.values(studentTotals).reduce((sum, t) => sum + t.sick, 0)}
+              </th>
+            </tr>
+            <tr className="bg-muted/30 font-semibold">
+              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Н: Пропуски</th>
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
+                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
+                return (
+                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                    {totals.absent}
+                  </th>
+                );
+              })}
+              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
+                {Object.values(studentTotals).reduce((sum, t) => sum + t.absent, 0)}
+              </th>
+            </tr>
+            <tr className="bg-muted/30 font-semibold border-b-2">
+              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Значення</th>
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
+                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
+                return (
+                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                    {totals.values > 0 ? totals.values : ''}
+                  </th>
+                );
+              })}
+              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
+                {Object.values(studentTotals).reduce((sum, t) => sum + t.values, 0)}
+              </th>
+            </tr>
+            
+            {/* Рядок оплати педагогу */}
+            <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
+              <th className="sticky left-0 z-10 bg-primary/10 px-4 py-2 text-sm text-left">Оплата педагогу</th>
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
+                const payment = teacherPayments[dateStr] || 0;
+                return (
+                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                    {payment > 0 ? formatCurrency(payment) : ''}
+                  </th>
+                );
+              })}
+              <th className="sticky right-0 z-10 bg-primary/10 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
+                {formatCurrency(Object.values(teacherPayments).reduce((sum, p) => sum + p, 0))}
+              </th>
+            </tr>
+
+            {/* Основний заголовок таблиці */}
+            <tr className="bg-muted/50">
+              <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground min-w-[200px]">
+                Учень
+              </th>
+              {days.map((day) => (
+                <th
+                  key={formatDateString(day)}
+                  className={`px-1 py-2 text-center text-xs font-medium min-w-[40px] ${
+                    isWeekend(day) ? 'text-muted-foreground/50' : 'text-muted-foreground'
+                  }`}
+                >
+                  <div>{getWeekdayShort(day)}</div>
+                  <div className="font-semibold">{formatShortDate(day)}</div>
+                </th>
+              ))}
+              <th className="sticky right-0 z-10 bg-muted/50 px-4 py-2 text-center text-xs font-medium min-w-[120px]">
+                Підсумки
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Рядки учнів з групуванням */}
+            {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
+              const group = groups.find(g => g.id === groupId);
+              return (
+                <React.Fragment key={groupId}>
+                  {/* Заголовок групи */}
+                  <tr className="bg-muted/50 border-t-2 border-b">
+                    <td colSpan={days.length + 2} className="px-4 py-2 font-semibold text-sm">
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="h-4 w-4 rounded-full"
+                          style={{ backgroundColor: group?.color || '#gray' }}
+                        />
+                        Група: {group?.name || 'Невідома група'}
+                      </div>
+                    </td>
+                  </tr>
+                  {/* Діти в групі */}
+                  {groupEnrollments.map((enrollment) => {
+                    const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
+                    
+                    return (
+                      <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                        <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                          {enrollment.students.full_name}
+                          {(enrollment.custom_price || enrollment.discount_percent > 0) && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {enrollment.custom_price && `${enrollment.custom_price} ₴`}
+                              {enrollment.discount_percent > 0 && ` -${enrollment.discount_percent}%`}
+                            </span>
+                          )}
+                        </td>
+                        {days.map((day) => {
+                          const dateStr = formatDateString(day);
+                          const key = `${enrollment.id}-${dateStr}`;
+                          const attendance = attendanceMap.get(key);
+                          
+                          return (
+                            <td key={dateStr} className="p-0.5 text-center">
+                              <EnhancedAttendanceCell
+                                status={attendance?.status || null}
+                                amount={attendance?.amount || 0}
+                                value={attendance?.value || null}
+                                manualValueEdit={attendance?.manual_value_edit || false}
+                                isWeekend={isWeekend(day)}
+                                onChange={(status, value) => handleStatusChange(
+                                  enrollment.id,
+                                  dateStr,
+                                  status,
+                                  value,
+                                  0, // activityPrice не використовується - залишаємо для сумісності
+                                  enrollment.custom_price,
+                                  enrollment.discount_percent,
+                                  enrollment
+                                )}
+                                activityPrice={0} // Не використовується - залишаємо для сумісності типів
+                                customPrice={enrollment.custom_price}
+                                discountPercent={enrollment.discount_percent}
+                                date={dateStr}
+                                activity={activity}
+                                priceHistory={priceHistory}
+                              />
+                            </td>
+                          );
+                        })}
+                        <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">
+                          <div>П: {totals.present}</div>
+                          <div>Х: {totals.sick}</div>
+                          <div>Н: {totals.absent}</div>
+                          <div className="mt-1 font-semibold">Σ: {totals.values}</div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
+            
+            {/* Діти без групи */}
+            {groupedEnrollments.noGroupEnrollments.length > 0 && (
+              <React.Fragment>
+                <tr className="bg-muted/50 border-t-2 border-b">
+                  <td colSpan={days.length + 2} className="px-4 py-2 font-semibold text-sm">
+                    Без групи
+                  </td>
+                </tr>
+                {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
+                  const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
+                  
+                  return (
+                    <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                      <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                        {enrollment.students.full_name}
+                        {(enrollment.custom_price || enrollment.discount_percent > 0) && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {enrollment.custom_price && `${enrollment.custom_price} ₴`}
+                            {enrollment.discount_percent > 0 && ` -${enrollment.discount_percent}%`}
+                          </span>
+                        )}
+                      </td>
+                      {days.map((day) => {
+                        const dateStr = formatDateString(day);
+                        const key = `${enrollment.id}-${dateStr}`;
+                        const attendance = attendanceMap.get(key);
+                        
+                        return (
+                          <td key={dateStr} className="p-0.5 text-center">
+                            <EnhancedAttendanceCell
+                              status={attendance?.status || null}
+                              amount={attendance?.amount || 0}
+                              value={attendance?.value || null}
+                              manualValueEdit={attendance?.manual_value_edit || false}
+                              isWeekend={isWeekend(day)}
+                              onChange={(status, value) => handleStatusChange(
+                                enrollment.id,
+                                dateStr,
+                                status,
+                                value,
+                                0, // activityPrice не використовується - залишаємо для сумісності
+                                enrollment.custom_price,
+                                enrollment.discount_percent,
+                                enrollment
+                              )}
+                              activityPrice={0} // Не використовується - залишаємо для сумісності типів
+                              customPrice={enrollment.custom_price}
+                              discountPercent={enrollment.discount_percent}
+                              date={dateStr}
+                              activity={activity}
+                              priceHistory={priceHistory}
+                            />
+                          </td>
+                        );
+                      })}
+                      <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">
+                        <div>П: {totals.present}</div>
+                        <div>Х: {totals.sick}</div>
+                        <div>Н: {totals.absent}</div>
+                        <div className="mt-1 font-semibold">Σ: {totals.values}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </React.Fragment>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

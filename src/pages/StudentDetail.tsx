@@ -1,0 +1,533 @@
+import { useState, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { ArrowLeft, Plus, Trash2, Calendar, Phone, Mail, User, Pencil, Wallet } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { StudentForm } from '@/components/students/StudentForm';
+import { EnrollmentForm } from '@/components/enrollments/EnrollmentForm';
+import { EditEnrollmentForm } from '@/components/enrollments/EditEnrollmentForm';
+import { TransactionForm } from '@/components/finance/TransactionForm';
+import { useStudent, useUpdateStudent } from '@/hooks/useStudents';
+import { useEnrollments, useCreateEnrollment, useUnenrollStudent, useUpdateEnrollment, type EnrollmentWithRelations } from '@/hooks/useEnrollments';
+import { useCreateFinanceTransaction, useStudentTotalBalance } from '@/hooks/useFinanceTransactions';
+import { useStudentActivityBalance } from '@/hooks/useFinanceTransactions';
+import { formatCurrency, formatDate } from '@/lib/attendance';
+import { StudentActivityBalanceRow } from '@/components/students/StudentActivityBalanceRow';
+import { StudentPaymentHistory } from '@/components/students/StudentPaymentHistory';
+import { EnrollmentPriceDisplay } from '@/components/enrollments/EnrollmentPriceDisplay';
+import { cn } from '@/lib/utils';
+import { useActivities } from '@/hooks/useActivities';
+import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const MONTHS = [
+  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
+  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
+];
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+
+export default function StudentDetail() {
+  const { id } = useParams<{ id: string }>();
+  const now = new Date();
+  const [enrollFormOpen, setEnrollFormOpen] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [transactionFormOpen, setTransactionFormOpen] = useState(false);
+  const [editingEnrollment, setEditingEnrollment] = useState<EnrollmentWithRelations | null>(null);
+  const [unenrollingId, setUnenrollingId] = useState<string | null>(null);
+  const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
+  const [balanceYear, setBalanceYear] = useState(now.getFullYear());
+
+  const { data: student, isLoading: studentLoading } = useStudent(id!);
+  const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
+    studentId: id,
+    activeOnly: false 
+  });
+  const { data: allActivities = [] } = useActivities();
+  const createEnrollment = useCreateEnrollment();
+  const updateStudent = useUpdateStudent();
+  const updateEnrollment = useUpdateEnrollment();
+  const unenrollStudent = useUnenrollStudent();
+  const createTransaction = useCreateFinanceTransaction();
+
+  // Get food tariff IDs from controller activities
+  const foodTariffIds = useMemo(() => {
+    const ids = new Set<string>();
+    allActivities.forEach(activity => {
+      if (isGardenAttendanceController(activity)) {
+        const config = (activity.config as GardenAttendanceConfig) || {};
+        (config.food_tariff_ids || []).forEach(id => ids.add(id));
+      }
+    });
+    return ids;
+  }, [allActivities]);
+
+  // Filter active/past enrollments
+  // В карточке ребёнка показываем ВСЕ активности, включая управляющую
+  const activeEnrollments = useMemo(() => {
+    return enrollments.filter(e => e.is_active);
+  }, [enrollments]);
+  
+  const pastEnrollments = useMemo(() => {
+    // В карточке ребёнка показываем все архивные активности, включая управляющую
+    return enrollments.filter(e => !e.is_active);
+  }, [enrollments]);
+
+  const handleEnroll = async (data: { activity_id: string; custom_price: number | null; discount_percent: number }) => {
+    // Используем mutateAsync для ожидания завершения мутации
+    await createEnrollment.mutateAsync({
+      student_id: id!,
+      activity_id: data.activity_id,
+      custom_price: data.custom_price,
+      discount_percent: data.discount_percent,
+    });
+  };
+
+  const handleUpdateEnrollment = (data: { custom_price: number | null; discount_percent: number; effective_from: string | null }) => {
+    if (editingEnrollment) {
+      updateEnrollment.mutate({
+        id: editingEnrollment.id,
+        custom_price: data.custom_price,
+        discount_percent: data.discount_percent,
+        effective_from: data.effective_from,
+      });
+      setEditingEnrollment(null);
+    }
+  };
+
+  const handleUpdateProfile = (data: any) => {
+    updateStudent.mutate({ id: id!, ...data });
+  };
+
+  const handleUnenroll = () => {
+    if (unenrollingId) {
+      unenrollStudent.mutate(unenrollingId);
+      setUnenrollingId(null);
+    }
+  };
+
+  if (studentLoading || enrollmentsLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!student) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen">
+        <p className="text-muted-foreground">Дитину не знайдено</p>
+        <Button variant="link" asChild>
+          <Link to="/students">Повернутися до списку</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader 
+        title={student.full_name}
+        actions={
+          <Button variant="outline" asChild>
+            <Link to="/students">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Назад
+            </Link>
+          </Button>
+        }
+      />
+      
+      <div className="p-8">
+        <div className="grid gap-8 lg:grid-cols-3">
+          {/* Student Info */}
+          <div className="lg:col-span-1">
+            <div className="rounded-xl bg-card border border-border p-6 shadow-soft">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                    <User className="h-8 w-8 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">{student.full_name}</h2>
+                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      student.status === 'active' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {student.status === 'active' ? 'Активний' : student.status}
+                    </span>
+                  </div>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={() => setEditProfileOpen(true)}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="space-y-4 text-sm">
+                {student.birth_date && (
+                  <div className="flex items-center gap-3">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span>Дата народження: {formatDate(student.birth_date)}</span>
+                  </div>
+                )}
+                
+                {student.guardian_name && (
+                  <div className="pt-4 border-t">
+                    <p className="font-medium text-muted-foreground mb-2">Опікун</p>
+                    <p className="font-medium">{student.guardian_name}</p>
+                  </div>
+                )}
+                
+                {student.guardian_phone && (
+                  <div className="flex items-center gap-3">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span>{student.guardian_phone}</span>
+                  </div>
+                )}
+                
+                {student.guardian_email && (
+                  <div className="flex items-center gap-3">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span>{student.guardian_email}</span>
+                  </div>
+                )}
+
+                <div className="pt-4 border-t">
+                  <Button 
+                    className="w-full" 
+                    onClick={() => setTransactionFormOpen(true)}
+                  >
+                    <Wallet className="h-4 w-4 mr-2" />
+                    Внести оплату
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Balance Summary */}
+            <div className="rounded-xl bg-card border border-border p-6 shadow-soft mt-6">
+              <h3 className="text-lg font-semibold mb-4">Баланс</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg border border-border p-4">
+                  <p className="text-sm text-muted-foreground mb-2">За місяць</p>
+                  <StudentBalanceDisplay 
+                    studentId={id!} 
+                    month={balanceMonth} 
+                    year={balanceYear} 
+                  />
+                </div>
+                <div className="rounded-lg border border-border p-4">
+                  <p className="text-sm text-muted-foreground mb-2">Загальний баланс</p>
+                  <StudentBalanceDisplay studentId={id!} />
+                </div>
+              </div>
+            </div>
+
+            {/* Payment History */}
+            <div className="rounded-xl bg-card border border-border p-6 shadow-soft mt-6">
+              <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
+              <StudentPaymentHistory 
+                studentId={id!}
+                month={balanceMonth}
+                year={balanceYear}
+              />
+            </div>
+
+            {/* Balance by activities */}
+            {activeEnrollments.length > 0 && (
+              <div className="rounded-xl bg-card border border-border p-6 shadow-soft mt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Баланс по активностях</h3>
+                  <div className="flex gap-2">
+                    <Select
+                      value={balanceMonth.toString()}
+                      onValueChange={(value) => setBalanceMonth(parseInt(value))}
+                    >
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MONTHS.map((month, idx) => (
+                          <SelectItem key={idx} value={idx.toString()}>
+                            {month}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      value={balanceYear}
+                      onChange={(e) => setBalanceYear(parseInt(e.target.value))}
+                      className="w-24"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {activeEnrollments
+                    .filter((enrollment) => {
+                      // Скрываем управляющую активность из балансов
+                      const activity = allActivities.find(a => a.id === enrollment.activity_id);
+                      return activity ? !isGardenAttendanceController(activity) : true;
+                    })
+                    .map((enrollment) => (
+                      <StudentActivityBalanceRow
+                        key={enrollment.id}
+                        studentId={id!}
+                        enrollment={enrollment}
+                        month={balanceMonth}
+                        year={balanceYear}
+                      />
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Enrollments */}
+          <div className="lg:col-span-2">
+            <div className="rounded-xl bg-card border border-border shadow-soft">
+              <div className="flex items-center justify-between p-6 border-b">
+                <h3 className="text-lg font-semibold">Активності</h3>
+                <Button size="sm" onClick={() => setEnrollFormOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Записати
+                </Button>
+              </div>
+
+              {activeEnrollments.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  <p>Немає активних записів</p>
+                  <Button variant="link" onClick={() => setEnrollFormOpen(true)}>
+                    Записати на активність
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Активність</TableHead>
+                      <TableHead>Ціна</TableHead>
+                      <TableHead>Знижка</TableHead>
+                      <TableHead>Дата запису</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeEnrollments.map((enrollment) => {
+                      if (!enrollment.activities) return null;
+                      const isFoodActivity = foodTariffIds.has(enrollment.activity_id);
+                      return (
+                      <TableRow key={enrollment.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: enrollment.activities.color }}
+                            />
+                            {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <EnrollmentPriceDisplay 
+                            enrollment={enrollment}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {(enrollment.discount_percent ?? 0) > 0 
+                            ? `${enrollment.discount_percent}%` 
+                            : '—'
+                          }
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatDate(enrollment.enrolled_at)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => setEditingEnrollment(enrollment)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => setUnenrollingId(enrollment.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+
+              {pastEnrollments.length > 0 && (
+                <>
+                  <div className="px-6 py-3 bg-muted/30 text-sm font-medium text-muted-foreground">
+                    Архів
+                  </div>
+                  <Table>
+                    <TableBody>
+                      {pastEnrollments.map((enrollment) => {
+                        if (!enrollment.activities) return null;
+                        const isFoodActivity = foodTariffIds.has(enrollment.activity_id);
+                        return (
+                        <TableRow key={enrollment.id} className="opacity-60">
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: enrollment.activities.color }}
+                              />
+                              {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <EnrollmentPriceDisplay 
+                              enrollment={enrollment}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {(enrollment.discount_percent ?? 0) > 0 
+                              ? `${enrollment.discount_percent}%` 
+                              : '—'
+                            }
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {enrollment.unenrolled_at && formatDate(enrollment.unenrolled_at)}
+                          </TableCell>
+                          <TableCell></TableCell>
+                        </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <StudentForm
+        open={editProfileOpen}
+        onOpenChange={setEditProfileOpen}
+        onSubmit={handleUpdateProfile}
+        initialData={student}
+        isLoading={updateStudent.isPending}
+      />
+
+      <EnrollmentForm
+        open={enrollFormOpen}
+        onOpenChange={setEnrollFormOpen}
+        onSubmit={handleEnroll}
+        studentName={student.full_name}
+        isLoading={createEnrollment.isPending}
+        excludeActivityIds={activeEnrollments.map(e => e.activity_id)}
+      />
+
+      <TransactionForm
+        open={transactionFormOpen}
+        onOpenChange={setTransactionFormOpen}
+        onSubmit={(data) => {
+          createTransaction.mutate({
+            ...data,
+            student_id: id!,
+          });
+        }}
+        initialStudentId={id}
+        isLoading={createTransaction.isPending}
+      />
+
+      {editingEnrollment && (
+        <EditEnrollmentForm
+          open={!!editingEnrollment}
+          onOpenChange={(open) => !open && setEditingEnrollment(null)}
+          onSubmit={handleUpdateEnrollment}
+          activityName={editingEnrollment.activities.name}
+          initialCustomPrice={editingEnrollment.custom_price}
+          initialDiscount={editingEnrollment.discount_percent}
+          initialEffectiveFrom={editingEnrollment.effective_from}
+          isLoading={updateEnrollment.isPending}
+        />
+      )}
+
+      <AlertDialog open={!!unenrollingId} onOpenChange={() => setUnenrollingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Відписати від активності?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Дитину буде відписано, але історія відвідуваності збережеться для розрахунку балансу.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Скасувати</AlertDialogCancel>
+            <AlertDialogAction onClick={handleUnenroll}>
+              Відписати
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+// Component to display student balance
+function StudentBalanceDisplay({ 
+  studentId, 
+  month, 
+  year 
+}: { 
+  studentId: string; 
+  month?: number; 
+  year?: number;
+}) {
+  const { data: balanceData, isLoading } = useStudentTotalBalance(studentId, month, year);
+
+  if (isLoading) {
+    return <span className="text-sm text-muted-foreground">Завантаження...</span>;
+  }
+
+  const balance = balanceData?.balance || 0;
+
+  return (
+    <p className={cn(
+      "text-2xl font-bold",
+      balance >= 0 ? "text-success" : "text-destructive"
+    )}>
+      {balance > 0 ? '+' : ''}{formatCurrency(balance)}
+    </p>
+  );
+}
