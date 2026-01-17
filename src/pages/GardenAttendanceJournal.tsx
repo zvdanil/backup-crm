@@ -176,10 +176,9 @@ export default function GardenAttendanceJournal() {
     // Calculate accrual using calculateDailyAccrual
     let calculatedAmount = 0;
     let calculatedValue: number | null = null;
-    let baseTariffAmount = 0;
     let foodTariffAmount = 0;
-    let baseActivityId: string | null = null;
-    let foodActivityId: string | null = null;
+    let baseActivityEntries: Array<{ activityId: string; amount: number }> = [];
+    let foodActivityEntries: Array<{ activityId: string; amount: number }> = [];
 
     if (status !== null) {
       const accrualResult = calculateDailyAccrual(
@@ -195,35 +194,17 @@ export default function GardenAttendanceJournal() {
         calculatedAmount = accrualResult.amount;
         calculatedValue = accrualResult.amount;
         
-        // Calculate base tariff daily amount (always M/D, regardless of presence/absence)
-        if (accrualResult.baseTariff !== null && accrualResult.workingDaysInMonth > 0) {
-          baseTariffAmount = accrualResult.baseTariff / accrualResult.workingDaysInMonth;
-          baseTariffAmount = Math.max(0, Math.round(baseTariffAmount * 100) / 100);
-        }
-        
-        // Food tariff amount (only for absent status, as refund/positive transaction)
         if (status === 'absent' && accrualResult.foodTariff !== null && accrualResult.foodTariff > 0) {
           foodTariffAmount = accrualResult.foodTariff;
         }
-        
-        // Find base and food activity IDs
-        const config = (controllerActivity?.config as any) || {};
-        const baseTariffIds = config.base_tariff_ids || [];
-        const foodTariffIds = config.food_tariff_ids || [];
-        
-        const baseEnrollment = studentEnrollments.find(e => 
-          e.is_active && baseTariffIds.includes(e.activity_id)
-        );
-        if (baseEnrollment) {
-          baseActivityId = baseEnrollment.activity_id;
-        }
-        
-        const foodEnrollment = studentEnrollments.find(e => 
-          e.is_active && foodTariffIds.includes(e.activity_id)
-        );
-        if (foodEnrollment) {
-          foodActivityId = foodEnrollment.activity_id;
-        }
+
+        baseActivityEntries = (accrualResult.baseTariffs || [])
+          .filter((item) => item.dailyTariff > 0)
+          .map((item) => ({ activityId: item.activityId, amount: item.dailyTariff }));
+
+        foodActivityEntries = (accrualResult.foodTariffs || [])
+          .filter((item) => item.dailyTariff > 0)
+          .map((item) => ({ activityId: item.activityId, amount: item.dailyTariff }));
       } else {
         // If config not found or base tariff not found, log warning but continue
         console.warn(`[Garden Attendance] Could not calculate accrual for student ${studentId} on ${date}. Config or base tariff not found.`);
@@ -274,50 +255,54 @@ export default function GardenAttendanceJournal() {
         });
 
         // Create or update finance transactions for base tariff and food tariff separately
-        // Base tariff transaction (always M/D, regardless of presence/absence)
-        if (baseActivityId && baseTariffAmount > 0) {
-          await upsertTransaction.mutateAsync({
-            type: 'income',
-            student_id: studentId,
-            activity_id: baseActivityId,
-            staff_id: null,
-            amount: baseTariffAmount,
-            date,
-            description: `Нарахування за відвідування (${status === 'present' ? 'присутність' : status === 'absent' ? 'відсутність' : 'відвідування'})`,
-            category: 'Навчання',
-          });
+        // Base tariff transactions (always M/D, regardless of presence/absence)
+        if (baseActivityEntries.length > 0) {
+          for (const entry of baseActivityEntries) {
+            await upsertTransaction.mutateAsync({
+              type: 'income',
+              student_id: studentId,
+              activity_id: entry.activityId,
+              staff_id: null,
+              amount: entry.amount,
+              date,
+              description: `Нарахування за відвідування (${status === 'present' ? 'присутність' : status === 'absent' ? 'відсутність' : 'відвідування'})`,
+              category: 'Навчання',
+            });
+          }
         }
         
         // Food tariff transaction (only for absent status, as expense/refund to parents)
         // If status is present, delete food transaction if exists
-        if (foodActivityId) {
+        if (foodActivityEntries.length > 0) {
           if (status === 'absent' && foodTariffAmount > 0) {
-            // Create food transaction for absent status (expense - refund to parents)
-            await upsertTransaction.mutateAsync({
-              type: 'expense',
-              student_id: studentId,
-              activity_id: foodActivityId,
-              staff_id: null,
-              amount: foodTariffAmount,
-              date,
-              description: `Повернення за харчування (відсутність)`,
-              category: 'Навчання',
-            });
+            for (const entry of foodActivityEntries) {
+              await upsertTransaction.mutateAsync({
+                type: 'expense',
+                student_id: studentId,
+                activity_id: entry.activityId,
+                staff_id: null,
+                amount: entry.amount,
+                date,
+                description: `Повернення за харчування (відсутність)`,
+                category: 'Навчання',
+              });
+            }
           } else if (status === 'present') {
-            // Delete food transaction if status changed to present
-            const { data: foodTransaction, error: foodError } = await supabase
-              .from('finance_transactions')
-              .select('id')
-              .eq('student_id', studentId)
-              .eq('activity_id', foodActivityId)
-              .eq('date', date)
-              .eq('type', 'expense')
-              .maybeSingle();
-            
-            if (foodError && foodError.code !== 'PGRST116') {
-              console.error('Error finding food transaction:', foodError);
-            } else if (foodTransaction?.id) {
-              await deleteTransaction.mutateAsync(foodTransaction.id);
+            for (const entry of foodActivityEntries) {
+              const { data: foodTransaction, error: foodError } = await supabase
+                .from('finance_transactions')
+                .select('id')
+                .eq('student_id', studentId)
+                .eq('activity_id', entry.activityId)
+                .eq('date', date)
+                .eq('type', 'expense')
+                .maybeSingle();
+
+              if (foodError && foodError.code !== 'PGRST116') {
+                console.error('Error finding food transaction:', foodError);
+              } else if (foodTransaction?.id) {
+                await deleteTransaction.mutateAsync(foodTransaction.id);
+              }
             }
           }
         }

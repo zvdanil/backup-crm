@@ -1,4 +1,4 @@
-import { useStudentActivityBalance } from '@/hooks/useFinanceTransactions';
+import { useStudentActivityBalance, useStudentActivityMonthlyBalance } from '@/hooks/useFinanceTransactions';
 import { formatCurrency } from '@/lib/attendance';
 import type { EnrollmentWithRelations } from '@/hooks/useEnrollments';
 import { cn } from '@/lib/utils';
@@ -19,12 +19,6 @@ export function StudentActivityBalanceRow({
   month, 
   year 
 }: StudentActivityBalanceRowProps) {
-  const { data: balanceData, isLoading } = useStudentActivityBalance(
-    studentId,
-    enrollment.activity_id,
-    month,
-    year
-  );
   const { data: allActivities = [] } = useActivities();
 
   // Check if this is a food activity
@@ -38,6 +32,39 @@ export function StudentActivityBalanceRow({
     });
     return foodTariffIds.has(enrollment.activity_id);
   }, [allActivities, enrollment.activity_id]);
+
+  const presentRule = enrollment.activities.billing_rules?.present;
+  const isMonthlyBilling = !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
+
+  const baseMonthlyCharge = useMemo(() => {
+    if (!isMonthlyBilling) return 0;
+    if (enrollment.custom_price !== null && enrollment.custom_price > 0) {
+      const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
+      return Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
+    }
+    if (presentRule?.rate && presentRule.rate > 0) {
+      return presentRule.rate;
+    }
+    return enrollment.activities.default_price || 0;
+  }, [isMonthlyBilling, enrollment.custom_price, enrollment.discount_percent, enrollment.activities.default_price, presentRule?.rate]);
+
+  const monthlyBalanceQuery = useStudentActivityMonthlyBalance(
+    studentId,
+    enrollment.activity_id,
+    baseMonthlyCharge,
+    month,
+    year
+  );
+
+  const regularBalanceQuery = useStudentActivityBalance(
+    studentId,
+    enrollment.activity_id,
+    month,
+    year
+  );
+
+  const balanceData = isMonthlyBilling ? monthlyBalanceQuery.data : regularBalanceQuery.data;
+  const isLoading = isMonthlyBilling ? monthlyBalanceQuery.isLoading : regularBalanceQuery.isLoading;
 
   if (isLoading) {
     return (

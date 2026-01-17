@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { StaffForm } from '@/components/staff/StaffForm';
 import { useStaffMember, useUpdateStaff } from '@/hooks/useStaff';
 import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend } from '@/lib/attendance';
-import { StaffBillingRulesEditor } from '@/components/staff/StaffBillingRulesEditor';
+import { StaffBillingEditorNew } from '@/components/staff/StaffBillingEditorNew';
 import { StaffManualRateHistoryEditor } from '@/components/staff/StaffManualRateHistoryEditor';
 import { DeductionsEditor } from '@/components/staff/DeductionsEditor';
 import {
@@ -122,11 +122,16 @@ export default function StaffDetail() {
 
     // Save each new rule
     billingRulesState.forEach((rule) => {
+      const activityId = rule.activity_id === 'null' ? null : rule.activity_id;
       createBillingRule.mutate({
         staff_id: id,
-        activity_id: rule.activity_id,
+        activity_id: activityId,
         rate_type: rule.rate_type,
         rate: rule.rate,
+        lesson_limit: rule.lesson_limit ?? null,
+        penalty_trigger_percent: rule.penalty_trigger_percent ?? null,
+        penalty_percent: rule.penalty_percent ?? null,
+        extra_lesson_rate: rule.extra_lesson_rate ?? null,
         effective_from: effectiveFrom,
         effective_to: null,
       });
@@ -241,6 +246,23 @@ export default function StaffDetail() {
     );
   }
 
+  const formatRateTypeLabel = (rateType: StaffBillingRule['rate_type']) => {
+    switch (rateType) {
+      case 'fixed':
+        return 'Фіксована';
+      case 'percent':
+        return 'Відсоток';
+      case 'per_session':
+        return 'За заняття';
+      case 'subscription':
+        return 'Абонемент';
+      case 'per_student':
+        return 'За учня';
+      default:
+        return '—';
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -321,7 +343,7 @@ export default function StaffDetail() {
                   </TabsList>
 
                   <TabsContent value="rules" className="mt-6">
-                    <StaffBillingRulesEditor
+                    <StaffBillingEditorNew
                       rules={billingRulesState}
                       onChange={setBillingRulesState}
                       effectiveFrom={effectiveFrom}
@@ -439,14 +461,22 @@ export default function StaffDetail() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {rule.rate_type === 'fixed' ? 'Фіксована' :
-                             rule.rate_type === 'percent' ? 'Відсоток' :
-                             'За заняття'}
+                            {formatRateTypeLabel(rule.rate_type)}
                           </TableCell>
                           <TableCell>
-                            {rule.rate_type === 'percent' 
-                              ? `${rule.rate}%`
-                              : formatCurrency(rule.rate)}
+                            <div className="flex flex-col">
+                              <span>
+                                {rule.rate_type === 'percent' 
+                                  ? `${rule.rate}%`
+                                  : formatCurrency(rule.rate)}
+                              </span>
+                              {rule.rate_type === 'subscription' && (
+                                <span className="text-xs text-muted-foreground">
+                                  Лім: {rule.lesson_limit ?? '—'}, Поріг: {rule.penalty_trigger_percent ?? '—'}%
+                                  , Штраф: {rule.penalty_percent ?? '—'}%, Понад: {rule.extra_lesson_rate != null ? formatCurrency(rule.extra_lesson_rate) : '—'}
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell>{formatDate(rule.effective_from)}</TableCell>
                           <TableCell>

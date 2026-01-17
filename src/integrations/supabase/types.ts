@@ -65,6 +65,8 @@ export type Database = {
           id: string
           notes: string | null
           status: Database["public"]["Enums"]["attendance_status"]
+          value: number | null
+          manual_value_edit: boolean | null
           updated_at: string | null
         }
         Insert: {
@@ -75,6 +77,8 @@ export type Database = {
           id?: string
           notes?: string | null
           status?: Database["public"]["Enums"]["attendance_status"]
+          value?: number | null
+          manual_value_edit?: boolean | null
           updated_at?: string | null
         }
         Update: {
@@ -85,6 +89,8 @@ export type Database = {
           id?: string
           notes?: string | null
           status?: Database["public"]["Enums"]["attendance_status"]
+          value?: number | null
+          manual_value_edit?: boolean | null
           updated_at?: string | null
         }
         Relationships: [
@@ -154,6 +160,165 @@ export type Database = {
           },
         ]
       }
+      staff: {
+        Row: {
+          accrual_mode: string | null
+          created_at: string | null
+          deductions: Json | null
+          full_name: string
+          id: string
+          is_active: boolean | null
+          position: string
+          tariff_type: string
+          tariff_value: number
+          updated_at: string | null
+        }
+        Insert: {
+          accrual_mode?: string | null
+          created_at?: string | null
+          deductions?: Json | null
+          full_name: string
+          id?: string
+          is_active?: boolean | null
+          position: string
+          tariff_type?: string
+          tariff_value?: number
+          updated_at?: string | null
+        }
+        Update: {
+          accrual_mode?: string | null
+          created_at?: string | null
+          deductions?: Json | null
+          full_name?: string
+          id?: string
+          is_active?: boolean | null
+          position?: string
+          tariff_type?: string
+          tariff_value?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      staff_billing_rules: {
+        Row: {
+          activity_id: string | null
+          created_at: string | null
+          effective_from: string
+          effective_to: string | null
+          extra_lesson_rate: number | null
+          id: string
+          lesson_limit: number | null
+          penalty_percent: number | null
+          penalty_trigger_percent: number | null
+          rate_type: string
+          rate_value: number
+          staff_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          activity_id?: string | null
+          created_at?: string | null
+          effective_from: string
+          effective_to?: string | null
+          extra_lesson_rate?: number | null
+          id?: string
+          lesson_limit?: number | null
+          penalty_percent?: number | null
+          penalty_trigger_percent?: number | null
+          rate_type?: string
+          rate_value?: number
+          staff_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          activity_id?: string | null
+          created_at?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          extra_lesson_rate?: number | null
+          id?: string
+          lesson_limit?: number | null
+          penalty_percent?: number | null
+          penalty_trigger_percent?: number | null
+          rate_type?: string
+          rate_value?: number
+          staff_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_billing_rules_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_billing_rules_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_journal_entries: {
+        Row: {
+          activity_id: string | null
+          amount: number
+          base_amount: number | null
+          created_at: string | null
+          date: string
+          deductions_applied: Json | null
+          id: string
+          is_manual_override: boolean | null
+          notes: string | null
+          staff_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          activity_id?: string | null
+          amount: number
+          base_amount?: number | null
+          created_at?: string | null
+          date: string
+          deductions_applied?: Json | null
+          id?: string
+          is_manual_override?: boolean | null
+          notes?: string | null
+          staff_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          activity_id?: string | null
+          amount?: number
+          base_amount?: number | null
+          created_at?: string | null
+          date?: string
+          deductions_applied?: Json | null
+          id?: string
+          is_manual_override?: boolean | null
+          notes?: string | null
+          staff_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_journal_entries_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_journal_entries_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       students: {
         Row: {
           birth_date: string | null
@@ -206,6 +371,7 @@ export type Database = {
         | "expense"
         | "additional_income"
         | "household_expense"
+        | "salary"
       attendance_status: "present" | "sick" | "absent" | "vacation"
       payment_type: "subscription" | "per_session"
     }
@@ -340,6 +506,7 @@ export const Constants = {
         "expense",
         "additional_income",
         "household_expense",
+        "salary",
       ],
       attendance_status: ["present", "sick", "absent", "vacation"],
       payment_type: ["subscription", "per_session"],

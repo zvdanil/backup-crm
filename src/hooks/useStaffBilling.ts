@@ -6,8 +6,12 @@ export interface StaffBillingRule {
   id: string;
   staff_id: string;
   activity_id: string | null;
-  rate_type: 'fixed' | 'percent' | 'per_session';
+  rate_type: 'fixed' | 'percent' | 'per_session' | 'subscription' | 'per_student';
   rate: number; // Changed from rate_value to rate
+  lesson_limit?: number | null;
+  penalty_percent?: number | null;
+  penalty_trigger_percent?: number | null;
+  extra_lesson_rate?: number | null;
   effective_from: string;
   effective_to: string | null;
   created_at: string;
@@ -97,7 +101,7 @@ export function useStaffBillingRules(staffId: string | undefined) {
       // Map rate_value from DB to rate for TypeScript interface
       return ((data as any[]) || []).map(rule => ({
         ...rule,
-        rate: rule.rate_value || rule.rate || 0,
+        rate: rule.rate_value ?? rule.rate ?? 0,
         activity: rule.activity || null,
       })) as StaffBillingRule[]; 
     },
@@ -126,7 +130,7 @@ export function useStaffBillingRulesByActivity(staffId: string | undefined, acti
       // Map rate_value from DB to rate for TypeScript interface
       return ((data as any[]) || []).map(rule => ({
         ...rule,
-        rate: rule.rate_value || rule.rate || 0,
+        rate: rule.rate_value ?? rule.rate ?? 0,
         activity: rule.activity || null,
       })) as StaffBillingRule[];
     },
@@ -154,7 +158,7 @@ export function useAllStaffBillingRulesForActivity(activityId: string | undefine
       // Map rate_value from DB to rate for TypeScript interface
       return ((data as any[]) || []).map(rule => ({
         ...rule,
-        rate: rule.rate_value || rule.rate || 0,
+        rate: rule.rate_value ?? rule.rate ?? 0,
         activity: rule.activity || null,
       })) as StaffBillingRule[];
     },
@@ -193,19 +197,22 @@ export function useCreateStaffBillingRule() {
       }
 
       // Create new rule - map rate to rate_value for database
+      const insertData: any = {
+        ...rule,
+        rate_value: rule.rate,
+      };
+      delete insertData.rate;
+
       const { data, error } = await supabase
         .from('staff_billing_rules' as any)
-        .insert({
-          ...rule,
-          rate_value: rule.rate, // Map rate to rate_value for database
-        } as any)
+        .insert(insertData)
         .select()
         .single();
       
       if (error) throw error;
       // Map rate_value back to rate for TypeScript interface
       const result = data as any;
-      return { ...result, rate: result.rate_value || result.rate } as StaffBillingRule;
+      return { ...result, rate: result.rate_value ?? result.rate ?? 0 } as StaffBillingRule;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['staff-billing-rules', data.staff_id] });
@@ -239,7 +246,7 @@ export function useUpdateStaffBillingRule() {
       
       if (error) throw error;
       const result = data as any;
-      return { ...result, rate: result.rate_value || result.rate } as StaffBillingRule;
+      return { ...result, rate: result.rate_value ?? result.rate ?? 0 } as StaffBillingRule;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['staff-billing-rules', data.staff_id] });

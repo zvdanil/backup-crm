@@ -529,8 +529,8 @@ export default function EnhancedDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {categoryStudents.map((student) => 
-                      student.activities.map((activity) => {
+                    {categoryStudents.map((student, studentIndex) => 
+                      student.activities.map((activity, activityIndex) => {
                         const enrollment = data?.enrollments.find(e => e.id === activity.enrollmentId);
                         if (!enrollment) return null;
 
@@ -554,9 +554,20 @@ export default function EnhancedDashboard() {
                         // Проверяем, является ли это активностью питания (расход для организации)
                         const isFoodActivity = foodTariffIds.has(activity.activityId);
                         
+                        const isStripedGroup = studentIndex % 2 === 1;
+                        const isLastInGroup = activityIndex === student.activities.length - 1;
+                        const rowBgClass = isStripedGroup ? 'bg-amber-50/60' : 'bg-card';
+
                         return (
-                          <tr key={activity.enrollmentId} className="border-b hover:bg-muted/20">
-                            <td className="py-2 px-4 sticky left-0 bg-card">
+                          <tr
+                            key={activity.enrollmentId}
+                            className={cn(
+                              "border-b hover:bg-muted/20",
+                              isStripedGroup && "bg-amber-50/60",
+                              isLastInGroup && "border-b-2"
+                            )}
+                          >
+                            <td className={cn("py-2 px-4 sticky left-0", rowBgClass)}>
                               <div className="flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.activityColor }} />
                                 <div className="min-w-0">
@@ -572,7 +583,10 @@ export default function EnhancedDashboard() {
                               const amount = activityData[dateStr];
                               // For food activity, amount is already negative (expense)
                               return (
-                                <td key={formatDateString(day)} className={cn("py-2 px-1 text-center", isWeekend(day) && "bg-muted/30")}>
+                                <td
+                                  key={formatDateString(day)}
+                                  className={cn("py-2 px-1 text-center", rowBgClass, isWeekend(day) && "bg-muted/30")}
+                                >
                                   {amount !== undefined && amount !== 0 && (
                                     <span className={cn("text-xs font-medium", amount > 0 ? "text-success" : "text-destructive")}>
                                       {formatCurrency(amount)}
@@ -581,7 +595,7 @@ export default function EnhancedDashboard() {
                                 </td>
                               );
                             })}
-                            <td className={cn("py-2 px-4 text-right font-semibold sticky right-0 bg-card", rowTotal > 0 ? "text-success" : rowTotal < 0 ? "text-destructive" : "")}>
+                            <td className={cn("py-2 px-4 text-right font-semibold sticky right-0", rowBgClass, rowTotal > 0 ? "text-success" : rowTotal < 0 ? "text-destructive" : "")}>
                               {rowTotal !== 0 ? formatCurrency(rowTotal) : '—'}
                             </td>
                           </tr>

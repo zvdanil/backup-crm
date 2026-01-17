@@ -330,6 +330,62 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
   });
 }
 
+// Calculate monthly balance for subscription/fixed activities (full month charge)
+export function useStudentActivityMonthlyBalance(
+  studentId: string,
+  activityId: string,
+  baseMonthlyCharge: number,
+  month?: number,
+  year?: number
+) {
+  return useQuery({
+    queryKey: ['student_activity_monthly_balance', studentId, activityId, baseMonthlyCharge, month, year],
+    queryFn: async () => {
+      const now = new Date();
+      const targetMonth = month !== undefined ? month : now.getMonth();
+      const targetYear = year !== undefined ? year : now.getFullYear();
+
+      const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
+      const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
+
+      const { data: payments, error: paymentsError } = await supabase
+        .from('finance_transactions')
+        .select('amount')
+        .eq('student_id', studentId)
+        .not('student_id', 'is', null)
+        .eq('activity_id', activityId)
+        .not('activity_id', 'is', null)
+        .eq('type', 'payment')
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (paymentsError) throw paymentsError;
+
+      const { data: expenseTransactions, error: expenseError } = await supabase
+        .from('finance_transactions')
+        .select('amount')
+        .eq('student_id', studentId)
+        .not('student_id', 'is', null)
+        .eq('activity_id', activityId)
+        .not('activity_id', 'is', null)
+        .eq('type', 'expense')
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (expenseError) throw expenseError;
+
+      const totalPayments = payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+      const refunds = expenseTransactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+
+      const charges = baseMonthlyCharge;
+      const balance = totalPayments - charges + refunds;
+
+      return { balance, payments: totalPayments, charges, refunds };
+    },
+    enabled: !!studentId && !!activityId,
+  });
+}
+
 // Calculate total balance for student across all activities
 export function useStudentTotalBalance(studentId: string, month?: number, year?: number) {
   return useQuery({

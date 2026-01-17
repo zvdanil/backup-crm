@@ -8,10 +8,8 @@ import { useEnrollments } from '@/hooks/useEnrollments';
 import { useAttendance, useSetAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
 import { useActivity } from '@/hooks/useActivities';
 import { useGroups } from '@/hooks/useGroups';
-import { useCreateFinanceTransaction } from '@/hooks/useFinanceTransactions';
-import { useStaff } from '@/hooks/useStaff';
 import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate } from '@/hooks/useStaffBilling';
-import { calculateStaffSalary } from '@/lib/staffSalary';
+import { calculateMonthlyStaffAccruals, type AttendanceRecord } from '@/lib/salaryCalculator';
 import { 
   getDaysInMonth, 
   formatShortDate, 
@@ -55,10 +53,8 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     month, 
     year 
   });
-  const { data: allStaff = [] } = useStaff();
   const setAttendance = useSetAttendance();
   const deleteAttendance = useDeleteAttendance();
-  const createTransaction = useCreateFinanceTransaction();
   const upsertStaffJournalEntry = useUpsertStaffJournalEntry();
   const deleteStaffJournalEntry = useDeleteStaffJournalEntry();
 
@@ -137,15 +133,6 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return map;
   }, [attendanceData]);
 
-  // Створюємо мапу staff для швидкого доступу
-  const staffMap = useMemo(() => {
-    const map = new Map<string, typeof allStaff[0]>();
-    allStaff.forEach(staff => {
-      map.set(staff.id, staff);
-    });
-    return map;
-  }, [allStaff]);
-
   // Створюємо мапу staff_billing_rules для швидкого доступу (по staff_id)
   const staffBillingRulesMap = useMemo(() => {
     const map = new Map<string, typeof allStaffBillingRules>();
@@ -156,6 +143,35 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     });
     return map;
   }, [allStaffBillingRules]);
+
+  const buildAttendanceRecordsFromMap = useCallback((mapOverride?: Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; manual_value_edit: boolean }>) => {
+    const map = mapOverride ?? attendanceMap;
+    const records: AttendanceRecord[] = [];
+
+    filteredEnrollments.forEach((enrollment) => {
+      const studentId = enrollment.students?.id || enrollment.student_id;
+      const studentName = enrollment.students?.full_name || '';
+
+      days.forEach((day) => {
+        const dateStr = formatDateString(day);
+        const key = `${enrollment.id}-${dateStr}`;
+        const attendance = map.get(key);
+
+        if (attendance?.status === 'present' && studentId) {
+          records.push({
+            date: dateStr,
+            enrollment_id: enrollment.id,
+            student_id: studentId,
+            student_name: studentName,
+            status: 'present',
+            value: attendance.value ?? attendance.amount ?? 0,
+          });
+        }
+      });
+    });
+
+    return records;
+  }, [attendanceMap, days, filteredEnrollments]);
 
   // Створюємо мапу activity_id -> staff_id для швидкого пошуку вчителя за активністю
   // Функція для пошуку teacher_id через staff_billing_rules для конкретної активності та дати
@@ -187,6 +203,65 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     const globalRule = relevantRules.find(r => r.activity_id === null);
     return globalRule ? globalRule.staff_id : null;
   }, [allStaffBillingRules]);
+
+  const getBillingRuleForDate = useCallback((date: string) => {
+    const teacherId = getTeacherIdForActivity(activityId, date);
+    if (!teacherId) return null;
+    const staffRules = staffBillingRulesMap.get(teacherId) || [];
+    return getStaffBillingRuleForDate(staffRules, date, activityId);
+  }, [activityId, getTeacherIdForActivity, staffBillingRulesMap]);
+
+  const syncStaffJournalEntriesForMonth = useCallback(async (recordsOverride?: AttendanceRecord[]) => {
+    const records = recordsOverride ?? buildAttendanceRecordsFromMap();
+    const accruals = calculateMonthlyStaffAccruals({
+      attendanceRecords: records,
+      getRuleForDate: getBillingRuleForDate,
+    });
+
+    const dateStrings = days.map((day) => formatDateString(day));
+    const staffIds = new Set<string>();
+
+    allStaffBillingRules.forEach((rule) => {
+      if (rule.activity_id === null || rule.activity_id === activityId) {
+        staffIds.add(rule.staff_id);
+      }
+    });
+
+    accruals.forEach((_, staffId) => staffIds.add(staffId));
+
+    const promises: Promise<any>[] = [];
+    staffIds.forEach((staffId) => {
+      dateStrings.forEach((date) => {
+        const dayAccrual = accruals.get(staffId)?.get(date);
+        if (dayAccrual && dayAccrual.amount > 0) {
+          promises.push(
+            upsertStaffJournalEntry.mutateAsync({
+              staff_id: staffId,
+              activity_id: activityId,
+              date,
+              amount: dayAccrual.amount,
+              base_amount: dayAccrual.amount,
+              deductions_applied: [],
+              is_manual_override: false,
+              notes: dayAccrual.notes.join('; ') || null,
+            })
+          );
+        } else {
+          promises.push(
+            deleteStaffJournalEntry.mutateAsync({
+              staff_id: staffId,
+              activity_id: activityId,
+              date,
+            })
+          );
+        }
+      });
+    });
+
+    if (promises.length > 0) {
+      await Promise.allSettled(promises);
+    }
+  }, [activityId, allStaffBillingRules, buildAttendanceRecordsFromMap, days, deleteStaffJournalEntry, getBillingRuleForDate, upsertStaffJournalEntry]);
 
   // Отримуємо billing rules для активності на дату
   const getActivityBillingRulesForDate = useCallback((date: string) => {
@@ -227,7 +302,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     console.log('[Auto-journal] Starting auto-fill process');
 
     const autoFillPromises: Promise<any>[] = [];
-    const staffJournalPromises: Promise<any>[] = [];
+    const optimisticMap = new Map(attendanceMap);
 
     let processedCells = 0;
     let skippedWeekends = 0;
@@ -315,50 +390,12 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             })
           );
 
-          // Знаходимо teacher через staff_billing_rules для цієї активності та дати
-          const teacherId = getTeacherIdForActivity(activityId, dateStr);
-          
-          // Якщо знайдено teacher_id, створюємо запис в staff_journal_entries
-          // Тільки якщо у співробітника включено автоматичне нарахування
-          if (teacherId) {
-            const staff = staffMap.get(teacherId);
-            if (staff && staff.accrual_mode === 'auto') {
-              const activityBillingRules = getActivityBillingRulesForDate(dateStr);
-              const staffRules = staffBillingRulesMap.get(teacherId) || [];
-              const staffBillingRule = getStaffBillingRuleForDate(staffRules, dateStr, activityId);
-              
-              const salaryCalculation = calculateStaffSalary({
-                staff,
-                activity,
-                date: dateStr,
-                attendanceValue: calculatedValue,
-                attendanceStatus: 'present',
-                staffBillingRule,
-                activityBillingRules,
-                deductions: (staff.deductions as any) || [],
-              });
-              
-              if (salaryCalculation && salaryCalculation.finalAmount > 0) {
-                console.log('Attempting to save staff accrual (auto-journal) for', teacherId, 'activity:', activityId, 'date:', dateStr, 'amount:', salaryCalculation.finalAmount);
-                staffJournalPromises.push(
-                  upsertStaffJournalEntry.mutateAsync({
-                    staff_id: teacherId,
-                    activity_id: activityId,
-                    date: dateStr,
-                    amount: salaryCalculation.finalAmount,
-                    base_amount: salaryCalculation.baseAmount,
-                    deductions_applied: salaryCalculation.deductionsApplied,
-                    is_manual_override: false,
-                    notes: 'Автоматичне нарахування з журналу',
-                  }).then(() => {
-                    console.log('Successfully saved staff accrual (auto-journal) for', teacherId);
-                  }).catch((error) => {
-                    console.error('Failed to save staff accrual (auto-journal):', error);
-                  })
-                );
-              }
-            }
-          }
+          optimisticMap.set(key, {
+            status: 'present',
+            amount: chargedAmount,
+            value: calculatedValue,
+            manual_value_edit: false,
+          });
         }
       });
     });
@@ -388,27 +425,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         if (rejected > 0) {
           console.error('[Auto-journal] Some attendance mutations failed:', results.filter(r => r.status === 'rejected'));
         }
-        // Після збереження attendance, створюємо staff journal entries
-        if (staffJournalPromises.length > 0) {
-          console.log('[Auto-journal] Executing', staffJournalPromises.length, 'staff journal mutations');
-          Promise.allSettled(staffJournalPromises).then((staffResults) => {
-            const staffFulfilled = staffResults.filter(r => r.status === 'fulfilled').length;
-            const staffRejected = staffResults.filter(r => r.status === 'rejected').length;
-            console.log('[Auto-journal] Staff journal mutations completed:', {
-              fulfilled: staffFulfilled,
-              rejected: staffRejected,
-              total: staffResults.length,
-            });
-            if (staffRejected > 0) {
-              console.error('[Auto-journal] Some staff journal mutations failed:', staffResults.filter(r => r.status === 'rejected'));
-            }
-          });
-        }
+        const optimisticRecords = buildAttendanceRecordsFromMap(optimisticMap);
+        syncStaffJournalEntriesForMonth(optimisticRecords).catch((error) => {
+          console.error('[Auto-journal] Failed to sync staff journal entries:', error);
+        });
       });
     } else {
       console.log('[Auto-journal] No attendance mutations to execute');
     }
-  }, [activity?.auto_journal, days, filteredEnrollments, attendanceMap, setAttendance, enrollmentsLoading, attendanceLoading, activity, getActivityBillingRulesForDate, staffMap, staffBillingRulesMap, upsertStaffJournalEntry, activityId, getTeacherIdForActivity]);
+  }, [activity?.auto_journal, days, filteredEnrollments, attendanceMap, setAttendance, enrollmentsLoading, attendanceLoading, activity, getActivityBillingRulesForDate, activityId, buildAttendanceRecordsFromMap, syncStaffJournalEntriesForMonth]);
 
   // Підсумки для кожного учня
   const studentTotals = useMemo(() => {
@@ -466,53 +491,31 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return totals;
   }, [filteredEnrollments, days, attendanceMap]);
 
-  // Оплата педагогу за день - використовуємо нову систему calculateStaffSalary
+  const monthlyAccruals = useMemo(() => {
+    const records = buildAttendanceRecordsFromMap();
+    return calculateMonthlyStaffAccruals({
+      attendanceRecords: records,
+      getRuleForDate: getBillingRuleForDate,
+    });
+  }, [buildAttendanceRecordsFromMap, getBillingRuleForDate]);
+
+  // Оплата педагогу за день - сума нарахувань за правилами
   const teacherPayments = useMemo(() => {
     const payments: Record<string, number> = {};
-    
+
     days.forEach((day) => {
       const dateStr = formatDateString(day);
       payments[dateStr] = 0;
-      
-      filteredEnrollments.forEach((enrollment) => {
-        const key = `${enrollment.id}-${dateStr}`;
-        const attendance = attendanceMap.get(key);
-        
-        // Знаходимо teacher через staff_billing_rules для цієї активності та дати
-        const teacherId = getTeacherIdForActivity(activityId, dateStr);
-        
-        if (!teacherId) return;
-        
-        const staff = staffMap.get(teacherId);
-        if (!staff) return;
-        
-        // Отримуємо billing rules для дати
-        const activityBillingRules = getActivityBillingRulesForDate(dateStr);
-        
-        // Отримуємо staff billing rules для цього staff та активності на дату
-        const staffRules = staffBillingRulesMap.get(teacherId) || [];
-        const staffBillingRule = getStaffBillingRuleForDate(staffRules, dateStr, activityId);
-        
-        // Розраховуємо зарплату через нову систему
-        const salaryCalculation = calculateStaffSalary({
-          staff,
-          activity,
-          date: dateStr,
-          attendanceValue: attendance?.value || attendance?.amount || null,
-          attendanceStatus: attendance?.status || null,
-          staffBillingRule,
-          activityBillingRules,
-          deductions: (staff.deductions as any) || [],
-        });
-        
-        if (salaryCalculation && salaryCalculation.finalAmount > 0) {
-          payments[dateStr] += salaryCalculation.finalAmount;
-        }
+    });
+
+    monthlyAccruals.forEach((staffMap) => {
+      staffMap.forEach((accrual, date) => {
+        payments[date] = (payments[date] || 0) + accrual.amount;
       });
     });
-    
+
     return payments;
-  }, [filteredEnrollments, days, attendanceMap, getActivityBillingRulesForDate, staffMap, staffBillingRulesMap, activityId, getTeacherIdForActivity]);
+  }, [days, monthlyAccruals]);
 
   const handlePrevMonth = () => {
     if (month === 0) {
@@ -544,36 +547,16 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   ) => {
     // Якщо обидва null - видаляємо запис
     if (status === null && (value === null || value === undefined || value === 0)) {
-      // Перевіряємо, чи була відмітка зі статусом 'present' або зі значенням, щоб видалити нарахування
-      const existing = attendanceMap.get(`${enrollmentId}-${date}`);
-      const wasPresent = existing?.status === 'present';
-      const hadValue = existing?.value !== null && existing?.value !== undefined && existing.value > 0;
-      
-      // Якщо була відмітка 'present' або було значення, видаляємо нарахування з staff_journal_entries
-      if (wasPresent || hadValue) {
-        const teacherIdForDeletion = getTeacherIdForActivity(activityId, date);
-        
-        if (teacherIdForDeletion) {
-          console.log('Attempting to delete staff accrual (on full delete) for', teacherIdForDeletion, 'activity:', activityId, 'date:', date, 'wasPresent:', wasPresent, 'hadValue:', hadValue);
-          try {
-            await deleteStaffJournalEntry.mutateAsync({
-              staff_id: teacherIdForDeletion,
-              activity_id: activityId,
-              date,
-            });
-            console.log('Successfully deleted staff accrual (on full delete) for', teacherIdForDeletion);
-          } catch (error) {
-            console.warn('Failed to delete staff journal entry (on full delete):', error);
-          }
-        }
-      }
-      
-      // Видаляємо відмітку відвідування
       try {
         await deleteAttendance.mutateAsync({ enrollmentId, date });
       } catch (error) {
         console.error('Failed to delete attendance:', error);
       }
+
+      const updatedMap = new Map(attendanceMap);
+      updatedMap.delete(`${enrollmentId}-${date}`);
+      const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
+      await syncStaffJournalEntriesForMonth(optimisticRecords);
       return;
     }
 
@@ -609,67 +592,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           notes: null,
           manual_value_edit: isManualEdit,
         });
-
-        // Якщо є значення, може створити запис в staff_journal_entries (якщо налаштовано)
-        // Знаходимо teacher через staff_billing_rules для цієї активності та дати
-        // Тільки якщо у співробітника включено автоматичне нарахування
-        if (enrollment && activity) {
-          const teacherId = getTeacherIdForActivity(activityId, date);
-          
-          if (teacherId) {
-            const staff = staffMap.get(teacherId);
-            if (staff && staff.accrual_mode === 'auto') {
-              const activityBillingRules = getActivityBillingRulesForDate(date);
-              const staffRules = staffBillingRulesMap.get(teacherId) || [];
-              const staffBillingRule = getStaffBillingRuleForDate(staffRules, date, activityId);
-              
-              const finalValue = calculatedValue !== null ? calculatedValue : value;
-              const salaryCalculation = calculateStaffSalary({
-                staff,
-                activity,
-                date,
-                attendanceValue: finalValue,
-                attendanceStatus: null,
-                staffBillingRule,
-                activityBillingRules,
-                deductions: (staff.deductions as any) || [],
-              });
-              
-              if (salaryCalculation && salaryCalculation.finalAmount > 0) {
-                console.log('Attempting to save staff accrual (value only) for', teacherId, 'activity:', activityId, 'date:', date, 'amount:', salaryCalculation.finalAmount);
-                
-                // Зберігаємо в staff_journal_entries
-                try {
-                  await upsertStaffJournalEntry.mutateAsync({
-                    staff_id: teacherId,
-                    activity_id: activityId,
-                    date,
-                    amount: salaryCalculation.finalAmount,
-                    base_amount: salaryCalculation.baseAmount,
-                    deductions_applied: salaryCalculation.deductionsApplied,
-                    is_manual_override: false,
-                    notes: 'Автоматичне нарахування з журналу',
-                  });
-                  console.log('Successfully saved staff accrual (value only) for', teacherId);
-                } catch (error) {
-                  console.error('Failed to save staff accrual (value only):', error);
-                }
-                
-                // Створюємо транзакцію на зарплату (тип 'expense')
-                createTransaction.mutate({
-                  type: 'expense',
-                  student_id: null,
-                  activity_id: activityId,
-                  staff_id: teacherId,
-                  amount: salaryCalculation.finalAmount,
-                  date: date,
-                  description: `Зарплата за заняття ${enrollment.students?.full_name || ''} (значення: ${finalValue})`,
-                  category: 'Зарплата',
-                });
-              }
-            }
-          }
-        }
+        const updatedMap = new Map(attendanceMap);
+        updatedMap.set(`${enrollmentId}-${date}`, {
+          status: null,
+          amount: 0,
+          value: calculatedValue !== null ? calculatedValue : value,
+          manual_value_edit: isManualEdit,
+        });
+        const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
+        await syncStaffJournalEntriesForMonth(optimisticRecords);
       } catch (error) {
         // Помилка вже обробляється в useSetAttendance
       }
@@ -720,85 +651,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           manual_value_edit: isManualEdit,
         });
         
-        // Знаходимо teacher через staff_billing_rules для цієї активності та дати (для видалення)
-        const teacherIdForDeletion = wasPresent ? getTeacherIdForActivity(activityId, date) : null;
-        
-        // Якщо статус змінився з 'present' на інший - видаляємо запис з staff_journal_entries
-        if (wasPresent && status !== 'present' && teacherIdForDeletion) {
-          console.log('Attempting to delete staff accrual for', teacherIdForDeletion, 'activity:', activityId, 'date:', date, 'because status changed from present to', status);
-          try {
-            await deleteStaffJournalEntry.mutateAsync({
-              staff_id: teacherIdForDeletion,
-              activity_id: activityId,
-              date,
-            });
-            console.log('Successfully deleted staff accrual for', teacherIdForDeletion);
-          } catch (error) {
-            // Можливо запису не існує - це нормально
-            console.warn('Failed to delete staff journal entry:', error);
-          }
-        }
-        
-        // Авто-синхронізація: генеруємо витрату на зарплату при відмітці "П"
-        // Знаходимо teacher через staff_billing_rules для цієї активності та дати
-        // Тільки якщо у співробітника включено автоматичне нарахування
-        if (status === 'present' && enrollment && activity) {
-          const teacherId = getTeacherIdForActivity(activityId, date);
-          
-          if (teacherId) {
-            const staff = staffMap.get(teacherId);
-            if (staff && staff.accrual_mode === 'auto') {
-              const activityBillingRules = getActivityBillingRulesForDate(date);
-              const staffRules = staffBillingRulesMap.get(teacherId) || [];
-              const staffBillingRule = getStaffBillingRuleForDate(staffRules, date, activityId);
-              
-              const finalValueForSalary = finalValue !== null ? finalValue : chargedAmount;
-              const salaryCalculation = calculateStaffSalary({
-                staff,
-                activity,
-                date,
-                attendanceValue: finalValueForSalary,
-                attendanceStatus: status,
-                staffBillingRule,
-                activityBillingRules,
-                deductions: (staff.deductions as any) || [],
-              });
-              
-              if (salaryCalculation && salaryCalculation.finalAmount > 0) {
-                console.log('Attempting to save staff accrual for', teacherId, 'activity:', activityId, 'date:', date, 'amount:', salaryCalculation.finalAmount);
-                
-                // Зберігаємо в staff_journal_entries
-                try {
-                  await upsertStaffJournalEntry.mutateAsync({
-                    staff_id: teacherId,
-                    activity_id: activityId,
-                    date,
-                    amount: salaryCalculation.finalAmount,
-                    base_amount: salaryCalculation.baseAmount,
-                    deductions_applied: salaryCalculation.deductionsApplied,
-                    is_manual_override: false,
-                    notes: 'Автоматичне нарахування з журналу',
-                  });
-                  console.log('Successfully saved staff accrual for', teacherId);
-                } catch (error) {
-                  console.error('Failed to save staff accrual:', error);
-                }
-                
-                // Створюємо транзакцію на зарплату (тип 'expense')
-                createTransaction.mutate({
-                  type: 'expense',
-                  student_id: null,
-                  activity_id: activityId,
-                  staff_id: teacherId,
-                  amount: salaryCalculation.finalAmount,
-                  date: date,
-                  description: `Зарплата за заняття ${enrollment.students?.full_name || ''} (значення: ${finalValueForSalary})`,
-                  category: 'Зарплата',
-                });
-              }
-            }
-          }
-        }
+        const updatedMap = new Map(attendanceMap);
+        updatedMap.set(`${enrollmentId}-${date}`, {
+          status,
+          amount: chargedAmount,
+          value: finalValue,
+          manual_value_edit: isManualEdit,
+        });
+        const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
+        await syncStaffJournalEntriesForMonth(optimisticRecords);
       } catch (error) {
         // Помилка вже обробляється в useSetAttendance
       }

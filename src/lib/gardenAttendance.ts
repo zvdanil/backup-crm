@@ -25,6 +25,15 @@ export interface DailyAccrualResult {
   amount: number;
   baseTariff: number | null;
   foodTariff: number | null;
+  baseTariffs: Array<{
+    activityId: string;
+    monthlyTariff: number;
+    dailyTariff: number;
+  }>;
+  foodTariffs: Array<{
+    activityId: string;
+    dailyTariff: number;
+  }>;
   workingDaysInMonth: number;
   status: AttendanceStatus | null;
 }
@@ -67,89 +76,6 @@ export function calculateDailyAccrual(
   const baseTariffIds = config.base_tariff_ids || [];
   const foodTariffIds = config.food_tariff_ids || [];
 
-  // 2. Find enrollment with activity_id in base_tariff_ids (M - monthly tariff)
-  const baseEnrollment = enrollments.find(
-    (enrollment) =>
-      enrollment.student_id === studentId &&
-      enrollment.is_active &&
-      baseTariffIds.includes(enrollment.activity_id)
-  );
-
-  if (!baseEnrollment) {
-    // No base tariff enrollment found
-    return null;
-  }
-
-  // Get base tariff activity
-  const baseActivity = activities.get(baseEnrollment.activity_id);
-  if (!baseActivity) {
-    return null;
-  }
-
-  // Calculate M (monthly tariff)
-  // Priority: custom_price > billing_rules > default_price
-  let baseTariff = 0;
-  
-  if (baseEnrollment.custom_price !== null && baseEnrollment.custom_price > 0) {
-    // Apply discount if any
-    const discountMultiplier = 1 - ((baseEnrollment.discount_percent || 0) / 100);
-    baseTariff = baseEnrollment.custom_price * discountMultiplier;
-  } else if (baseActivity.billing_rules && typeof baseActivity.billing_rules === 'object') {
-    // Try to get rate from billing_rules for 'present' status
-    const presentRule = (baseActivity.billing_rules as any)['present'];
-    if (presentRule && presentRule.rate && presentRule.rate > 0) {
-      if (presentRule.type === 'subscription') {
-        baseTariff = presentRule.rate;
-      } else if (presentRule.type === 'fixed') {
-        // For fixed type, we need to calculate monthly equivalent
-        // This might need adjustment based on actual business logic
-        baseTariff = presentRule.rate;
-      }
-    }
-  } else {
-    // Fallback to default_price
-    baseTariff = baseActivity.default_price || 0;
-  }
-
-  // 3. Find enrollment with activity_id in food_tariff_ids (F - daily food cost)
-  const foodEnrollment = enrollments.find(
-    (enrollment) =>
-      enrollment.student_id === studentId &&
-      enrollment.is_active &&
-      foodTariffIds.includes(enrollment.activity_id)
-  );
-
-  let foodTariff = 0;
-  if (foodEnrollment) {
-    const foodActivity = activities.get(foodEnrollment.activity_id);
-    if (foodActivity) {
-      // Calculate F (daily food cost)
-      // Priority: custom_price > billing_rules > default_price
-      if (foodEnrollment.custom_price !== null && foodEnrollment.custom_price > 0) {
-        const discountMultiplier = 1 - ((foodEnrollment.discount_percent || 0) / 100);
-        foodTariff = foodEnrollment.custom_price * discountMultiplier;
-      } else if (foodActivity.billing_rules && typeof foodActivity.billing_rules === 'object') {
-        // Try to get rate from billing_rules for 'present' status
-        const presentRule = (foodActivity.billing_rules as any)['present'];
-        if (presentRule && presentRule.rate && presentRule.rate > 0) {
-          if (presentRule.type === 'fixed') {
-            foodTariff = presentRule.rate;
-          } else if (presentRule.type === 'subscription') {
-            // For subscription, divide by working days in month
-            const dateObj = new Date(date);
-            const year = dateObj.getFullYear();
-            const month = dateObj.getMonth();
-            const workingDays = getWorkingDaysInMonth(year, month);
-            foodTariff = workingDays > 0 ? presentRule.rate / workingDays : 0;
-          }
-        }
-      } else {
-        foodTariff = foodActivity.default_price || 0;
-      }
-    }
-  }
-
-  // 4. Calculate D (working days Mon-Fri in current month)
   const dateObj = new Date(date);
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth();
@@ -159,20 +85,103 @@ export function calculateDailyAccrual(
     return null;
   }
 
+  // 2. Find all base tariff enrollments (M - monthly tariff, may be multiple)
+  const baseEnrollments = enrollments.filter(
+    (enrollment) =>
+      enrollment.student_id === studentId &&
+      enrollment.is_active &&
+      baseTariffIds.includes(enrollment.activity_id)
+  );
+
+  if (baseEnrollments.length === 0) {
+    return null;
+  }
+
+  const baseTariffs: DailyAccrualResult['baseTariffs'] = [];
+  let baseTariffTotal = 0;
+
+  baseEnrollments.forEach((baseEnrollment) => {
+    const baseActivity = activities.get(baseEnrollment.activity_id);
+    if (!baseActivity) return;
+
+    let baseTariff = 0;
+    if (baseEnrollment.custom_price !== null && baseEnrollment.custom_price > 0) {
+      const discountMultiplier = 1 - ((baseEnrollment.discount_percent || 0) / 100);
+      baseTariff = baseEnrollment.custom_price * discountMultiplier;
+    } else if (baseActivity.billing_rules && typeof baseActivity.billing_rules === 'object') {
+      const presentRule = (baseActivity.billing_rules as any)['present'];
+      if (presentRule && presentRule.rate && presentRule.rate > 0) {
+        if (presentRule.type === 'subscription' || presentRule.type === 'fixed') {
+          baseTariff = presentRule.rate;
+        }
+      }
+    } else {
+      baseTariff = baseActivity.default_price || 0;
+    }
+
+    const dailyTariff = workingDaysInMonth > 0 ? baseTariff / workingDaysInMonth : 0;
+    baseTariffTotal += baseTariff;
+    baseTariffs.push({
+      activityId: baseEnrollment.activity_id,
+      monthlyTariff: baseTariff,
+      dailyTariff: Math.round(dailyTariff * 100) / 100,
+    });
+  });
+
+  // 3. Find all food tariff enrollments (F - daily food cost, may be multiple)
+  const foodEnrollments = enrollments.filter(
+    (enrollment) =>
+      enrollment.student_id === studentId &&
+      enrollment.is_active &&
+      foodTariffIds.includes(enrollment.activity_id)
+  );
+
+  const foodTariffs: DailyAccrualResult['foodTariffs'] = [];
+  let foodTariffTotal = 0;
+
+  foodEnrollments.forEach((foodEnrollment) => {
+    const foodActivity = activities.get(foodEnrollment.activity_id);
+    if (!foodActivity) return;
+
+    let foodTariff = 0;
+    if (foodEnrollment.custom_price !== null && foodEnrollment.custom_price > 0) {
+      const discountMultiplier = 1 - ((foodEnrollment.discount_percent || 0) / 100);
+      foodTariff = foodEnrollment.custom_price * discountMultiplier;
+    } else if (foodActivity.billing_rules && typeof foodActivity.billing_rules === 'object') {
+      const presentRule = (foodActivity.billing_rules as any)['present'];
+      if (presentRule && presentRule.rate && presentRule.rate > 0) {
+        if (presentRule.type === 'fixed') {
+          foodTariff = presentRule.rate;
+        } else if (presentRule.type === 'subscription') {
+          foodTariff = workingDaysInMonth > 0 ? presentRule.rate / workingDaysInMonth : 0;
+        }
+      }
+    } else {
+      foodTariff = foodActivity.default_price || 0;
+    }
+
+    foodTariffTotal += foodTariff;
+    foodTariffs.push({
+      activityId: foodEnrollment.activity_id,
+      dailyTariff: Math.round(foodTariff * 100) / 100,
+    });
+  });
+
   // 5. Calculate daily amount based on status
   let amount = 0;
+  const baseDailyTotal = baseTariffs.reduce((sum, item) => sum + item.dailyTariff, 0);
 
   if (status === 'present') {
     // If status "П" (present): result = M / D
-    amount = baseTariff / workingDaysInMonth;
+    amount = baseDailyTotal;
   } else if (status === 'absent') {
     // If status "О" (absent): result = (M / D) - F
-    amount = (baseTariff / workingDaysInMonth) - foodTariff;
+    amount = baseDailyTotal - foodTariffTotal;
   } else {
     // For other statuses (sick, vacation), we might need different logic
     // For now, return null or handle as absent
     // This can be extended based on business requirements
-    amount = (baseTariff / workingDaysInMonth) - foodTariff;
+    amount = baseDailyTotal - foodTariffTotal;
   }
 
   // Round to 2 decimal places
@@ -180,8 +189,10 @@ export function calculateDailyAccrual(
 
   return {
     amount,
-    baseTariff,
-    foodTariff,
+    baseTariff: baseTariffTotal,
+    foodTariff: foodTariffTotal,
+    baseTariffs,
+    foodTariffs,
     workingDaysInMonth,
     status,
   };
