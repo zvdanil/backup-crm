@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -967,10 +968,17 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                   {groupEnrollments.map((enrollment) => {
                     const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
                     
+                    const studentId = enrollment.students?.id || enrollment.student_id;
                     return (
                       <tr key={enrollment.id} className="border-t hover:bg-muted/20">
                         <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                          {enrollment.students.full_name}
+                          {studentId ? (
+                            <Link to={`/students/${studentId}`} className="text-primary hover:underline">
+                              {enrollment.students.full_name}
+                            </Link>
+                          ) : (
+                            enrollment.students.full_name
+                          )}
                           {(enrollment.custom_price || enrollment.discount_percent > 0) && (
                             <span className="ml-2 text-xs text-muted-foreground">
                               {enrollment.custom_price && `${enrollment.custom_price} ₴`}
@@ -1035,10 +1043,17 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
                   const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
                   
+                  const studentId = enrollment.students?.id || enrollment.student_id;
                   return (
                     <tr key={enrollment.id} className="border-t hover:bg-muted/20">
                       <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                        {enrollment.students.full_name}
+                        {studentId ? (
+                          <Link to={`/students/${studentId}`} className="text-primary hover:underline">
+                            {enrollment.students.full_name}
+                          </Link>
+                        ) : (
+                          enrollment.students.full_name
+                        )}
                         {(enrollment.custom_price || enrollment.discount_percent > 0) && (
                           <span className="ml-2 text-xs text-muted-foreground">
                             {enrollment.custom_price && `${enrollment.custom_price} ₴`}

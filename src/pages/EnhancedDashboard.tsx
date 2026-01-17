@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDashboardData, useCategorySummary } from '@/hooks/useDashboardData';
@@ -571,7 +572,16 @@ export default function EnhancedDashboard() {
                               <div className="flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.activityColor }} />
                                 <div className="min-w-0">
-                                  <p className="font-medium truncate">{student.studentName}</p>
+                                  {student.studentId ? (
+                                    <Link
+                                      to={`/students/${student.studentId}`}
+                                      className="font-medium truncate text-primary hover:underline"
+                                    >
+                                      {student.studentName}
+                                    </Link>
+                                  ) : (
+                                    <p className="font-medium truncate">{student.studentName}</p>
+                                  )}
                                   <p className="text-xs text-muted-foreground truncate">
                                     {activity.activityName}
                                   </p>

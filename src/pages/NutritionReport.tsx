@@ -40,6 +40,18 @@ interface NutritionRecord {
 
 type SortField = 'studentName' | 'activityName' | 'groupName';
 type SortOrder = 'asc' | 'desc';
+type NutritionType = 'half_day' | 'full_day' | 'other';
+
+const getNutritionType = (activityName: string): NutritionType => {
+  const name = activityName.toLowerCase();
+  if (name.includes('пів дня') || name.includes('пол дня') || name.includes('полдня')) {
+    return 'half_day';
+  }
+  if (name.includes('повний день') || name.includes('полный день') || name.includes('повний')) {
+    return 'full_day';
+  }
+  return 'other';
+};
 
 export default function NutritionReport() {
   const now = new Date();
@@ -345,6 +357,18 @@ export default function NutritionReport() {
 
   // Calculate totals
   const totalPortions = sortedRecords.length;
+  const nutritionTypeTotals = useMemo(() => {
+    return sortedRecords.reduce(
+      (acc, record) => {
+        const type = getNutritionType(record.activityName);
+        if (type === 'half_day') acc.halfDay += 1;
+        if (type === 'full_day') acc.fullDay += 1;
+        acc.total += 1;
+        return acc;
+      },
+      { halfDay: 0, fullDay: 0, total: 0 }
+    );
+  }, [sortedRecords]);
   const totalsByGroup = useMemo(() => {
     const totals: Record<string, number> = {};
     Object.entries(groupedRecords.grouped).forEach(([groupId, records]) => {
@@ -499,16 +523,6 @@ export default function NutritionReport() {
                       </TableRow>
                     ))}
 
-                    {/* Overall total */}
-                    {totalPortions > 0 && (
-                      <TableRow className="border-t-2 bg-muted/50 font-bold">
-                        <TableCell colSpan={3} className="text-right">
-                          Всього порцій:
-                        </TableCell>
-                        <TableCell>{totalPortions}</TableCell>
-                      </TableRow>
-                    )}
-
                     {totalPortions === 0 && (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
@@ -521,6 +535,42 @@ export default function NutritionReport() {
               </div>
             </CardContent>
           </Card>
+
+          {totalPortions > 0 && (
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle>Підсумки</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-md border p-4">
+                    <p className="font-medium mb-2">За типом харчування</p>
+                    <div className="text-sm text-muted-foreground">
+                      <div>Пів дня: {nutritionTypeTotals.halfDay}</div>
+                      <div>Повний день: {nutritionTypeTotals.fullDay}</div>
+                      <div className="font-semibold text-foreground">Всього: {nutritionTypeTotals.total}</div>
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <p className="font-medium mb-2">За групами</p>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      {Object.entries(totalsByGroup).map(([groupId, count]) => {
+                        const groupName = groupId === 'none'
+                          ? 'Без групи'
+                          : groups.find(g => g.id === groupId)?.name || 'Невідома група';
+                        return (
+                          <div key={`summary-${groupId}`}>
+                            {groupName}: {count}
+                          </div>
+                        );
+                      })}
+                      <div className="font-semibold text-foreground">Всього: {totalPortions}</div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </>

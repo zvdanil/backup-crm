@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -523,7 +524,13 @@ export default function GardenAttendanceJournal() {
                       {groupEnrollments.map((enrollment) => (
                         <tr key={enrollment.id} className="border-t hover:bg-muted/20">
                           <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                            {enrollment.students.full_name}
+                            {enrollment.student_id ? (
+                              <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
+                                {enrollment.students.full_name}
+                              </Link>
+                            ) : (
+                              enrollment.students.full_name
+                            )}
                           </td>
                           {days.map((day) => {
                             const dateStr = formatDateString(day);
@@ -565,7 +572,13 @@ export default function GardenAttendanceJournal() {
                     {groupedEnrollments.noGroupEnrollments.map((enrollment) => (
                       <tr key={enrollment.id} className="border-t hover:bg-muted/20">
                         <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                          {enrollment.students.full_name}
+                          {enrollment.student_id ? (
+                            <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
+                              {enrollment.students.full_name}
+                            </Link>
+                          ) : (
+                            enrollment.students.full_name
+                          )}
                         </td>
                         {days.map((day) => {
                           const dateStr = formatDateString(day);

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -434,7 +435,9 @@ export default function StaffExpenseJournal() {
                     {/* Staff row with all activities combined */}
                     <tr className="border-t hover:bg-muted/20">
                       <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                        {staffMember.full_name}
+                        <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                          {staffMember.full_name}
+                        </Link>
                         <div className="text-xs text-muted-foreground mt-1">
                           {staffMember.position}
                         </div>
