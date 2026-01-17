@@ -11,6 +11,7 @@ import { formatDateString } from '@/lib/attendance';
 import { isGardenAttendanceController } from '@/lib/gardenAttendance';
 import type { GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Table,
   TableBody,
@@ -59,6 +60,7 @@ export default function NutritionReport() {
   const [sortBy, setSortBy] = useState<SortField>('studentName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const printRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   const { data: activities = [] } = useActivities();
   const { data: groups = [] } = useGroups();
@@ -502,37 +504,63 @@ export default function NutritionReport() {
               <CardTitle>Список дітей</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>№</TableHead>
-                      <TableHead>ПІБ дитини</TableHead>
-                      <TableHead>Тип харчування</TableHead>
-                      <TableHead>Група</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {/* Display all records in sorted order (not grouped) */}
-                    {sortedRecords.map((record, index) => (
-                      <TableRow key={`${record.studentId}-${record.activityId}`}>
-                        <TableCell>{index + 1}</TableCell>
-                        <TableCell>{record.studentName}</TableCell>
-                        <TableCell>{record.activityName}</TableCell>
-                        <TableCell>{record.groupName || '—'}</TableCell>
-                      </TableRow>
-                    ))}
+              {isMobile ? (
+                <div className="space-y-3">
+                  {sortedRecords.map((record, index) => (
+                    <div key={`${record.studentId}-${record.activityId}`} className="rounded-lg border p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {index + 1}. {record.studentName}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">{record.groupName || '—'}</p>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">
+                          {record.activityName}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
 
-                    {totalPortions === 0 && (
+                  {totalPortions === 0 && (
+                    <div className="text-center text-muted-foreground py-8">
+                      Немає дітей з харчуванням на вибрану дату
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                          Немає дітей з харчуванням на вибрану дату
-                        </TableCell>
+                        <TableHead>№</TableHead>
+                        <TableHead>ПІБ дитини</TableHead>
+                        <TableHead>Тип харчування</TableHead>
+                        <TableHead>Група</TableHead>
                       </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {/* Display all records in sorted order (not grouped) */}
+                      {sortedRecords.map((record, index) => (
+                        <TableRow key={`${record.studentId}-${record.activityId}`}>
+                          <TableCell>{index + 1}</TableCell>
+                          <TableCell>{record.studentName}</TableCell>
+                          <TableCell>{record.activityName}</TableCell>
+                          <TableCell>{record.groupName || '—'}</TableCell>
+                        </TableRow>
+                      ))}
+
+                      {totalPortions === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                            Немає дітей з харчуванням на вибрану дату
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
 

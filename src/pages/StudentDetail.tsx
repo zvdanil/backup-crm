@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { useActivities } from '@/hooks/useActivities';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { Input } from '@/components/ui/input';
+import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Select,
   SelectContent,
@@ -60,6 +61,7 @@ export default function StudentDetail() {
   const [unenrollingId, setUnenrollingId] = useState<string | null>(null);
   const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
   const [balanceYear, setBalanceYear] = useState(now.getFullYear());
+  const isMobile = useIsMobile();
 
   const { data: student, isLoading: studentLoading } = useStudent(id!);
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
@@ -162,18 +164,18 @@ export default function StudentDetail() {
         }
       />
       
-      <div className="p-8">
-        <div className="grid gap-8 lg:grid-cols-3">
+      <div className="p-4 sm:p-8 overflow-x-hidden">
+        <div className="grid gap-4 sm:gap-8 lg:grid-cols-3">
           {/* Student Info */}
           <div className="lg:col-span-1">
-            <div className="rounded-xl bg-card border border-border p-6 shadow-soft">
+            <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft min-w-0 overflow-hidden">
               <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 min-w-0">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
                     <User className="h-8 w-8 text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">{student.full_name}</h2>
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-semibold break-words leading-tight">{student.full_name}</h2>
                     <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                       student.status === 'active' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
                     }`}>
@@ -192,9 +194,9 @@ export default function StudentDetail() {
 
               <div className="space-y-4 text-sm">
                 {student.birth_date && (
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span>Дата народження: {formatDate(student.birth_date)}</span>
+                    <span className="break-words">Дата народження: {formatDate(student.birth_date)}</span>
                   </div>
                 )}
                 
@@ -206,22 +208,22 @@ export default function StudentDetail() {
                 )}
                 
                 {student.guardian_phone && (
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{student.guardian_phone}</span>
+                    <span className="break-words">{student.guardian_phone}</span>
                   </div>
                 )}
                 
                 {student.guardian_email && (
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span>{student.guardian_email}</span>
+                    <span className="break-words">{student.guardian_email}</span>
                   </div>
                 )}
 
                 <div className="pt-4 border-t">
                   <Button 
-                    className="w-full" 
+                    className="w-full max-w-full whitespace-normal text-center leading-tight text-sm sm:text-base" 
                     onClick={() => setTransactionFormOpen(true)}
                   >
                     <Wallet className="h-4 w-4 mr-2" />
@@ -232,9 +234,9 @@ export default function StudentDetail() {
             </div>
 
             {/* Balance Summary */}
-            <div className="rounded-xl bg-card border border-border p-6 shadow-soft mt-6">
+            <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
               <h3 className="text-lg font-semibold mb-4">Баланс</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="rounded-lg border border-border p-4">
                   <p className="text-sm text-muted-foreground mb-2">За місяць</p>
                   <StudentBalanceDisplay 
@@ -251,7 +253,7 @@ export default function StudentDetail() {
             </div>
 
             {/* Payment History */}
-            <div className="rounded-xl bg-card border border-border p-6 shadow-soft mt-6">
+            <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
               <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
               <StudentPaymentHistory 
                 studentId={id!}
@@ -262,15 +264,15 @@ export default function StudentDetail() {
 
             {/* Balance by activities */}
             {activeEnrollments.length > 0 && (
-              <div className="rounded-xl bg-card border border-border p-6 shadow-soft mt-6">
-                <div className="flex items-center justify-between mb-4">
+              <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
                   <h3 className="text-lg font-semibold">Баланс по активностях</h3>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Select
                       value={balanceMonth.toString()}
                       onValueChange={(value) => setBalanceMonth(parseInt(value))}
                     >
-                      <SelectTrigger className="w-32">
+                      <SelectTrigger className="w-full sm:w-32">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -285,7 +287,7 @@ export default function StudentDetail() {
                       type="number"
                       value={balanceYear}
                       onChange={(e) => setBalanceYear(parseInt(e.target.value))}
-                      className="w-24"
+                      className="w-full sm:w-24"
                     />
                   </div>
                 </div>
@@ -313,7 +315,7 @@ export default function StudentDetail() {
           {/* Enrollments */}
           <div className="lg:col-span-2">
             <div className="rounded-xl bg-card border border-border shadow-soft">
-              <div className="flex items-center justify-between p-6 border-b">
+              <div className="flex items-center justify-between p-4 sm:p-6 border-b">
                 <h3 className="text-lg font-semibold">Активності</h3>
                 <Button size="sm" onClick={() => setEnrollFormOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
@@ -328,8 +330,58 @@ export default function StudentDetail() {
                     Записати на активність
                   </Button>
                 </div>
+              ) : isMobile ? (
+                <div className="space-y-3 p-4">
+                  {activeEnrollments.map((enrollment) => {
+                    if (!enrollment.activities) return null;
+                    const isFoodActivity = foodTariffIds.has(enrollment.activity_id);
+                    return (
+                      <div key={enrollment.id} className="rounded-lg border p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: enrollment.activities.color }}
+                              />
+                              <span className="text-sm font-medium break-words">
+                                {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {formatDate(enrollment.enrolled_at)}
+                            </div>
+                            <div className="mt-2 text-sm">
+                              <EnrollmentPriceDisplay enrollment={enrollment} />
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Знижка: {(enrollment.discount_percent ?? 0) > 0 ? `${enrollment.discount_percent}%` : '—'}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setEditingEnrollment(enrollment)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setUnenrollingId(enrollment.id)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               ) : (
-                <Table>
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[560px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Активність</TableHead>
@@ -390,7 +442,8 @@ export default function StudentDetail() {
                       );
                     })}
                   </TableBody>
-                </Table>
+                  </Table>
+                </div>
               )}
 
               {pastEnrollments.length > 0 && (

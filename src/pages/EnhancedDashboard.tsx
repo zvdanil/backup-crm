@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { formatCurrency, getDaysInMonth, formatShortDate, getWeekdayShort, isWee
 import { cn } from '@/lib/utils';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { useQueryClient } from '@tanstack/react-query';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -42,6 +43,8 @@ export default function EnhancedDashboard() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
+  const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
 
   const { data, isLoading, refetch: refetchDashboard, dataUpdatedAt } = useDashboardData(year, month);
@@ -49,6 +52,17 @@ export default function EnhancedDashboard() {
   const { data: allActivities = [] } = useActivities();
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const selectedDay = days[selectedDayIndex] || days[0];
+  const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
+
+  useEffect(() => {
+    const today = new Date();
+    if (year === today.getFullYear() && month === today.getMonth()) {
+      setSelectedDayIndex(Math.max(0, Math.min(today.getDate() - 1, days.length - 1)));
+    } else {
+      setSelectedDayIndex(0);
+    }
+  }, [year, month, days.length]);
 
   // Find controller activities and get their config
   const controllerActivitiesMap = useMemo(() => {
@@ -497,6 +511,31 @@ export default function EnhancedDashboard() {
           </div>
         </div>
 
+        {isMobile && (
+          <div className="rounded-xl bg-card border border-border p-4 shadow-soft flex items-center justify-between">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSelectedDayIndex((prev) => Math.max(0, prev - 1))}
+              disabled={selectedDayIndex <= 0}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <div className="text-center">
+              <p className="font-semibold">{selectedDay ? formatDateString(selectedDay) : ''}</p>
+              <p className="text-sm text-muted-foreground">{selectedDay ? getWeekdayShort(selectedDay) : ''}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSelectedDayIndex((prev) => Math.min(days.length - 1, prev + 1))}
+              disabled={selectedDayIndex >= days.length - 1}
+            >
+              <ChevronRight className="h-5 w-5" />
+            </Button>
+          </div>
+        )}
+
         {/* Групування по дітях */}
         {CATEGORY_ORDER.map((category) => {
           const categoryStudents = studentsGrouped.filter(student =>
@@ -508,6 +547,87 @@ export default function EnhancedDashboard() {
           if (!hasData) return null;
 
           const styles = CATEGORY_STYLES[category];
+
+          if (isMobile) {
+            return (
+              <div key={category} className="rounded-xl bg-card border border-border shadow-soft overflow-hidden">
+                <div className={cn("px-4 py-3 border-b flex items-center justify-between", styles.bg, styles.border)}>
+                  <h3 className={cn("font-semibold", styles.text)}>{ACTIVITY_CATEGORY_LABELS[category]}</h3>
+                  <span className={cn("text-base font-bold", styles.text)}>{formatCurrency(summary?.[category] || 0)}</span>
+                </div>
+                <div className="divide-y">
+                  {categoryStudents.map((student) =>
+                    student.activities.map((activity) => {
+                      const enrollment = data?.enrollments.find(e => e.id === activity.enrollmentId);
+                      if (!enrollment) return null;
+
+                      const isBaseOrFoodTariff = baseTariffIds.has(activity.activityId) || foodTariffIds.has(activity.activityId);
+                      let activityData: Record<string, number> = {};
+                      if (isBaseOrFoodTariff) {
+                        const transactionKey = `${student.studentId}-${activity.activityId}`;
+                        activityData = financeTransactionsMap[transactionKey] || {};
+                      } else {
+                        activityData = attendanceMap[enrollment.id] || {};
+                      }
+
+                      const dayAmount = activityData[selectedDateStr] || 0;
+                      const rowTotal = Object.values(activityData).reduce((sum, val) => sum + val, 0);
+                      const isFoodActivity = foodTariffIds.has(activity.activityId);
+
+                      return (
+                        <div key={activity.enrollmentId} className="p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.activityColor }} />
+                                {student.studentId ? (
+                                  <Link to={`/students/${student.studentId}`} className="font-medium text-primary hover:underline truncate">
+                                    {student.studentName}
+                                  </Link>
+                                ) : (
+                                  <span className="font-medium truncate">{student.studentName}</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {isFoodActivity ? `+ ${activity.activityName}` : activity.activityName}
+                              </p>
+                            </div>
+                            <div className="text-right text-sm">
+                              <div className={cn(dayAmount > 0 ? "text-success" : dayAmount < 0 ? "text-destructive" : "text-muted-foreground")}>
+                                {dayAmount !== 0 ? formatCurrency(dayAmount) : '—'}
+                              </div>
+                              <div className={cn("text-xs", rowTotal > 0 ? "text-success" : rowTotal < 0 ? "text-destructive" : "text-muted-foreground")}>
+                                Разом: {rowTotal !== 0 ? formatCurrency(rowTotal) : '—'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {category === 'salary' && categoryStudents.length === 0 && data?.staffExpenses && data.staffExpenses.length > 0 && (
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">Витрати на зарплату</p>
+                          <p className="text-xs text-muted-foreground">З журналу витрат</p>
+                        </div>
+                        <div className="text-right text-sm">
+                          <div className="text-destructive">
+                            {dailyTotals.salary[selectedDateStr] ? formatCurrency(dailyTotals.salary[selectedDateStr]) : '—'}
+                          </div>
+                          <div className="text-xs text-destructive">
+                            Разом: {formatCurrency(summary?.salary || 0)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
 
           return (
             <div key={category} className="rounded-xl bg-card border border-border shadow-soft overflow-hidden">

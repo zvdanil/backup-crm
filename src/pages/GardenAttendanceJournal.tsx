@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import {
 import type { AttendanceStatus } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -35,6 +36,8 @@ export default function GardenAttendanceJournal() {
   const [month, setMonth] = useState(now.getMonth());
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
   const [controllerActivityId, setControllerActivityId] = useState<string>('');
+  const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
+  const isMobile = useIsMobile();
 
   const queryClient = useQueryClient();
   const { data: activities = [] } = useActivities();
@@ -86,6 +89,17 @@ export default function GardenAttendanceJournal() {
   const deleteTransaction = useDeleteFinanceTransaction();
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const selectedDay = days[selectedDayIndex] || days[0];
+  const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
+
+  useEffect(() => {
+    const today = new Date();
+    if (year === today.getFullYear() && month === today.getMonth()) {
+      setSelectedDayIndex(Math.max(0, Math.min(today.getDate() - 1, days.length - 1)));
+    } else {
+      setSelectedDayIndex(0);
+    }
+  }, [year, month, days.length]);
 
   // Filter enrollments by groups
   const filteredEnrollments = useMemo(() => {
@@ -416,7 +430,7 @@ export default function GardenAttendanceJournal() {
         description={`${controllerActivity.name} - ${MONTHS[month]} ${year}`}
       />
       
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         {/* Month navigation */}
         <div className="flex items-center justify-between mb-6">
           <Button variant="outline" size="icon" onClick={handlePrevMonth}>
@@ -476,11 +490,131 @@ export default function GardenAttendanceJournal() {
         </div>
 
         {/* Grid */}
-        {filteredEnrollments.length === 0 ? (
+      {isMobile && (
+        <div className="mb-4 rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSelectedDayIndex((prev) => Math.max(0, prev - 1))}
+              disabled={selectedDayIndex <= 0}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="text-center">
+              <p className="text-sm font-semibold">{selectedDay ? formatDateString(selectedDay) : ''}</p>
+              <p className="text-xs text-muted-foreground">{selectedDay ? getWeekdayShort(selectedDay) : ''}</p>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSelectedDayIndex((prev) => Math.min(days.length - 1, prev + 1))}
+              disabled={selectedDayIndex >= days.length - 1}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {filteredEnrollments.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
             <p>Немає дітей за обраними фільтрами</p>
           </div>
-        ) : (
+      ) : isMobile ? (
+        <div className="space-y-4">
+          {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
+            const group = groups.find(g => g.id === groupId);
+            return (
+              <div key={groupId} className="rounded-xl border bg-card">
+                <div className="border-b px-4 py-2 text-sm font-semibold">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: group?.color || '#gray' }}
+                    />
+                    Група: {group?.name || 'Невідома група'}
+                  </div>
+                </div>
+                <div className="divide-y">
+                  {groupEnrollments.map((enrollment) => {
+                    const key = `${enrollment.id}-${selectedDateStr}`;
+                    const attendance = attendanceMap.get(key);
+                    return (
+                      <div key={enrollment.id} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            {enrollment.student_id ? (
+                              <Link to={`/students/${enrollment.student_id}`} className="font-medium text-primary hover:underline">
+                                {enrollment.students.full_name}
+                              </Link>
+                            ) : (
+                              <p className="font-medium">{enrollment.students.full_name}</p>
+                            )}
+                          </div>
+                          <GardenAttendanceCell
+                            status={attendance?.status || null}
+                            amount={attendance?.amount || null}
+                            value={attendance?.value || null}
+                            isWeekend={selectedDay ? isWeekend(selectedDay) : false}
+                            onChange={(status, value) => handleStatusChange(
+                              enrollment.id,
+                              enrollment.student_id,
+                              selectedDateStr,
+                              status,
+                              value
+                            )}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {groupedEnrollments.noGroupEnrollments.length > 0 && (
+            <div className="rounded-xl border bg-card">
+              <div className="border-b px-4 py-2 text-sm font-semibold">Без групи</div>
+              <div className="divide-y">
+                {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
+                  const key = `${enrollment.id}-${selectedDateStr}`;
+                  const attendance = attendanceMap.get(key);
+                  return (
+                    <div key={enrollment.id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          {enrollment.student_id ? (
+                            <Link to={`/students/${enrollment.student_id}`} className="font-medium text-primary hover:underline">
+                              {enrollment.students.full_name}
+                            </Link>
+                          ) : (
+                            <p className="font-medium">{enrollment.students.full_name}</p>
+                          )}
+                        </div>
+                        <GardenAttendanceCell
+                          status={attendance?.status || null}
+                          amount={attendance?.amount || null}
+                          value={attendance?.value || null}
+                          isWeekend={selectedDay ? isWeekend(selectedDay) : false}
+                          onChange={(status, value) => handleStatusChange(
+                            enrollment.id,
+                            enrollment.student_id,
+                            selectedDateStr,
+                            status,
+                            value
+                          )}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
           <div className="overflow-x-auto border rounded-xl">
             <table className="w-full border-collapse">
               <thead>

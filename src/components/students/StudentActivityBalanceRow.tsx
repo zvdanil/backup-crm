@@ -95,17 +95,17 @@ export function StudentActivityBalanceRow({
   const isPositive = isFoodActivity ? (refunds > 0 ? true : balance >= 0) : (balance >= 0);
 
   return (
-    <div className="flex items-center justify-between p-3 border rounded-lg">
-      <div className="flex items-center gap-2">
+    <div className="flex items-center justify-between gap-3 p-3 border rounded-lg">
+      <div className="flex min-w-0 items-center gap-2">
         <span 
           className="w-3 h-3 rounded-full" 
           style={{ backgroundColor: enrollment.activities.color }}
         />
-        <span className="text-sm font-medium">
+        <span className="text-sm font-medium break-words">
           {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
         </span>
       </div>
-      <div className="text-right">
+      <div className="text-right shrink-0">
         <div className={cn(
           "text-sm font-semibold",
           isPositive ? "text-success" : "text-destructive"

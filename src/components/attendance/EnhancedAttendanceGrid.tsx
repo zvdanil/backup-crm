@@ -25,6 +25,7 @@ import {
 import type { AttendanceStatus } from '@/lib/attendance';
 import { useActivityPriceHistory, getBillingRulesForDate } from '@/hooks/useActivities';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -40,6 +41,8 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
+  const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
+  const isMobile = useIsMobile();
 
   const { data: activity } = useActivity(activityId);
   const { data: priceHistory } = useActivityPriceHistory(activityId);
@@ -60,6 +63,17 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const deleteStaffJournalEntry = useDeleteStaffJournalEntry();
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const selectedDay = days[selectedDayIndex] || days[0];
+  const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
+
+  useEffect(() => {
+    const today = new Date();
+    if (year === today.getFullYear() && month === today.getMonth()) {
+      setSelectedDayIndex(Math.max(0, Math.min(today.getDate() - 1, days.length - 1)));
+    } else {
+      setSelectedDayIndex(0);
+    }
+  }, [year, month, days.length]);
 
   // Фільтрація записів по групах
   const filteredEnrollments = useMemo(() => {
@@ -843,8 +857,168 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       </div>
 
       {/* Grid */}
-      <div className="overflow-x-auto border rounded-xl">
-        <table className="w-full border-collapse">
+      {isMobile && (
+        <div className="mb-4 rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSelectedDayIndex((prev) => Math.max(0, prev - 1))}
+              disabled={selectedDayIndex <= 0}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="text-center">
+              <p className="text-sm font-semibold">{selectedDay ? formatDateString(selectedDay) : ''}</p>
+              <p className="text-xs text-muted-foreground">{selectedDay ? getWeekdayShort(selectedDay) : ''}</p>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSelectedDayIndex((prev) => Math.min(days.length - 1, prev + 1))}
+              disabled={selectedDayIndex >= days.length - 1}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+            <div>П: {dailyTotals[selectedDateStr]?.present || 0}</div>
+            <div>Х: {dailyTotals[selectedDateStr]?.sick || 0}</div>
+            <div>Н: {dailyTotals[selectedDateStr]?.absent || 0}</div>
+            <div>Σ: {dailyTotals[selectedDateStr]?.values || 0}</div>
+          </div>
+          <div className="mt-2 text-sm font-medium">
+            Оплата педагогу: {teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}
+          </div>
+        </div>
+      )}
+
+      {isMobile ? (
+        <div className="space-y-4">
+          {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
+            const group = groups.find(g => g.id === groupId);
+            return (
+              <div key={groupId} className="rounded-xl border bg-card">
+                <div className="border-b px-4 py-2 text-sm font-semibold">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: group?.color || '#gray' }}
+                    />
+                    Група: {group?.name || 'Невідома група'}
+                  </div>
+                </div>
+                <div className="divide-y">
+                  {groupEnrollments.map((enrollment) => {
+                    const studentId = enrollment.students?.id || enrollment.student_id;
+                    const key = `${enrollment.id}-${selectedDateStr}`;
+                    const attendance = attendanceMap.get(key);
+                    const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
+                    return (
+                      <div key={enrollment.id} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            {studentId ? (
+                              <Link to={`/students/${studentId}`} className="font-medium text-primary hover:underline">
+                                {enrollment.students.full_name}
+                              </Link>
+                            ) : (
+                              <p className="font-medium">{enrollment.students.full_name}</p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                              П: {totals.present} · Х: {totals.sick} · Н: {totals.absent} · Σ: {totals.values}
+                            </p>
+                          </div>
+                          <EnhancedAttendanceCell
+                            status={attendance?.status || null}
+                            amount={attendance?.amount || 0}
+                            value={attendance?.value || null}
+                            manualValueEdit={attendance?.manual_value_edit || false}
+                            isWeekend={selectedDay ? isWeekend(selectedDay) : false}
+                            onChange={(status, value) => handleStatusChange(
+                              enrollment.id,
+                              selectedDateStr,
+                              status,
+                              value,
+                              0,
+                              enrollment.custom_price,
+                              enrollment.discount_percent,
+                              enrollment
+                            )}
+                            activityPrice={0}
+                            customPrice={enrollment.custom_price}
+                            discountPercent={enrollment.discount_percent}
+                            date={selectedDateStr}
+                            activity={activity}
+                            priceHistory={priceHistory}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {groupedEnrollments.noGroupEnrollments.length > 0 && (
+            <div className="rounded-xl border bg-card">
+              <div className="border-b px-4 py-2 text-sm font-semibold">Без групи</div>
+              <div className="divide-y">
+                {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
+                  const studentId = enrollment.students?.id || enrollment.student_id;
+                  const key = `${enrollment.id}-${selectedDateStr}`;
+                  const attendance = attendanceMap.get(key);
+                  const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
+                  return (
+                    <div key={enrollment.id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          {studentId ? (
+                            <Link to={`/students/${studentId}`} className="font-medium text-primary hover:underline">
+                              {enrollment.students.full_name}
+                            </Link>
+                          ) : (
+                            <p className="font-medium">{enrollment.students.full_name}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            П: {totals.present} · Х: {totals.sick} · Н: {totals.absent} · Σ: {totals.values}
+                          </p>
+                        </div>
+                        <EnhancedAttendanceCell
+                          status={attendance?.status || null}
+                          amount={attendance?.amount || 0}
+                          value={attendance?.value || null}
+                          manualValueEdit={attendance?.manual_value_edit || false}
+                          isWeekend={selectedDay ? isWeekend(selectedDay) : false}
+                          onChange={(status, value) => handleStatusChange(
+                            enrollment.id,
+                            selectedDateStr,
+                            status,
+                            value,
+                            0,
+                            enrollment.custom_price,
+                            enrollment.discount_percent,
+                            enrollment
+                          )}
+                          activityPrice={0}
+                          customPrice={enrollment.custom_price}
+                          discountPercent={enrollment.discount_percent}
+                          date={selectedDateStr}
+                          activity={activity}
+                          priceHistory={priceHistory}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto border rounded-xl">
+          <table className="w-full border-collapse">
           <thead>
             {/* Рядки ітогів за день - тепер над заголовком */}
             <tr className="bg-muted/30 border-t-2 font-semibold">
@@ -1108,6 +1282,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
