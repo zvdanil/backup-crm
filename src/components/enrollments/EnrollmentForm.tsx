@@ -77,7 +77,9 @@ export function EnrollmentForm({
   excludeActivityIds = []
 }: EnrollmentFormProps) {
   const { data: activities = [] } = useActivities();
-  const availableActivities = activities.filter(a => a.is_active && !excludeActivityIds.includes(a.id));
+  const availableActivities = activities.filter(
+    a => a.is_active && a.show_in_children && !excludeActivityIds.includes(a.id)
+  );
   
   const [selectedActivities, setSelectedActivities] = useState<SelectedActivity[]>([]);
 

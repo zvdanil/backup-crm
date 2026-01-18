@@ -44,6 +44,7 @@ export interface Activity {
   description: string | null;
   color: string;
   is_active: boolean;
+  show_in_children: boolean;
   category: ActivityCategory;
   fixed_teacher_rate: number | null;
   payment_mode: string | null;

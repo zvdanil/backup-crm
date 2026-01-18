@@ -44,6 +44,7 @@ const activitySchema = z.object({
   fixed_teacher_rate: z.string().optional(),
   payment_mode: z.string().optional(),
   auto_journal: z.boolean().optional(),
+  show_in_children: z.boolean().optional(),
   billing_rules: z.any().optional(),
   effective_from: z.string().optional(),
   config: z.any().optional(),
@@ -81,6 +82,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       fixed_teacher_rate: '',
       payment_mode: 'default',
       auto_journal: false,
+      show_in_children: true,
       billing_rules: null,
       effective_from: new Date().toISOString().split('T')[0],
     },
@@ -103,6 +105,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
         fixed_teacher_rate: initialData?.fixed_teacher_rate?.toString() || '',
         payment_mode: initialData?.payment_mode || 'default',
         auto_journal: initialData?.auto_journal || false,
+        show_in_children: initialData?.show_in_children ?? true,
         billing_rules: initialData?.billing_rules || null,
         effective_from: defaultEffectiveFrom,
         config: initialConfig,
@@ -122,6 +125,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       fixed_teacher_rate: data.fixed_teacher_rate ? parseFloat(data.fixed_teacher_rate) : null,
       payment_mode: data.payment_mode || null,
       auto_journal: data.auto_journal || false,
+      show_in_children: data.show_in_children ?? true,
       billing_rules: billingRules,
       config: Object.keys(config).length > 0 ? config : null,
       // default_price та payment_type не передаються - тепер використовується billing_rules
@@ -244,6 +248,20 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
               id="auto_journal"
               checked={watch('auto_journal') || false}
               onCheckedChange={(checked) => setValue('auto_journal', checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between space-x-2">
+            <div className="space-y-0.5">
+              <Label htmlFor="show_in_children">Відображати у дітей</Label>
+              <p className="text-xs text-muted-foreground">
+                Показувати активність у картці вибору активностей та таблиці дітей
+              </p>
+            </div>
+            <Switch
+              id="show_in_children"
+              checked={watch('show_in_children') ?? true}
+              onCheckedChange={(checked) => setValue('show_in_children', checked)}
             />
           </div>
 

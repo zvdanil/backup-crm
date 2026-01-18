@@ -59,7 +59,7 @@ export default function Students() {
   );
 
   const activeActivities = useMemo(
-    () => activities.filter(activity => activity.is_active),
+    () => activities.filter(activity => activity.is_active && activity.show_in_children),
     [activities]
   );
   const tableGridTemplate = useMemo(
@@ -253,7 +253,12 @@ export default function Students() {
                                 className="h-2 w-2 rounded-full"
                                 style={{ backgroundColor: activity.color }}
                               />
-                              <span className="truncate">{activity.name}</span>
+                              <span
+                                className="whitespace-normal break-words leading-snug"
+                                title={activity.name}
+                              >
+                                {activity.name}
+                              </span>
                             </div>
                           </div>
                         ))}

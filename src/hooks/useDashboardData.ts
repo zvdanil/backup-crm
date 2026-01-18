@@ -85,8 +85,7 @@ export function useDashboardData(year: number, month: number) {
             is_active,
             students (id, full_name),
             activities (id, name, default_price, color, category)
-          `)
-          .eq('is_active', true),
+          `),
         supabase
           .from('attendance')
           .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit')

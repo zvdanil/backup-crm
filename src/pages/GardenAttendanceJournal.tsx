@@ -60,8 +60,7 @@ export default function GardenAttendanceJournal() {
 
   // Get enrollments for controller activity
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
-    activityId: controllerActivityId, 
-    activeOnly: true 
+    activityId: controllerActivityId
   });
 
   // Get attendance data for the month
@@ -101,20 +100,35 @@ export default function GardenAttendanceJournal() {
     }
   }, [year, month, days.length]);
 
+  const enrollmentsWithCharges = useMemo(() => {
+    const set = new Set<string>();
+    attendanceData.forEach((entry: any) => {
+      const amount = entry.value ?? entry.charged_amount ?? 0;
+      if (amount > 0) {
+        set.add(entry.enrollment_id);
+      }
+    });
+    return set;
+  }, [attendanceData]);
+
+  const visibleEnrollments = useMemo(() => (
+    enrollments.filter(enrollment => enrollment.is_active || enrollmentsWithCharges.has(enrollment.id))
+  ), [enrollments, enrollmentsWithCharges]);
+
   // Filter enrollments by groups
   const filteredEnrollments = useMemo(() => {
     if (selectedGroups.has('all')) {
-      return enrollments;
+      return visibleEnrollments;
     }
     
-    return enrollments.filter(enrollment => {
+    return visibleEnrollments.filter(enrollment => {
       const groupId = enrollment.students?.group_id;
       if (!groupId) {
         return selectedGroups.has('none');
       }
       return selectedGroups.has(groupId);
     });
-  }, [enrollments, selectedGroups]);
+  }, [selectedGroups, visibleEnrollments]);
 
   // Group and sort enrollments
   const groupedEnrollments = useMemo(() => {
@@ -150,13 +164,13 @@ export default function GardenAttendanceJournal() {
   // Get represented groups
   const representedGroups = useMemo(() => {
     const groupIds = new Set<string>();
-    enrollments.forEach(enrollment => {
+    visibleEnrollments.forEach(enrollment => {
       if (enrollment.students?.group_id) {
         groupIds.add(enrollment.students.group_id);
       }
     });
     return groups.filter(g => groupIds.has(g.id));
-  }, [enrollments, groups]);
+  }, [visibleEnrollments, groups]);
 
   // Create attendance map
   const attendanceMap = useMemo(() => {
@@ -541,7 +555,10 @@ export default function GardenAttendanceJournal() {
                     const key = `${enrollment.id}-${selectedDateStr}`;
                     const attendance = attendanceMap.get(key);
                     return (
-                      <div key={enrollment.id} className="p-4">
+                      <div
+                        key={enrollment.id}
+                        className={cn('p-4', !enrollment.is_active && 'bg-muted/40 text-muted-foreground')}
+                      >
                         <div className="flex items-center justify-between">
                           <div>
                             {enrollment.student_id ? (
@@ -550,6 +567,11 @@ export default function GardenAttendanceJournal() {
                               </Link>
                             ) : (
                               <p className="font-medium">{enrollment.students.full_name}</p>
+                            )}
+                            {!enrollment.is_active && (
+                              <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                Архів
+                              </span>
                             )}
                           </div>
                           <GardenAttendanceCell
@@ -582,7 +604,10 @@ export default function GardenAttendanceJournal() {
                   const key = `${enrollment.id}-${selectedDateStr}`;
                   const attendance = attendanceMap.get(key);
                   return (
-                    <div key={enrollment.id} className="p-4">
+                    <div
+                      key={enrollment.id}
+                      className={cn('p-4', !enrollment.is_active && 'bg-muted/40 text-muted-foreground')}
+                    >
                       <div className="flex items-center justify-between">
                         <div>
                           {enrollment.student_id ? (
@@ -591,6 +616,11 @@ export default function GardenAttendanceJournal() {
                             </Link>
                           ) : (
                             <p className="font-medium">{enrollment.students.full_name}</p>
+                          )}
+                          {!enrollment.is_active && (
+                            <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                              Архів
+                            </span>
                           )}
                         </div>
                         <GardenAttendanceCell
@@ -658,15 +688,28 @@ export default function GardenAttendanceJournal() {
                       </tr>
                       {/* Children in group */}
                       {groupEnrollments.map((enrollment) => (
-                        <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                        <tr
+                          key={enrollment.id}
+                          className={cn(
+                            'border-t hover:bg-muted/20',
+                            !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
+                          )}
+                        >
                           <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                            {enrollment.student_id ? (
-                              <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
-                                {enrollment.students.full_name}
-                              </Link>
-                            ) : (
-                              enrollment.students.full_name
-                            )}
+                            <div className="flex items-center gap-2">
+                              {enrollment.student_id ? (
+                                <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
+                                  {enrollment.students.full_name}
+                                </Link>
+                              ) : (
+                                <span>{enrollment.students.full_name}</span>
+                              )}
+                              {!enrollment.is_active && (
+                                <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                  Архів
+                                </span>
+                              )}
+                            </div>
                           </td>
                           {days.map((day) => {
                             const dateStr = formatDateString(day);
@@ -712,15 +755,28 @@ export default function GardenAttendanceJournal() {
                       </td>
                     </tr>
                     {groupedEnrollments.noGroupEnrollments.map((enrollment) => (
-                      <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                      <tr
+                        key={enrollment.id}
+                        className={cn(
+                          'border-t hover:bg-muted/20',
+                          !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
+                        )}
+                      >
                         <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                          {enrollment.student_id ? (
-                            <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
-                              {enrollment.students.full_name}
-                            </Link>
-                          ) : (
-                            enrollment.students.full_name
-                          )}
+                          <div className="flex items-center gap-2">
+                            {enrollment.student_id ? (
+                              <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
+                                {enrollment.students.full_name}
+                              </Link>
+                            ) : (
+                              <span>{enrollment.students.full_name}</span>
+                            )}
+                            {!enrollment.is_active && (
+                              <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                Архів
+                              </span>
+                            )}
+                          </div>
                         </td>
                         {days.map((day) => {
                           const dateStr = formatDateString(day);

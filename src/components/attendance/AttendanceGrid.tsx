@@ -5,6 +5,7 @@ import { AttendanceCell } from './AttendanceCell';
 import { useEnrollments } from '@/hooks/useEnrollments';
 import { useAttendance, useSetAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
 import { getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, calculateChargedAmount, formatDateString } from '@/lib/attendance';
+import { cn } from '@/lib/utils';
 import type { AttendanceStatus } from '@/lib/attendance';
 
 const MONTHS = [
@@ -22,8 +23,7 @@ export function AttendanceGrid({ activityId }: AttendanceGridProps) {
   const [month, setMonth] = useState(now.getMonth());
 
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
-    activityId, 
-    activeOnly: true 
+    activityId
   });
   const { data: attendanceData = [], isLoading: attendanceLoading } = useAttendance({ 
     activityId, 
@@ -43,6 +43,21 @@ export function AttendanceGrid({ activityId }: AttendanceGridProps) {
     });
     return map;
   }, [attendanceData]);
+
+  const enrollmentsWithCharges = useMemo(() => {
+    const set = new Set<string>();
+    attendanceData.forEach((entry: any) => {
+      const amount = entry.value ?? entry.charged_amount ?? 0;
+      if (amount > 0) {
+        set.add(entry.enrollment_id);
+      }
+    });
+    return set;
+  }, [attendanceData]);
+
+  const visibleEnrollments = useMemo(() => (
+    enrollments.filter(enrollment => enrollment.is_active || enrollmentsWithCharges.has(enrollment.id))
+  ), [enrollments, enrollmentsWithCharges]);
 
   const handlePrevMonth = () => {
     if (month === 0) {
@@ -146,10 +161,23 @@ export function AttendanceGrid({ activityId }: AttendanceGridProps) {
             </tr>
           </thead>
           <tbody>
-            {enrollments.map((enrollment) => (
-              <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+            {visibleEnrollments.map((enrollment) => (
+              <tr
+                key={enrollment.id}
+                className={cn(
+                  'border-t hover:bg-muted/20',
+                  !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
+                )}
+              >
                 <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                  {enrollment.students.full_name}
+                  <div className="flex items-center gap-2">
+                    <span>{enrollment.students.full_name}</span>
+                    {!enrollment.is_active && (
+                      <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                        Архів
+                      </span>
+                    )}
+                  </div>
                   {(enrollment.custom_price || enrollment.discount_percent > 0) && (
                     <span className="ml-2 text-xs text-muted-foreground">
                       {enrollment.custom_price && `${enrollment.custom_price} ₴`}

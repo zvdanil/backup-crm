@@ -93,6 +93,41 @@ export default function EnhancedDashboard() {
     return ids;
   }, [controllerActivitiesMap]);
 
+  const enrollmentsWithAttendanceCharges = useMemo(() => {
+    const set = new Set<string>();
+    data?.attendance?.forEach((att) => {
+      const amount = att.value !== null && att.value !== undefined ? att.value : (att.charged_amount || 0);
+      if (amount !== 0) {
+        set.add(att.enrollment_id);
+      }
+    });
+    return set;
+  }, [data?.attendance, dataUpdatedAt]);
+
+  const enrollmentsWithTransactions = useMemo(() => {
+    const set = new Set<string>();
+    data?.financeTransactions?.forEach((trans) => {
+      if (!trans.student_id || !trans.activity_id) return;
+      if ((trans.amount || 0) !== 0) {
+        set.add(`${trans.student_id}:${trans.activity_id}`);
+      }
+    });
+    return set;
+  }, [data?.financeTransactions, dataUpdatedAt]);
+
+  const shouldShowEnrollment = useMemo(
+    () => (enrollment: { id: string; is_active: boolean; student_id: string; activity_id: string }) =>
+      enrollment.is_active ||
+      enrollmentsWithAttendanceCharges.has(enrollment.id) ||
+      enrollmentsWithTransactions.has(`${enrollment.student_id}:${enrollment.activity_id}`),
+    [enrollmentsWithAttendanceCharges, enrollmentsWithTransactions]
+  );
+
+  const visibleEnrollments = useMemo(
+    () => (data?.enrollments || []).filter((enrollment) => shouldShowEnrollment(enrollment)),
+    [data?.enrollments, shouldShowEnrollment]
+  );
+
   // Групування по дітях (исключаем управляющие активности, но добавляем базовые тарифы и питание)
   const studentsGrouped = useMemo(() => {
     if (!data?.enrollments) return [] as StudentGroup[];
@@ -101,7 +136,7 @@ export default function EnhancedDashboard() {
     const processedEnrollmentIds = new Set<string>();
 
     // Сначала обрабатываем обычные enrollments (исключаем управляющие активности)
-    data.enrollments.forEach((enrollment) => {
+    visibleEnrollments.forEach((enrollment) => {
       const activity = allActivities.find(a => a.id === enrollment.activity_id);
       if (activity && isGardenAttendanceController(activity)) {
         return; // Пропускаем управляющие активности
@@ -146,11 +181,10 @@ export default function EnhancedDashboard() {
           const tariffEnrollment = data.enrollments.find(
             e => e.student_id === studentId && 
                  e.activity_id === tariffActivityId && 
-                 e.is_active &&
                  !processedEnrollmentIds.has(e.id)
           );
 
-          if (tariffEnrollment) {
+          if (tariffEnrollment && shouldShowEnrollment(tariffEnrollment)) {
             processedEnrollmentIds.add(tariffEnrollment.id);
             
             if (!studentMap.has(studentId)) {
@@ -174,7 +208,7 @@ export default function EnhancedDashboard() {
     });
 
     return Array.from(studentMap.values());
-  }, [data?.enrollments, allActivities, dataUpdatedAt]);
+  }, [data?.enrollments, allActivities, dataUpdatedAt, visibleEnrollments, shouldShowEnrollment]);
 
   // Map attendance by enrollment_id + date (for regular journals)
   const attendanceMap = useMemo(() => {
@@ -623,7 +657,10 @@ export default function EnhancedDashboard() {
                       const isFoodActivity = foodTariffIds.has(activity.activityId);
 
                       return (
-                        <div key={activity.enrollmentId} className="p-4">
+                        <div
+                          key={activity.enrollmentId}
+                          className={cn('p-4', !enrollment.is_active && 'bg-muted/40 text-muted-foreground')}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -634,6 +671,11 @@ export default function EnhancedDashboard() {
                                   </Link>
                                 ) : (
                                   <span className="font-medium truncate">{student.studentName}</span>
+                                )}
+                                {!enrollment.is_active && (
+                                  <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                    Архів
+                                  </span>
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground truncate">
@@ -727,7 +769,10 @@ export default function EnhancedDashboard() {
                         
                         const isStripedGroup = studentIndex % 2 === 1;
                         const isLastInGroup = activityIndex === student.activities.length - 1;
-                        const rowBgClass = isStripedGroup ? 'bg-amber-50/60' : 'bg-card';
+                        const rowBgClass = cn(
+                          isStripedGroup ? 'bg-amber-50/60' : 'bg-card',
+                          !enrollment.is_active && 'bg-muted/40'
+                        );
 
                         return (
                           <tr
@@ -735,7 +780,8 @@ export default function EnhancedDashboard() {
                             className={cn(
                               "border-b hover:bg-muted/20",
                               isStripedGroup && "bg-amber-50/60",
-                              isLastInGroup && "border-b-2"
+                              isLastInGroup && "border-b-2",
+                              !enrollment.is_active && "bg-muted/40 text-muted-foreground"
                             )}
                           >
                             <td className={cn("py-2 px-4 sticky left-0", rowBgClass)}>
@@ -751,6 +797,11 @@ export default function EnhancedDashboard() {
                                     </Link>
                                   ) : (
                                     <p className="font-medium truncate">{student.studentName}</p>
+                                  )}
+                                  {!enrollment.is_active && (
+                                    <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                      Архів
+                                    </span>
                                   )}
                                   <p className="text-xs text-muted-foreground truncate">
                                     {activity.activityName}

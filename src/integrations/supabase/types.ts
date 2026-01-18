@@ -25,6 +25,7 @@ export type Database = {
           is_active: boolean | null
           name: string
           payment_type: Database["public"]["Enums"]["payment_type"] | null
+          show_in_children: boolean | null
           teacher_payment_percent: number | null
           updated_at: string | null
         }
@@ -38,6 +39,7 @@ export type Database = {
           is_active?: boolean | null
           name: string
           payment_type?: Database["public"]["Enums"]["payment_type"] | null
+          show_in_children?: boolean | null
           teacher_payment_percent?: number | null
           updated_at?: string | null
         }
@@ -51,6 +53,7 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           payment_type?: Database["public"]["Enums"]["payment_type"] | null
+          show_in_children?: boolean | null
           teacher_payment_percent?: number | null
           updated_at?: string | null
         }

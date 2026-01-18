@@ -49,8 +49,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const { data: allStaffBillingRules = [] } = useAllStaffBillingRulesForActivity(activityId);
   const { data: groups = [] } = useGroups();
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
-    activityId, 
-    activeOnly: true 
+    activityId
   });
   const { data: attendanceData = [], isLoading: attendanceLoading } = useAttendance({ 
     activityId, 
@@ -75,13 +74,28 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     }
   }, [year, month, days.length]);
 
+  const enrollmentsWithCharges = useMemo(() => {
+    const set = new Set<string>();
+    attendanceData.forEach((entry: any) => {
+      const amount = entry.value ?? entry.charged_amount ?? 0;
+      if (amount > 0) {
+        set.add(entry.enrollment_id);
+      }
+    });
+    return set;
+  }, [attendanceData]);
+
+  const visibleEnrollments = useMemo(() => (
+    enrollments.filter(enrollment => enrollment.is_active || enrollmentsWithCharges.has(enrollment.id))
+  ), [enrollments, enrollmentsWithCharges]);
+
   // Фільтрація записів по групах
   const filteredEnrollments = useMemo(() => {
     if (selectedGroups.has('all')) {
-      return enrollments;
+      return visibleEnrollments;
     }
     
-    return enrollments.filter(enrollment => {
+    return visibleEnrollments.filter(enrollment => {
       const groupId = enrollment.students?.group_id;
       if (!groupId) {
         // Діти без групи показуються, якщо вибрано "Без групи"
@@ -89,7 +103,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       }
       return selectedGroups.has(groupId);
     });
-  }, [enrollments, selectedGroups]);
+  }, [selectedGroups, visibleEnrollments]);
 
   // Групування та сортування записів
   const groupedEnrollments = useMemo(() => {
@@ -126,13 +140,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   // Отримуємо список всіх груп, представлених у записах
   const representedGroups = useMemo(() => {
     const groupIds = new Set<string>();
-    enrollments.forEach(enrollment => {
+    visibleEnrollments.forEach(enrollment => {
       if (enrollment.students?.group_id) {
         groupIds.add(enrollment.students.group_id);
       }
     });
     return groups.filter(g => groupIds.has(g.id));
-  }, [enrollments, groups]);
+  }, [visibleEnrollments, groups]);
 
   const attendanceMap = useMemo(() => {
     const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; manual_value_edit: boolean }>();
@@ -914,7 +928,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                     const attendance = attendanceMap.get(key);
                     const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
                     return (
-                      <div key={enrollment.id} className="p-4">
+                      <div
+                        key={enrollment.id}
+                        className={cn('p-4', !enrollment.is_active && 'bg-muted/40 text-muted-foreground')}
+                      >
                         <div className="flex items-center justify-between">
                           <div>
                             {studentId ? (
@@ -923,6 +940,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                               </Link>
                             ) : (
                               <p className="font-medium">{enrollment.students.full_name}</p>
+                            )}
+                            {!enrollment.is_active && (
+                              <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                Архів
+                              </span>
                             )}
                             <p className="text-xs text-muted-foreground">
                               П: {totals.present} · Х: {totals.sick} · Н: {totals.absent} · Σ: {totals.values}
@@ -970,7 +992,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                   const attendance = attendanceMap.get(key);
                   const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
                   return (
-                    <div key={enrollment.id} className="p-4">
+                    <div
+                      key={enrollment.id}
+                      className={cn('p-4', !enrollment.is_active && 'bg-muted/40 text-muted-foreground')}
+                    >
                       <div className="flex items-center justify-between">
                         <div>
                           {studentId ? (
@@ -979,6 +1004,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                             </Link>
                           ) : (
                             <p className="font-medium">{enrollment.students.full_name}</p>
+                          )}
+                          {!enrollment.is_active && (
+                            <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                              Архів
+                            </span>
                           )}
                           <p className="text-xs text-muted-foreground">
                             П: {totals.present} · Х: {totals.sick} · Н: {totals.absent} · Σ: {totals.values}
@@ -1176,15 +1206,28 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                     
                     const studentId = enrollment.students?.id || enrollment.student_id;
                     return (
-                      <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                      <tr
+                        key={enrollment.id}
+                        className={cn(
+                          'border-t hover:bg-muted/20',
+                          !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
+                        )}
+                      >
                         <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                          {studentId ? (
-                            <Link to={`/students/${studentId}`} className="text-primary hover:underline">
-                              {enrollment.students.full_name}
-                            </Link>
-                          ) : (
-                            enrollment.students.full_name
-                          )}
+                          <div className="flex items-center gap-2">
+                            {studentId ? (
+                              <Link to={`/students/${studentId}`} className="text-primary hover:underline">
+                                {enrollment.students.full_name}
+                              </Link>
+                            ) : (
+                              <span>{enrollment.students.full_name}</span>
+                            )}
+                            {!enrollment.is_active && (
+                              <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                Архів
+                              </span>
+                            )}
+                          </div>
                           {(enrollment.custom_price || enrollment.discount_percent > 0) && (
                             <span className="ml-2 text-xs text-muted-foreground">
                               {enrollment.custom_price && `${enrollment.custom_price} ₴`}
@@ -1257,15 +1300,28 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                   
                   const studentId = enrollment.students?.id || enrollment.student_id;
                   return (
-                    <tr key={enrollment.id} className="border-t hover:bg-muted/20">
+                    <tr
+                      key={enrollment.id}
+                      className={cn(
+                        'border-t hover:bg-muted/20',
+                        !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
+                      )}
+                    >
                       <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                        {studentId ? (
-                          <Link to={`/students/${studentId}`} className="text-primary hover:underline">
-                            {enrollment.students.full_name}
-                          </Link>
-                        ) : (
-                          enrollment.students.full_name
-                        )}
+                        <div className="flex items-center gap-2">
+                          {studentId ? (
+                            <Link to={`/students/${studentId}`} className="text-primary hover:underline">
+                              {enrollment.students.full_name}
+                            </Link>
+                          ) : (
+                            <span>{enrollment.students.full_name}</span>
+                          )}
+                          {!enrollment.is_active && (
+                            <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                              Архів
+                            </span>
+                          )}
+                        </div>
                         {(enrollment.custom_price || enrollment.discount_percent > 0) && (
                           <span className="ml-2 text-xs text-muted-foreground">
                             {enrollment.custom_price && `${enrollment.custom_price} ₴`}
