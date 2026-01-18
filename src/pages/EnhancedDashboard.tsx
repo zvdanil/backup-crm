@@ -190,6 +190,33 @@ export default function EnhancedDashboard() {
     return map;
   }, [data?.attendance, dataUpdatedAt]);
 
+  const salaryPayoutsDaily = useMemo(() => {
+    const totals: Record<string, number> = {};
+    data?.financeTransactions?.forEach((trans) => {
+      if (trans.type !== 'salary') return;
+      totals[trans.date] = (totals[trans.date] || 0) + (trans.amount || 0);
+    });
+    return totals;
+  }, [data?.financeTransactions, dataUpdatedAt]);
+
+  const salaryAccrualsDaily = useMemo(() => {
+    const totals: Record<string, number> = {};
+    data?.staffExpenses?.forEach((expense) => {
+      totals[expense.date] = (totals[expense.date] || 0) + (expense.amount || 0);
+    });
+    return totals;
+  }, [data?.staffExpenses, dataUpdatedAt]);
+
+  const salaryCombinedDaily = useMemo(() => {
+    const totals: Record<string, number> = {};
+    days.forEach((day) => {
+      const dateStr = formatDateString(day);
+      totals[dateStr] =
+        (salaryPayoutsDaily[dateStr] || 0) + (salaryAccrualsDaily[dateStr] || 0);
+    });
+    return totals;
+  }, [days, salaryPayoutsDaily, salaryAccrualsDaily]);
+
   // Map finance transactions by student_id + activity_id + date (for Garden Attendance Journal)
   // income = positive, expense = negative (for dashboard perspective)
   const financeTransactionsMap = useMemo(() => {
@@ -261,7 +288,7 @@ export default function EnhancedDashboard() {
         // Для обычных транзакций: income = положительное, expense = отрицательное
         if (trans.type === 'income') {
           totals[category][trans.date] = (totals[category][trans.date] || 0) + (trans.amount || 0);
-        } else if (trans.type === 'expense') {
+        } else if (trans.type === 'expense' || trans.type === 'salary' || trans.type === 'household') {
           totals[category][trans.date] = (totals[category][trans.date] || 0) - (trans.amount || 0);
         }
       }
@@ -375,21 +402,27 @@ export default function EnhancedDashboard() {
         totals[category as ActivityCategory][dateStr] = 0;
       });
     });
-    
-    // Суммируем значения из промежуточной таблицы по категориям
+
+    // Доходы считаем из фактически отображаемых строк (таблицы по детям/активностям),
+    // чтобы учесть Garden Attendance и не терять видимые суммы.
     dashboardDataTable.forEach((row) => {
-      Object.entries(row.amountsByDate).forEach(([dateStr, amount]) => {
-        if (row.category === 'expense' || row.category === 'household_expense') {
-          // Для расходов берем абсолютное значение
-          totals[row.category][dateStr] = (totals[row.category][dateStr] || 0) + Math.abs(amount);
-        } else {
+      if (row.category === 'income' || row.category === 'additional_income') {
+        Object.entries(row.amountsByDate).forEach(([dateStr, amount]) => {
           totals[row.category][dateStr] = (totals[row.category][dateStr] || 0) + amount;
-        }
-      });
+        });
+      }
+    });
+
+    // Расходы/зарплата берем из агрегированных дневных сумм
+    days.forEach((day) => {
+      const dateStr = formatDateString(day);
+      totals.expense[dateStr] = Math.abs(dailyTotals.expense?.[dateStr] || 0);
+      totals.household_expense[dateStr] = Math.abs(dailyTotals.household_expense?.[dateStr] || 0);
+      totals.salary[dateStr] = Math.abs(salaryCombinedDaily[dateStr] || 0);
     });
     
     return totals;
-  }, [dashboardDataTable, days]);
+  }, [dashboardDataTable, days, dailyTotals, salaryCombinedDaily]);
   
   // Розрахунок "Разом за день" (Доходи - Витрати) - суммируем данные из промежуточной таблицы
   const dailyDisplayTotals = useMemo(() => {
@@ -405,21 +438,15 @@ export default function EnhancedDashboard() {
       salaryTotals[dateStr] = 0;
     });
     
-    // Суммируем значения из промежуточной таблицы
-    dashboardDataTable.forEach((row) => {
-      const isIncome = row.category === 'income' || row.category === 'additional_income';
-      const isExpense = row.category === 'expense' || row.category === 'household_expense';
-      const isSalary = row.category === 'salary';
-      
-      Object.entries(row.amountsByDate).forEach(([dateStr, amount]) => {
-        if (isIncome) {
-          incomeTotals[dateStr] = (incomeTotals[dateStr] || 0) + amount;
-        } else if (isExpense) {
-          expenseTotals[dateStr] = (expenseTotals[dateStr] || 0) + Math.abs(amount);
-        } else if (isSalary) {
-          salaryTotals[dateStr] = (salaryTotals[dateStr] || 0) + amount;
-        }
-      });
+    days.forEach((day) => {
+      const dateStr = formatDateString(day);
+      incomeTotals[dateStr] =
+        (dailyTotalsByCategory.income[dateStr] || 0) +
+        (dailyTotalsByCategory.additional_income[dateStr] || 0);
+      expenseTotals[dateStr] =
+        (dailyTotalsByCategory.expense[dateStr] || 0) +
+        (dailyTotalsByCategory.household_expense[dateStr] || 0);
+      salaryTotals[dateStr] = dailyTotalsByCategory.salary[dateStr] || 0;
     });
     
     // Рассчитываем итоговые значения для каждого дня
@@ -437,7 +464,26 @@ export default function EnhancedDashboard() {
       salary: salaryTotals,
       net: netTotals,
     };
-  }, [dashboardDataTable, days]);
+  }, [dailyTotalsByCategory, days]);
+
+  const summaryByCategory = useMemo(() => {
+    const totals: Record<ActivityCategory, number> = {
+      income: 0,
+      additional_income: 0,
+      expense: 0,
+      household_expense: 0,
+      salary: 0,
+    };
+    days.forEach((day) => {
+      const dateStr = formatDateString(day);
+      totals.income += dailyTotalsByCategory.income[dateStr] || 0;
+      totals.additional_income += dailyTotalsByCategory.additional_income[dateStr] || 0;
+      totals.expense += dailyTotalsByCategory.expense[dateStr] || 0;
+      totals.household_expense += dailyTotalsByCategory.household_expense[dateStr] || 0;
+      totals.salary += dailyTotalsByCategory.salary[dateStr] || 0;
+    });
+    return totals;
+  }, [dailyTotalsByCategory, days]);
 
   const handlePrevMonth = () => {
     if (month === 0) { setMonth(11); setYear(year - 1); } else { setMonth(month - 1); }
@@ -456,8 +502,8 @@ export default function EnhancedDashboard() {
     ]);
   };
 
-  const totalIncome = (summary?.income || 0) + (summary?.additional_income || 0);
-  const totalExpense = (summary?.expense || 0) + (summary?.household_expense || 0) + (summary?.salary || 0);
+  const totalIncome = summaryByCategory.income + summaryByCategory.additional_income;
+  const totalExpense = summaryByCategory.expense + summaryByCategory.household_expense + summaryByCategory.salary;
   const profit = totalIncome - totalExpense;
 
   if (isLoading) {
@@ -543,7 +589,9 @@ export default function EnhancedDashboard() {
           );
 
           // Для категорії "salary" показуємо навіть якщо немає enrollments, бо витрати беруться з staff_journal_entries
-          const hasData = categoryStudents.length > 0 || (category === 'salary' && (summary?.[category] || 0) > 0);
+          const categoryTotal = summaryByCategory[category] || 0;
+          const hasDailyTotals = Object.values(dailyTotalsByCategory[category] || {}).some((value) => value !== 0);
+          const hasData = categoryStudents.length > 0 || hasDailyTotals || Math.abs(categoryTotal) > 0;
           if (!hasData) return null;
 
           const styles = CATEGORY_STYLES[category];
@@ -553,7 +601,7 @@ export default function EnhancedDashboard() {
               <div key={category} className="rounded-xl bg-card border border-border shadow-soft overflow-hidden">
                 <div className={cn("px-4 py-3 border-b flex items-center justify-between", styles.bg, styles.border)}>
                   <h3 className={cn("font-semibold", styles.text)}>{ACTIVITY_CATEGORY_LABELS[category]}</h3>
-                  <span className={cn("text-base font-bold", styles.text)}>{formatCurrency(summary?.[category] || 0)}</span>
+                  <span className={cn("text-base font-bold", styles.text)}>{formatCurrency(summaryByCategory[category] || 0)}</span>
                 </div>
                 <div className="divide-y">
                   {categoryStudents.map((student) =>
@@ -613,14 +661,16 @@ export default function EnhancedDashboard() {
                           <p className="font-medium">Витрати на зарплату</p>
                           <p className="text-xs text-muted-foreground">З журналу витрат</p>
                         </div>
-                        <div className="text-right text-sm">
-                          <div className="text-destructive">
-                            {dailyTotals.salary[selectedDateStr] ? formatCurrency(dailyTotals.salary[selectedDateStr]) : '—'}
-                          </div>
-                          <div className="text-xs text-destructive">
-                            Разом: {formatCurrency(summary?.salary || 0)}
-                          </div>
+                      <div className="text-right text-sm">
+                        <div className="text-destructive">
+                          {dailyTotals.salary[selectedDateStr]
+                            ? formatCurrency(Math.abs(dailyTotals.salary[selectedDateStr]))
+                            : '—'}
                         </div>
+                        <div className="text-xs text-destructive">
+                          Разом: {formatCurrency(Math.abs(summaryByCategory.salary || 0))}
+                        </div>
+                      </div>
                       </div>
                     </div>
                   )}
@@ -633,7 +683,7 @@ export default function EnhancedDashboard() {
             <div key={category} className="rounded-xl bg-card border border-border shadow-soft overflow-hidden">
               <div className={cn("px-6 py-3 border-b flex items-center justify-between", styles.bg, styles.border)}>
                 <h3 className={cn("font-semibold", styles.text)}>{ACTIVITY_CATEGORY_LABELS[category]}</h3>
-                <span className={cn("text-lg font-bold", styles.text)}>{formatCurrency(summary?.[category] || 0)}</span>
+                <span className={cn("text-lg font-bold", styles.text)}>{formatCurrency(summaryByCategory[category] || 0)}</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -732,32 +782,89 @@ export default function EnhancedDashboard() {
                         );
                       })
                     )}
-                    {/* Для категорії "salary" відображаємо витрати на зарплату з staff_journal_entries */}
-                    {category === 'salary' && categoryStudents.length === 0 && data?.staffExpenses && data.staffExpenses.length > 0 && (
+                    {/* Для категорії "salary" відображаємо витрати на зарплату */}
+                    {category === 'salary' && categoryStudents.length === 0 && hasDailyTotals && (
                       <tr className="border-b hover:bg-muted/20">
                         <td className="py-2 px-4 sticky left-0 bg-card">
                           <div className="flex items-center gap-2">
                             <div className="min-w-0">
-                              <p className="font-medium truncate">Витрати на зарплату</p>
+                              <p className="font-medium truncate">Виплати зарплати</p>
                               <p className="text-xs text-muted-foreground truncate">З журналу витрат</p>
                             </div>
                           </div>
                         </td>
                         {days.map((day) => {
                           const dateStr = formatDateString(day);
-                          const dayTotal = dailyTotals.salary[dateStr] || 0;
+                          const dayTotal = salaryPayoutsDaily[dateStr] || 0;
                           return (
                             <td key={formatDateString(day)} className={cn("py-2 px-1 text-center", isWeekend(day) && "bg-muted/30")}>
-                              {dayTotal > 0 && (
+                              {dayTotal !== 0 && (
                                 <span className="text-xs font-medium text-destructive">
-                                  {formatCurrency(dayTotal)}
+                                  {formatCurrency(Math.abs(dayTotal))}
                                 </span>
                               )}
                             </td>
                           );
                         })}
                         <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-destructive">
-                          {formatCurrency(summary?.salary || 0)}
+                          {formatCurrency(Math.abs(Object.values(salaryPayoutsDaily).reduce((sum, val) => sum + (val || 0), 0)))}
+                        </td>
+                      </tr>
+                    )}
+                    {category === 'salary' && categoryStudents.length === 0 && Object.values(salaryAccrualsDaily).some((value) => value !== 0) && (
+                      <tr className="border-b hover:bg-muted/20">
+                        <td className="py-2 px-4 sticky left-0 bg-card">
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">Нарахування зарплати</p>
+                              <p className="text-xs text-muted-foreground truncate">З журналу відвідуваності</p>
+                            </div>
+                          </div>
+                        </td>
+                        {days.map((day) => {
+                          const dateStr = formatDateString(day);
+                          const dayTotal = salaryAccrualsDaily[dateStr] || 0;
+                          return (
+                            <td key={formatDateString(day)} className={cn("py-2 px-1 text-center", isWeekend(day) && "bg-muted/30")}>
+                              {dayTotal !== 0 && (
+                                <span className="text-xs font-medium text-destructive">
+                                  {formatCurrency(Math.abs(dayTotal))}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-destructive">
+                          {formatCurrency(Math.abs(Object.values(salaryAccrualsDaily).reduce((sum, val) => sum + (val || 0), 0)))}
+                        </td>
+                      </tr>
+                    )}
+                    {/* Для категорій витрат без записів по дітях показуємо суму по транзакціях */}
+                    {category !== 'salary' && categoryStudents.length === 0 && hasDailyTotals && (
+                      <tr className="border-b hover:bg-muted/20">
+                        <td className="py-2 px-4 sticky left-0 bg-card">
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">Витрати за активностями</p>
+                              <p className="text-xs text-muted-foreground truncate">З журналу витрат</p>
+                            </div>
+                          </div>
+                        </td>
+                        {days.map((day) => {
+                          const dateStr = formatDateString(day);
+                          const dayTotal = dailyTotals[category][dateStr] || 0;
+                          return (
+                            <td key={formatDateString(day)} className={cn("py-2 px-1 text-center", isWeekend(day) && "bg-muted/30")}>
+                              {dayTotal !== 0 && (
+                                <span className="text-xs font-medium text-destructive">
+                                  {formatCurrency(Math.abs(dayTotal))}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-destructive">
+                          {formatCurrency(Math.abs(summaryByCategory[category] || 0))}
                         </td>
                       </tr>
                     )}
@@ -776,7 +883,7 @@ export default function EnhancedDashboard() {
                         );
                       })}
                       <td className={cn("py-2 px-4 text-right sticky right-0 bg-muted/20", (category === 'income' || category === 'additional_income') ? "text-success" : "text-destructive")}>
-                        {formatCurrency(summary?.[category] || 0)}
+                        {formatCurrency(summaryByCategory[category] || 0)}
                       </td>
                     </tr>
                   </tbody>

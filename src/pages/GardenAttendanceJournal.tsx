@@ -627,7 +627,9 @@ export default function GardenAttendanceJournal() {
                       key={formatDateString(day)}
                       className={cn(
                         "px-1 py-2 text-center text-xs font-medium min-w-[100px]",
-                        isWeekend(day) ? 'text-muted-foreground/50 bg-muted/30' : 'text-muted-foreground'
+                        isWeekend(day)
+                          ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
+                          : 'text-muted-foreground'
                       )}
                     >
                       <div>{getWeekdayShort(day)}</div>
@@ -672,7 +674,13 @@ export default function GardenAttendanceJournal() {
                             const attendance = attendanceMap.get(key);
                             
                             return (
-                              <td key={dateStr} className="p-1 text-center">
+                              <td
+                                key={dateStr}
+                                className={cn(
+                                  "p-1 text-center",
+                                  isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                                )}
+                              >
                                 <GardenAttendanceCell
                                   status={attendance?.status || null}
                                   amount={attendance?.amount || null}
@@ -720,7 +728,13 @@ export default function GardenAttendanceJournal() {
                           const attendance = attendanceMap.get(key);
                           
                           return (
-                            <td key={dateStr} className="p-1 text-center">
+                            <td
+                              key={dateStr}
+                              className={cn(
+                                "p-1 text-center",
+                                isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                              )}
+                            >
                               <GardenAttendanceCell
                                 status={attendance?.status || null}
                                 amount={attendance?.amount || null}

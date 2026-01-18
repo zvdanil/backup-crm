@@ -95,7 +95,7 @@ export function StudentActivityBalanceRow({
   const isPositive = isFoodActivity ? (refunds > 0 ? true : balance >= 0) : (balance >= 0);
 
   return (
-    <div className="flex items-center justify-between gap-3 p-3 border rounded-lg">
+    <div className="flex flex-col gap-2 p-3 border rounded-lg sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-2">
         <span 
           className="w-3 h-3 rounded-full" 
@@ -105,14 +105,14 @@ export function StudentActivityBalanceRow({
           {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
         </span>
       </div>
-      <div className="text-right shrink-0">
+      <div className="text-left sm:text-right">
         <div className={cn(
           "text-sm font-semibold",
           isPositive ? "text-success" : "text-destructive"
         )}>
           {displayBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(displayBalance))}
         </div>
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-muted-foreground whitespace-normal break-words">
           {isFoodActivity ? (
             <>Оплати: {formatCurrency(payments)} | Повернення: {formatCurrency(displayRefunds)}</>
           ) : (

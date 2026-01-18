@@ -10,6 +10,7 @@ export interface FinanceTransaction {
   student_id: string | null;
   activity_id: string | null;
   staff_id: string | null;
+  expense_category_id?: string | null;
   amount: number;
   date: string;
   description: string | null;
@@ -70,6 +71,20 @@ export function useCreateFinanceTransaction() {
         .single();
       
       if (error) throw error;
+
+      if (transaction.type === 'salary' && transaction.staff_id) {
+        const { error: payoutError } = await supabase
+          .from('staff_payouts' as any)
+          .insert({
+            staff_id: transaction.staff_id,
+            amount: transaction.amount,
+            payout_date: transaction.date,
+            notes: transaction.description || null,
+          });
+
+        if (payoutError) throw payoutError;
+      }
+
       return data;
     },
     onSuccess: (data) => {
@@ -80,6 +95,10 @@ export function useCreateFinanceTransaction() {
       if (data.student_id) {
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] });
         queryClient.invalidateQueries({ queryKey: ['student_total_balance'] });
+      }
+      if (data.staff_id && data.type === 'salary') {
+        queryClient.invalidateQueries({ queryKey: ['staff-payouts', data.staff_id], exact: false });
+        queryClient.invalidateQueries({ queryKey: ['staff-payouts-all'], exact: false });
       }
       toast({ title: 'Транзакцію створено' });
     },

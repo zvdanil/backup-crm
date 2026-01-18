@@ -424,7 +424,6 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       skippedExistingWithValue,
       addedToPromises,
       autoFillPromisesCount: autoFillPromises.length,
-      staffJournalPromisesCount: staffJournalPromises.length,
     });
 
     if (autoFillPromises.length > 0) {
@@ -1027,7 +1026,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 const dateStr = formatDateString(day);
                 const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
                 return (
-                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                  <th
+                    key={dateStr}
+                    className={cn(
+                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
+                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                    )}
+                  >
                     {totals.present}
                   </th>
                 );
@@ -1042,7 +1047,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 const dateStr = formatDateString(day);
                 const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
                 return (
-                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                  <th
+                    key={dateStr}
+                    className={cn(
+                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
+                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                    )}
+                  >
                     {totals.sick}
                   </th>
                 );
@@ -1057,7 +1068,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 const dateStr = formatDateString(day);
                 const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
                 return (
-                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                  <th
+                    key={dateStr}
+                    className={cn(
+                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
+                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                    )}
+                  >
                     {totals.absent}
                   </th>
                 );
@@ -1072,7 +1089,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 const dateStr = formatDateString(day);
                 const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
                 return (
-                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                  <th
+                    key={dateStr}
+                    className={cn(
+                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
+                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                    )}
+                  >
                     {totals.values > 0 ? totals.values : ''}
                   </th>
                 );
@@ -1089,7 +1112,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 const dateStr = formatDateString(day);
                 const payment = teacherPayments[dateStr] || 0;
                 return (
-                  <th key={dateStr} className={`px-1 py-1 text-center text-xs font-medium min-w-[40px] ${isWeekend(day) && 'bg-muted/30'}`}>
+                  <th
+                    key={dateStr}
+                    className={cn(
+                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
+                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                    )}
+                  >
                     {payment > 0 ? formatCurrency(payment) : ''}
                   </th>
                 );
@@ -1107,9 +1136,12 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
               {days.map((day) => (
                 <th
                   key={formatDateString(day)}
-                  className={`px-1 py-2 text-center text-xs font-medium min-w-[40px] ${
-                    isWeekend(day) ? 'text-muted-foreground/50' : 'text-muted-foreground'
-                  }`}
+                  className={cn(
+                    "px-1 py-2 text-center text-xs font-medium min-w-[40px]",
+                    isWeekend(day)
+                      ? "text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20"
+                      : "text-muted-foreground"
+                  )}
                 >
                   <div>{getWeekdayShort(day)}</div>
                   <div className="font-semibold">{formatShortDate(day)}</div>
@@ -1166,7 +1198,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                           const attendance = attendanceMap.get(key);
                           
                           return (
-                            <td key={dateStr} className="p-0.5 text-center">
+                            <td
+                              key={dateStr}
+                              className={cn(
+                                "p-0.5 text-center",
+                                isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                              )}
+                            >
                               <EnhancedAttendanceCell
                                 status={attendance?.status || null}
                                 amount={attendance?.amount || 0}
@@ -1241,7 +1279,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                         const attendance = attendanceMap.get(key);
                         
                         return (
-                          <td key={dateStr} className="p-0.5 text-center">
+                          <td
+                            key={dateStr}
+                            className={cn(
+                              "p-0.5 text-center",
+                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                            )}
+                          >
                             <EnhancedAttendanceCell
                               status={attendance?.status || null}
                               amount={attendance?.amount || 0}

@@ -1,4 +1,4 @@
-import { BookOpen, MoreVertical, Pencil, Trash2, Users } from 'lucide-react';
+import { BookOpen, MoreVertical, Pencil, Trash2, Users, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,6 +11,7 @@ import { getActivityDisplayPrice } from '@/lib/activityPrice';
 import { useActivityPriceHistory } from '@/hooks/useActivities';
 import type { Activity } from '@/hooks/useActivities';
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -58,6 +59,14 @@ export function ActivityCard({ activity, enrolledCount = 0, onEdit, onDelete }: 
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {(activity.category === 'expense' || activity.category === 'household_expense' || activity.category === 'salary') && (
+              <DropdownMenuItem asChild>
+                <Link to={`/activities/${activity.id}/expenses`}>
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                  Журнал витрат
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => onEdit(activity)}>
               <Pencil className="h-4 w-4 mr-2" />
               Редактировать

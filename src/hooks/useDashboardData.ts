@@ -109,7 +109,7 @@ export function useDashboardData(year: number, month: number) {
             students (id, full_name),
             activities (id, name, color, category)
           `)
-          .in('type', ['income', 'expense'])
+          .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
           .lte('date', endDate),
       ]);
@@ -159,7 +159,7 @@ export function useCategorySummary(year: number, month: number) {
             type,
             activities!inner (category)
           `)
-          .in('type', ['income', 'expense'])
+          .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
           .lte('date', endDate),
         supabase
@@ -198,8 +198,13 @@ export function useCategorySummary(year: number, month: number) {
       financeTransactionsResult.data?.forEach((item: any) => {
         const category = item.activities?.category as ActivityCategory;
         if (category) {
-          const amount = item.type === 'income' ? (item.amount || 0) : -(item.amount || 0);
-          summary[category] += amount;
+          const amount = item.amount || 0;
+          if (item.type === 'income') {
+            summary[category] += amount;
+          } else {
+            // Expenses should be stored as positive in summary
+            summary[category] += amount;
+          }
         }
       });
 

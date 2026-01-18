@@ -1,16 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useStaff } from '@/hooks/useStaff';
+import { Link } from 'react-router-dom';
 import { useAllStaffJournalEntries, useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, getStaffManualRateForDate, StaffManualRateHistory } from '@/hooks/useStaffBilling';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAttendance } from '@/hooks/useAttendance';
 import { useEnrollments } from '@/hooks/useEnrollments';
 import { useActivities } from '@/hooks/useActivities';
+import { useFinanceTransactions } from '@/hooks/useFinanceTransactions';
 import { 
   getDaysInMonth, 
   formatShortDate, 
@@ -41,8 +42,28 @@ export default function StaffExpenseJournal() {
   const { data: activities = [] } = useActivities();
   const { data: attendanceData = [] } = useAttendance({ month, year });
   const { data: enrollments = [] } = useEnrollments({ activeOnly: true });
+  const { data: salaryTransactions = [] } = useFinanceTransactions({ type: 'salary', month, year });
   const upsertJournalEntry = useUpsertStaffJournalEntry();
   const deleteJournalEntry = useDeleteStaffJournalEntry();
+
+  const expenseActivities = useMemo(() => {
+    return activities.filter(
+      (activity) =>
+        activity.category === 'expense' ||
+        activity.category === 'household_expense' ||
+        activity.category === 'salary'
+    );
+  }, [activities]);
+
+  const salaryTransactionsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    salaryTransactions.forEach((t) => {
+      if (!t.staff_id) return;
+      const key = `${t.staff_id}-${t.date}`;
+      map.set(key, (map.get(key) || 0) + (t.amount || 0));
+    });
+    return map;
+  }, [salaryTransactions]);
   
   // Load all staff manual rate history
   const { data: allManualRateHistory = [] } = useQuery({
@@ -323,10 +344,12 @@ export default function StaffExpenseJournal() {
         entry => entry.staff_id === staffId && entry.date === date
       );
       
-      if (entriesForDate.length > 0) {
-        const totalAmount = entriesForDate.reduce((sum, entry) => sum + (entry.amount || 0), 0);
-        console.log(`[getCellValue] Summed ${entriesForDate.length} entries for ${staffId} on ${date}: ${totalAmount}`);
-        return totalAmount;
+      const journalTotal = entriesForDate.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+      const salaryTotal = salaryTransactionsMap.get(`${staffId}-${date}`) || 0;
+      const combinedTotal = journalTotal + salaryTotal;
+      if (combinedTotal > 0) {
+        console.log(`[getCellValue] Summed ${entriesForDate.length} journal entries and ${salaryTotal} salary for ${staffId} on ${date}: ${combinedTotal}`);
+        return combinedTotal;
       }
       
       // If no journal entries, try to calculate from attendance
@@ -390,6 +413,18 @@ export default function StaffExpenseJournal() {
       />
 
       <div className="p-8">
+        {expenseActivities.length > 0 && (
+          <div className="mb-4 rounded-xl border bg-card p-4">
+            <div className="text-sm font-medium mb-3">Журнали витрат по активностях</div>
+            <div className="flex flex-wrap gap-2">
+              {expenseActivities.map((activity) => (
+                <Button key={activity.id} variant="outline" size="sm" asChild>
+                  <Link to={`/activities/${activity.id}/expenses`}>{activity.name}</Link>
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Month navigation */}
         <div className="flex items-center justify-between mb-6">
           <Button variant="outline" size="icon" onClick={handlePrevMonth}>
@@ -416,7 +451,9 @@ export default function StaffExpenseJournal() {
                     key={formatDateString(day)}
                     className={cn(
                       "px-1 py-2 text-center text-xs font-medium min-w-[60px]",
-                      isWeekend(day) ? 'text-muted-foreground/50' : 'text-muted-foreground'
+                      isWeekend(day)
+                        ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
+                        : 'text-muted-foreground'
                     )}
                   >
                     <div>{getWeekdayShort(day)}</div>
@@ -450,7 +487,13 @@ export default function StaffExpenseJournal() {
                                          editingCell?.date === dateStr;
 
                         return (
-                          <td key={dateStr} className="p-0.5 text-center">
+                          <td
+                            key={dateStr}
+                            className={cn(
+                              "p-0.5 text-center",
+                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                            )}
+                          >
                             <Popover open={isEditing} onOpenChange={(open) => !open && setEditingCell(null)}>
                               <PopoverTrigger asChild>
                                 <button
