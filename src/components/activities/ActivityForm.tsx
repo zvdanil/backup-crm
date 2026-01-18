@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,7 +25,8 @@ import type { Activity, ActivityInsert, ActivityCategory, ACTIVITY_CATEGORY_LABE
 import { BillingRulesEditor } from './BillingRulesEditor';
 import { useActivities } from '@/hooks/useActivities';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { GardenAttendanceConfig } from '@/lib/gardenAttendance';
+import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 
 const CATEGORY_OPTIONS: { value: ActivityCategory; label: string }[] = [
   { value: 'income', label: 'Дохід' },
@@ -41,6 +42,8 @@ const activitySchema = z.object({
   description: z.string().max(500).optional(),
   color: z.string(),
   category: z.enum(['income', 'expense', 'additional_income', 'household_expense', 'salary']),
+  account_id: z.string().optional(),
+  balance_display_mode: z.enum(['subscription', 'recalculation', 'subscription_and_recalculation']).optional(),
   fixed_teacher_rate: z.string().optional(),
   payment_mode: z.string().optional(),
   auto_journal: z.boolean().optional(),
@@ -70,6 +73,18 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
   const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
   const [config, setConfig] = useState<GardenAttendanceConfig>({});
   const { data: allActivities = [] } = useActivities();
+  const { data: accounts = [] } = usePaymentAccounts();
+
+  const foodTariffIds = useMemo(() => {
+    const ids = new Set<string>();
+    allActivities.forEach(activity => {
+      if (isGardenAttendanceController(activity)) {
+        const config = (activity.config as GardenAttendanceConfig) || {};
+        (config.food_tariff_ids || []).forEach(id => ids.add(id));
+      }
+    });
+    return ids;
+  }, [allActivities]);
 
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<ActivityFormData>({
     resolver: zodResolver(activitySchema),
@@ -79,6 +94,8 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       description: '',
       color: '#3B82F6',
       category: 'income',
+      account_id: 'none',
+      balance_display_mode: 'recalculation',
       fixed_teacher_rate: '',
       payment_mode: 'default',
       auto_journal: false,
@@ -96,12 +113,23 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       setBillingRules(initialData?.billing_rules || null);
       const initialConfig = (initialData?.config as GardenAttendanceConfig) || {};
       setConfig(initialConfig);
+      const isFoodTariff = initialData?.id ? foodTariffIds.has(initialData.id) : false;
+      const presentRule = initialData?.billing_rules?.present;
+      const isMonthlyBilling = presentRule?.type === 'fixed' || presentRule?.type === 'subscription';
+      const fallbackDisplayMode = isFoodTariff
+        ? 'recalculation'
+        : isMonthlyBilling
+          ? 'subscription'
+          : 'recalculation';
+
       reset({
         name: initialData?.name || '',
         teacher_payment_percent: initialData?.teacher_payment_percent?.toString() || '50',
         description: initialData?.description || '',
         color: initialData?.color || '#3B82F6',
         category: initialData?.category || 'income',
+        account_id: initialData?.account_id || 'none',
+        balance_display_mode: initialData?.balance_display_mode || fallbackDisplayMode,
         fixed_teacher_rate: initialData?.fixed_teacher_rate?.toString() || '',
         payment_mode: initialData?.payment_mode || 'default',
         auto_journal: initialData?.auto_journal || false,
@@ -122,6 +150,8 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       description: data.description || null,
       color: data.color,
       category: data.category,
+      account_id: data.account_id && data.account_id !== 'none' ? data.account_id : null,
+      balance_display_mode: data.balance_display_mode || null,
       fixed_teacher_rate: data.fixed_teacher_rate ? parseFloat(data.fixed_teacher_rate) : null,
       payment_mode: data.payment_mode || null,
       auto_journal: data.auto_journal || false,
@@ -194,6 +224,46 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
             {errors.category && (
               <p className="text-sm text-destructive">{errors.category.message}</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Рахунок для нарахувань</Label>
+            <Select
+              value={watch('account_id') || 'none'}
+              onValueChange={(value) => setValue('account_id', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Не вибрано" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Не вказано</SelectItem>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.is_active ? account.name : `${account.name} (неактивний)`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Відображення в балансі</Label>
+            <Select
+              value={watch('balance_display_mode') || 'recalculation'}
+              onValueChange={(value) => setValue('balance_display_mode', value as ActivityFormData['balance_display_mode'])}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Виберіть режим" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="subscription">Тільки абонплата</SelectItem>
+                <SelectItem value="recalculation">Тільки перерахунки</SelectItem>
+                <SelectItem value="subscription_and_recalculation">Абонплата + перерахунки</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Для харчування рекомендовано &quot;Тільки перерахунки&quot;.
+            </p>
           </div>
 
           <div className="space-y-2">

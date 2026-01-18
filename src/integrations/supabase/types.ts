@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
+          balance_display_mode: string | null
+          account_id: string | null
           category: Database["public"]["Enums"]["activity_category"]
           color: string | null
           created_at: string | null
@@ -30,6 +32,8 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          balance_display_mode?: string | null
+          account_id?: string | null
           category?: Database["public"]["Enums"]["activity_category"]
           color?: string | null
           created_at?: string | null
@@ -44,6 +48,8 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          balance_display_mode?: string | null
+          account_id?: string | null
           category?: Database["public"]["Enums"]["activity_category"]
           color?: string | null
           created_at?: string | null
@@ -55,6 +61,33 @@ export type Database = {
           payment_type?: Database["public"]["Enums"]["payment_type"] | null
           show_in_children?: boolean | null
           teacher_payment_percent?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      payment_accounts: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
           updated_at?: string | null
         }
         Relationships: []

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useActivities } from '@/hooks/useActivities';
 import { useMemo } from 'react';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 
 interface StudentActivityBalanceRowProps {
   studentId: string;
@@ -20,6 +21,7 @@ export function StudentActivityBalanceRow({
   year 
 }: StudentActivityBalanceRowProps) {
   const { data: allActivities = [] } = useActivities();
+  const { data: accounts = [] } = usePaymentAccounts();
 
   // Check if this is a food activity
   const isFoodActivity = useMemo(() => {
@@ -35,6 +37,11 @@ export function StudentActivityBalanceRow({
 
   const presentRule = enrollment.activities.billing_rules?.present;
   const isMonthlyBilling = !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
+
+  const accountLabel = useMemo(() => {
+    if (!enrollment.activities.account_id) return 'Без рахунку';
+    return accounts.find(account => account.id === enrollment.activities.account_id)?.name || 'Без рахунку';
+  }, [accounts, enrollment.activities.account_id]);
 
   const baseMonthlyCharge = useMemo(() => {
     if (!isMonthlyBilling) return 0;
@@ -63,8 +70,31 @@ export function StudentActivityBalanceRow({
     year
   );
 
-  const balanceData = isMonthlyBilling ? monthlyBalanceQuery.data : regularBalanceQuery.data;
-  const isLoading = isMonthlyBilling ? monthlyBalanceQuery.isLoading : regularBalanceQuery.isLoading;
+  const displayMode =
+    enrollment.activities.balance_display_mode ??
+    (isFoodActivity ? 'recalculation' : isMonthlyBilling ? 'subscription' : 'recalculation');
+
+  const isLoading = monthlyBalanceQuery.isLoading || regularBalanceQuery.isLoading;
+  const monthlyData = monthlyBalanceQuery.data;
+  const recalculationData = regularBalanceQuery.data;
+
+  const combinedData = useMemo(() => {
+    if (!monthlyData && !recalculationData) return null;
+    const payments = recalculationData?.payments ?? monthlyData?.payments ?? 0;
+    const refunds = recalculationData?.refunds ?? monthlyData?.refunds ?? 0;
+    const monthlyCharges = monthlyData?.charges ?? 0;
+    const recalculationCharges = recalculationData?.charges ?? 0;
+
+    let charges = recalculationCharges;
+    if (displayMode === 'subscription') {
+      charges = monthlyCharges;
+    } else if (displayMode === 'subscription_and_recalculation') {
+      charges = monthlyCharges + recalculationCharges;
+    }
+
+    const balance = payments - charges + refunds;
+    return { balance, payments, charges, refunds };
+  }, [displayMode, monthlyData, recalculationData]);
 
   if (isLoading) {
     return (
@@ -74,10 +104,10 @@ export function StudentActivityBalanceRow({
     );
   }
 
-  const balance = balanceData?.balance || 0;
-  const payments = balanceData?.payments || 0;
-  const charges = balanceData?.charges || 0;
-  const refunds = balanceData?.refunds || 0;
+  const balance = combinedData?.balance || 0;
+  const payments = combinedData?.payments || 0;
+  const charges = combinedData?.charges || 0;
+  const refunds = combinedData?.refunds || 0;
 
   // For food activity: expense transactions are refunds (positive for client)
   // Balance calculation: payments - charges + refunds (refunds increase balance)
@@ -103,6 +133,9 @@ export function StudentActivityBalanceRow({
         />
         <span className="text-sm font-medium break-words">
           {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
+        </span>
+        <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+          {accountLabel}
         </span>
       </div>
       <div className="text-left sm:text-right">

@@ -46,6 +46,8 @@ export interface Activity {
   is_active: boolean;
   show_in_children: boolean;
   category: ActivityCategory;
+  account_id: string | null;
+  balance_display_mode: 'subscription' | 'recalculation' | 'subscription_and_recalculation' | null;
   fixed_teacher_rate: number | null;
   payment_mode: string | null;
   auto_journal: boolean;

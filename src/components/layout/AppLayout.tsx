@@ -13,7 +13,8 @@ import {
   Receipt,
   Wallet,
   ClipboardList,
-  UtensilsCrossed
+  UtensilsCrossed,
+  Landmark
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ const navigation = [
   { name: 'Дашборд', href: '/', icon: LayoutDashboard },
   { name: 'Діти', href: '/students', icon: Users },
   { name: 'Активності', href: '/activities', icon: BookOpen },
+  { name: 'Рахунки', href: '/accounts', icon: Landmark },
   { name: 'Журнал', href: '/attendance', icon: Calendar },
   { name: 'Журнал відвідування', href: '/garden-attendance', icon: ClipboardList },
   { name: 'Відомість харчування', href: '/nutrition-report', icon: UtensilsCrossed },

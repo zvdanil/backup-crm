@@ -9,8 +9,7 @@ import { EditEnrollmentForm } from '@/components/enrollments/EditEnrollmentForm'
 import { TransactionForm } from '@/components/finance/TransactionForm';
 import { useStudent, useUpdateStudent } from '@/hooks/useStudents';
 import { useEnrollments, useCreateEnrollment, useUnenrollStudent, useUpdateEnrollment, type EnrollmentWithRelations } from '@/hooks/useEnrollments';
-import { useCreateFinanceTransaction, useStudentTotalBalance } from '@/hooks/useFinanceTransactions';
-import { useStudentActivityBalance } from '@/hooks/useFinanceTransactions';
+import { useCreateFinanceTransaction, useStudentAccountBalances, useStudentTotalBalance } from '@/hooks/useFinanceTransactions';
 import { formatCurrency, formatDate } from '@/lib/attendance';
 import { StudentActivityBalanceRow } from '@/components/students/StudentActivityBalanceRow';
 import { StudentPaymentHistory } from '@/components/students/StudentPaymentHistory';
@@ -20,6 +19,7 @@ import { useActivities } from '@/hooks/useActivities';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { Input } from '@/components/ui/input';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import {
   Select,
   SelectContent,
@@ -69,6 +69,7 @@ export default function StudentDetail() {
     activeOnly: false 
   });
   const { data: allActivities = [] } = useActivities();
+  const { data: accounts = [] } = usePaymentAccounts();
   const createEnrollment = useCreateEnrollment();
   const updateStudent = useUpdateStudent();
   const updateEnrollment = useUpdateEnrollment();
@@ -87,6 +88,18 @@ export default function StudentDetail() {
     return ids;
   }, [allActivities]);
 
+  const controllerActivityIds = useMemo(() => (
+    allActivities.filter(isGardenAttendanceController).map(activity => activity.id)
+  ), [allActivities]);
+
+  const { data: accountBalances = [], isLoading: accountBalancesLoading } = useStudentAccountBalances(
+    id!,
+    balanceMonth,
+    balanceYear,
+    controllerActivityIds,
+    Array.from(foodTariffIds)
+  );
+
   // Filter active/past enrollments
   // В карточке ребёнка показываем ВСЕ активности, включая управляющую
   const activeEnrollments = useMemo(() => {
@@ -97,6 +110,56 @@ export default function StudentDetail() {
     // В карточке ребёнка показываем все архивные активности, включая управляющую
     return enrollments.filter(e => !e.is_active);
   }, [enrollments]);
+
+  const balanceEnrollments = useMemo(() => (
+    enrollments.filter((enrollment) => {
+      const activity = allActivities.find(a => a.id === enrollment.activity_id);
+      return activity ? !isGardenAttendanceController(activity) : true;
+    })
+  ), [enrollments, allActivities]);
+
+  const accountLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    accounts.forEach((account) => map.set(account.id, account.name));
+    return map;
+  }, [accounts]);
+
+  const accountBalanceMap = useMemo(() => {
+    const map = new Map<string, typeof accountBalances[number]>();
+    accountBalances.forEach((balance) => {
+      map.set(balance.account_id || 'none', balance);
+    });
+    return map;
+  }, [accountBalances]);
+
+  const accountGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; label: string; enrollments: EnrollmentWithRelations[] }>();
+    balanceEnrollments.forEach((enrollment) => {
+      const accountId = enrollment.activities.account_id || 'none';
+      const label = accountId === 'none'
+        ? 'Без рахунку'
+        : (accountLabelMap.get(accountId) || 'Без рахунку');
+      if (!groups.has(accountId)) {
+        groups.set(accountId, { id: accountId, label, enrollments: [] });
+      }
+      groups.get(accountId)!.enrollments.push(enrollment);
+    });
+    accountBalances.forEach((balance) => {
+      const accountId = balance.account_id || 'none';
+      if (!groups.has(accountId)) {
+        const label = accountId === 'none'
+          ? 'Без рахунку'
+          : (accountLabelMap.get(accountId) || 'Без рахунку');
+        groups.set(accountId, { id: accountId, label, enrollments: [] });
+      }
+    });
+    return Array.from(groups.values()).sort((a, b) => {
+      const aIsNone = a.id === 'none';
+      const bIsNone = b.id === 'none';
+      if (aIsNone !== bIsNone) return aIsNone ? 1 : -1;
+      return a.label.localeCompare(b.label, 'uk-UA');
+    });
+  }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
   const handleEnroll = async (data: { activity_id: string; custom_price: number | null; discount_percent: number }) => {
     // Используем mutateAsync для ожидания завершения мутации
@@ -239,15 +302,21 @@ export default function StudentDetail() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="rounded-lg border border-border p-4">
                   <p className="text-sm text-muted-foreground mb-2">За місяць</p>
-                  <StudentBalanceDisplay 
-                    studentId={id!} 
-                    month={balanceMonth} 
-                    year={balanceYear} 
+                  <StudentBalanceDisplay
+                    studentId={id!}
+                    month={balanceMonth}
+                    year={balanceYear}
+                    excludeActivityIds={controllerActivityIds}
+                    foodTariffIds={Array.from(foodTariffIds)}
                   />
                 </div>
                 <div className="rounded-lg border border-border p-4">
                   <p className="text-sm text-muted-foreground mb-2">Загальний баланс</p>
-                  <StudentBalanceDisplay studentId={id!} />
+                  <StudentBalanceDisplay
+                    studentId={id!}
+                    excludeActivityIds={controllerActivityIds}
+                    foodTariffIds={Array.from(foodTariffIds)}
+                  />
                 </div>
               </div>
             </div>
@@ -263,10 +332,10 @@ export default function StudentDetail() {
             </div>
 
             {/* Balance by activities */}
-            {activeEnrollments.length > 0 && (
+            {balanceEnrollments.length > 0 && (
               <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Баланс по активностях</h3>
+                  <h3 className="text-lg font-semibold">Баланс по рахунках</h3>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Select
                       value={balanceMonth.toString()}
@@ -291,22 +360,83 @@ export default function StudentDetail() {
                     />
                   </div>
                 </div>
-                <div className="space-y-3">
-                  {activeEnrollments
-                    .filter((enrollment) => {
-                      // Скрываем управляющую активность из балансов
-                      const activity = allActivities.find(a => a.id === enrollment.activity_id);
-                      return activity ? !isGardenAttendanceController(activity) : true;
-                    })
-                    .map((enrollment) => (
-                      <StudentActivityBalanceRow
-                        key={enrollment.id}
-                        studentId={id!}
-                        enrollment={enrollment}
-                        month={balanceMonth}
-                        year={balanceYear}
-                      />
-                    ))}
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-border p-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-sm font-medium">Баланс по рахунках</div>
+                      <div className="text-xs text-muted-foreground">
+                        {MONTHS[balanceMonth]} {balanceYear}
+                      </div>
+                    </div>
+                    {accountBalancesLoading ? (
+                      <div className="text-sm text-muted-foreground">Завантаження...</div>
+                    ) : accountGroups.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">Немає нарахувань</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {accountGroups.map((group) => {
+                          const accountBalance = accountBalanceMap.get(group.id);
+                          const amount = accountBalance?.balance || 0;
+                          return (
+                            <div key={group.id} className="flex items-center justify-between text-sm">
+                              <span className="text-muted-foreground">{group.label}</span>
+                              <span className={cn(
+                                "font-semibold",
+                                amount >= 0 ? "text-success" : "text-destructive"
+                              )}>
+                                {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-4">
+                    {accountGroups.map((group) => {
+                      const accountBalance = accountBalanceMap.get(group.id);
+                      const amount = accountBalance?.balance || 0;
+                      return (
+                        <div key={group.id} className="rounded-lg border border-border p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <div className="text-sm font-semibold">{group.label}</div>
+                            <div className={cn(
+                              "text-sm font-semibold",
+                              amount >= 0 ? "text-success" : "text-destructive"
+                            )}>
+                              {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
+                            </div>
+                          </div>
+                          {group.enrollments.length === 0 ? (
+                            <div className="text-sm text-muted-foreground">Немає рядків за вибраний період</div>
+                          ) : (
+                            <div className="space-y-3">
+                              {group.enrollments.map((enrollment) => (
+                                <StudentActivityBalanceRow
+                                  key={enrollment.id}
+                                  studentId={id!}
+                                  enrollment={enrollment}
+                                  month={balanceMonth}
+                                  year={balanceYear}
+                                />
+                              ))}
+                            </div>
+                          )}
+                          {group.id === 'none' && (accountBalanceMap.get('none')?.unassigned_payments || 0) > 0 && (
+                            <div className="mt-3 rounded-md border border-dashed border-muted-foreground/40 p-3">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">Оплата без активності</span>
+                                <span className="font-semibold text-success">
+                                  +{formatCurrency(accountBalanceMap.get('none')?.unassigned_payments || 0)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -561,19 +691,29 @@ export default function StudentDetail() {
 function StudentBalanceDisplay({ 
   studentId, 
   month, 
-  year 
+  year,
+  excludeActivityIds = [],
+  foodTariffIds = []
 }: { 
   studentId: string; 
   month?: number; 
   year?: number;
+  excludeActivityIds?: string[];
+  foodTariffIds?: string[];
 }) {
-  const { data: balanceData, isLoading } = useStudentTotalBalance(studentId, month, year);
+  const { data: accountBalances, isLoading } = useStudentAccountBalances(
+    studentId,
+    month,
+    year,
+    excludeActivityIds,
+    foodTariffIds
+  );
 
   if (isLoading) {
     return <span className="text-sm text-muted-foreground">Завантаження...</span>;
   }
 
-  const balance = balanceData?.balance || 0;
+  const balance = accountBalances?.reduce((sum, item) => sum + (item.balance || 0), 0) || 0;
 
   return (
     <p className={cn(
