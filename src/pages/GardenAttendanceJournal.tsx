@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,9 @@ export default function GardenAttendanceJournal() {
   const [controllerActivityId, setControllerActivityId] = useState<string>('');
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
   const isMobile = useIsMobile();
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const totalsScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
 
   const queryClient = useQueryClient();
   const { data: activities = [] } = useActivities();
@@ -130,6 +133,21 @@ export default function GardenAttendanceJournal() {
     });
   }, [selectedGroups, visibleEnrollments]);
 
+  useEffect(() => {
+    const header = headerScrollRef.current;
+    if (!header) return;
+
+    const sync = () => {
+      const left = header.scrollLeft;
+      if (totalsScrollRef.current) totalsScrollRef.current.scrollLeft = left;
+      if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = left;
+    };
+
+    header.addEventListener('scroll', sync, { passive: true });
+    sync();
+    return () => header.removeEventListener('scroll', sync);
+  }, [days.length, filteredEnrollments.length]);
+
   // Group and sort enrollments
   const groupedEnrollments = useMemo(() => {
     const groupsMap = new Map<string, typeof enrollments>();
@@ -185,6 +203,89 @@ export default function GardenAttendanceJournal() {
     });
     return map;
   }, [attendanceData]);
+
+  const dailyTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    days.forEach((day) => {
+      totals[formatDateString(day)] = 0;
+    });
+
+    filteredEnrollments.forEach((enrollment) => {
+      days.forEach((day) => {
+        const dateStr = formatDateString(day);
+        const key = `${enrollment.id}-${dateStr}`;
+        const attendance = attendanceMap.get(key);
+        if (attendance?.status === 'present') {
+          totals[dateStr] = (totals[dateStr] || 0) + 1;
+        }
+      });
+    });
+
+    return totals;
+  }, [days, filteredEnrollments, attendanceMap]);
+
+  const visibleGroupRows = useMemo(() => {
+    const ids = new Set<string>();
+
+    if (selectedGroups.has('all')) {
+      Array.from(groupedEnrollments.groupsMap.keys()).forEach((id) => ids.add(id));
+      if (groupedEnrollments.noGroupEnrollments.length > 0) ids.add('none');
+    } else {
+      selectedGroups.forEach((id) => {
+        if (id !== 'all') ids.add(id);
+      });
+    }
+
+    const rows: Array<{ id: string; name: string; color?: string }> = [];
+    Array.from(ids.values()).forEach((id) => {
+      if (id === 'none') {
+        rows.push({ id, name: 'Без групи', color: '#94a3b8' });
+        return;
+      }
+      const group = groups.find((g) => g.id === id);
+      if (group) {
+        rows.push({ id, name: group.name, color: group.color });
+      }
+    });
+
+    return rows;
+  }, [groups, groupedEnrollments, selectedGroups]);
+
+  const groupDailyTotals = useMemo(() => {
+    const totals: Record<string, Record<string, number>> = {};
+    const initDates = (groupId: string) => {
+      if (!totals[groupId]) totals[groupId] = {};
+      days.forEach((day) => {
+        totals[groupId][formatDateString(day)] = 0;
+      });
+    };
+
+    visibleGroupRows.forEach((row) => initDates(row.id));
+
+    filteredEnrollments.forEach((enrollment) => {
+      const groupId = enrollment.students?.group_id || 'none';
+      if (!totals[groupId]) initDates(groupId);
+      days.forEach((day) => {
+        const dateStr = formatDateString(day);
+        const key = `${enrollment.id}-${dateStr}`;
+        const attendance = attendanceMap.get(key);
+        if (attendance?.status === 'present') {
+          totals[groupId][dateStr] = (totals[groupId][dateStr] || 0) + 1;
+        }
+      });
+    });
+
+    return totals;
+  }, [visibleGroupRows, filteredEnrollments, days, attendanceMap]);
+
+  const tableColGroup = useMemo(() => (
+    <colgroup>
+      <col style={{ width: '200px' }} />
+      {days.map((day) => (
+        <col key={formatDateString(day)} style={{ width: '70px' }} />
+      ))}
+    </colgroup>
+  ), [days]);
 
   // Handle status change
   const handleStatusChange = useCallback(async (
@@ -645,49 +746,184 @@ export default function GardenAttendanceJournal() {
           )}
         </div>
       ) : (
-          <div className="overflow-x-auto border rounded-xl">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-muted/50">
-                  <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground min-w-[200px]">
-                    Учень
-                  </th>
-                  {days.map((day) => (
-                    <th
-                      key={formatDateString(day)}
-                      className={cn(
-                        "px-1 py-2 text-center text-xs font-medium min-w-[100px]",
-                        isWeekend(day)
-                          ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
-                          : 'text-muted-foreground'
-                      )}
-                    >
-                      <div>{getWeekdayShort(day)}</div>
-                      <div className="font-semibold">{formatShortDate(day)}</div>
-                    </th>
+        <div className="space-y-3">
+          <div ref={totalsScrollRef} className="overflow-hidden border rounded-xl bg-card">
+            <div className="min-w-max">
+              <table className="w-full border-collapse">
+                {tableColGroup}
+                <tbody>
+                  <tr className="bg-muted/30 border-t-2 font-semibold">
+                    <td className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Всього дітей</td>
+                    {days.map((day) => {
+                      const dateStr = formatDateString(day);
+                      return (
+                        <td
+                          key={dateStr}
+                          className={cn(
+                            "px-1 py-1 text-center text-xs font-medium border-l-2 border-border/60",
+                            isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                          )}
+                        >
+                          {dailyTotals[dateStr] || 0}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {visibleGroupRows.map((groupRow) => (
+                    <tr key={groupRow.id} className="bg-muted/30 font-semibold">
+                      <td className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="h-3 w-3 rounded-full"
+                            style={{ backgroundColor: groupRow.color || '#94a3b8' }}
+                          />
+                          {groupRow.name}
+                        </span>
+                      </td>
+                      {days.map((day) => {
+                        const dateStr = formatDateString(day);
+                        const value = groupDailyTotals[groupRow.id]?.[dateStr] || 0;
+                        return (
+                        <td
+                            key={dateStr}
+                            className={cn(
+                            "px-1 py-1 text-center text-xs font-medium border-l-2 border-border/60",
+                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                            )}
+                          >
+                            {value}
+                          </td>
+                        );
+                      })}
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {/* Grouped enrollments */}
-                {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
-                  const group = groups.find(g => g.id === groupId);
-                  return (
-                    <React.Fragment key={groupId}>
-                      {/* Group header */}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="sticky top-16 z-30 bg-card">
+            <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
+              <div className="min-w-max">
+                <table className="w-full border-collapse">
+                  {tableColGroup}
+                  <thead>
+                    <tr className="bg-muted/50">
+                      <th className="sticky left-0 z-30 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                        Учень
+                      </th>
+                      {days.map((day) => (
+                        <th
+                          key={formatDateString(day)}
+                        className={cn(
+                            "px-1 py-2 text-center text-xs font-medium bg-muted/50 border-l-2 border-border/60",
+                            isWeekend(day)
+                              ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
+                              : 'text-muted-foreground'
+                          )}
+                        >
+                          <div>{getWeekdayShort(day)}</div>
+                          <div className="font-semibold">{formatShortDate(day)}</div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div ref={bodyScrollRef} className="overflow-x-hidden border rounded-xl">
+            <div className="min-w-max">
+              <table className="w-full border-collapse">
+                {tableColGroup}
+                <tbody>
+                  {/* Grouped enrollments */}
+                  {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
+                    const group = groups.find(g => g.id === groupId);
+                    return (
+                      <React.Fragment key={groupId}>
+                        {/* Group header */}
+                        <tr className="bg-muted/50 border-t-2 border-b">
+                          <td colSpan={days.length + 1} className="px-4 py-2 font-semibold text-sm">
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="h-4 w-4 rounded-full"
+                                style={{ backgroundColor: group?.color || '#gray' }}
+                              />
+                              Група: {group?.name || 'Невідома група'}
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Children in group */}
+                        {groupEnrollments.map((enrollment) => (
+                          <tr
+                            key={enrollment.id}
+                            className={cn(
+                              'border-t hover:bg-muted/20',
+                              !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
+                            )}
+                          >
+                            <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                              <div className="flex items-center gap-2">
+                                {enrollment.student_id ? (
+                                  <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
+                                    {enrollment.students.full_name}
+                                  </Link>
+                                ) : (
+                                  <span>{enrollment.students.full_name}</span>
+                                )}
+                                {!enrollment.is_active && (
+                                  <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                    Архів
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            {days.map((day) => {
+                              const dateStr = formatDateString(day);
+                              const key = `${enrollment.id}-${dateStr}`;
+                              const attendance = attendanceMap.get(key);
+                              
+                              return (
+                                <td
+                                  key={dateStr}
+                                  className={cn(
+                                    "p-1 text-center border-l-2 border-border/50",
+                                    isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                                  )}
+                                >
+                                  <GardenAttendanceCell
+                                    status={attendance?.status || null}
+                                    amount={attendance?.amount || null}
+                                    value={attendance?.value || null}
+                                    isWeekend={isWeekend(day)}
+                                    onChange={(status, value) => handleStatusChange(
+                                      enrollment.id,
+                                      enrollment.student_id,
+                                      dateStr,
+                                      status,
+                                      value
+                                    )}
+                                  />
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
+                  
+                  {/* Children without group */}
+                  {groupedEnrollments.noGroupEnrollments.length > 0 && (
+                    <React.Fragment>
                       <tr className="bg-muted/50 border-t-2 border-b">
                         <td colSpan={days.length + 1} className="px-4 py-2 font-semibold text-sm">
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="h-4 w-4 rounded-full"
-                              style={{ backgroundColor: group?.color || '#gray' }}
-                            />
-                            Група: {group?.name || 'Невідома група'}
-                          </div>
+                          Без групи
                         </td>
                       </tr>
-                      {/* Children in group */}
-                      {groupEnrollments.map((enrollment) => (
+                      {groupedEnrollments.noGroupEnrollments.map((enrollment) => (
                         <tr
                           key={enrollment.id}
                           className={cn(
@@ -717,10 +953,10 @@ export default function GardenAttendanceJournal() {
                             const attendance = attendanceMap.get(key);
                             
                             return (
-                              <td
+                            <td
                                 key={dateStr}
                                 className={cn(
-                                  "p-1 text-center",
+                                "p-1 text-center border-l-2 border-border/50",
                                   isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
                                 )}
                               >
@@ -743,78 +979,13 @@ export default function GardenAttendanceJournal() {
                         </tr>
                       ))}
                     </React.Fragment>
-                  );
-                })}
-                
-                {/* Children without group */}
-                {groupedEnrollments.noGroupEnrollments.length > 0 && (
-                  <React.Fragment>
-                    <tr className="bg-muted/50 border-t-2 border-b">
-                      <td colSpan={days.length + 1} className="px-4 py-2 font-semibold text-sm">
-                        Без групи
-                      </td>
-                    </tr>
-                    {groupedEnrollments.noGroupEnrollments.map((enrollment) => (
-                      <tr
-                        key={enrollment.id}
-                        className={cn(
-                          'border-t hover:bg-muted/20',
-                          !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
-                        )}
-                      >
-                        <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                          <div className="flex items-center gap-2">
-                            {enrollment.student_id ? (
-                              <Link to={`/students/${enrollment.student_id}`} className="text-primary hover:underline">
-                                {enrollment.students.full_name}
-                              </Link>
-                            ) : (
-                              <span>{enrollment.students.full_name}</span>
-                            )}
-                            {!enrollment.is_active && (
-                              <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                                Архів
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        {days.map((day) => {
-                          const dateStr = formatDateString(day);
-                          const key = `${enrollment.id}-${dateStr}`;
-                          const attendance = attendanceMap.get(key);
-                          
-                          return (
-                            <td
-                              key={dateStr}
-                              className={cn(
-                                "p-1 text-center",
-                                isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
-                              )}
-                            >
-                              <GardenAttendanceCell
-                                status={attendance?.status || null}
-                                amount={attendance?.amount || null}
-                                value={attendance?.value || null}
-                                isWeekend={isWeekend(day)}
-                                onChange={(status, value) => handleStatusChange(
-                                  enrollment.id,
-                                  enrollment.student_id,
-                                  dateStr,
-                                  status,
-                                  value
-                                )}
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </React.Fragment>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
+        </div>
+      )}
       </div>
     </>
   );

@@ -359,6 +359,34 @@ export default function NutritionReport() {
 
   // Calculate totals
   const totalPortions = sortedRecords.length;
+  const uniqueStudentRecords = useMemo(() => {
+    const map = new Map<string, NutritionRecord>();
+    nutritionRecords.forEach((record) => {
+      if (!map.has(record.studentId)) {
+        map.set(record.studentId, record);
+      }
+    });
+    return Array.from(map.values());
+  }, [nutritionRecords]);
+  const foodStudentIds = useMemo(() => new Set(uniqueStudentRecords.map((r) => r.studentId)), [uniqueStudentRecords]);
+  const presentStudentIds = useMemo(() => {
+    const ids = new Set<string>();
+    controllerAttendanceData.forEach((attendance: any) => {
+      const studentId = attendance?.enrollments?.students?.id;
+      if (studentId) ids.add(studentId);
+    });
+    return ids;
+  }, [controllerAttendanceData]);
+  const noFoodStudentIds = useMemo(() => {
+    const ids = new Set<string>();
+    presentStudentIds.forEach((id) => {
+      if (!foodStudentIds.has(id)) ids.add(id);
+    });
+    return ids;
+  }, [presentStudentIds, foodStudentIds]);
+  const totalPresentStudents = presentStudentIds.size;
+  const totalFoodStudents = uniqueStudentRecords.length;
+  const totalNoFoodStudents = noFoodStudentIds.size;
   const nutritionTypeTotals = useMemo(() => {
     return sortedRecords.reduce(
       (acc, record) => {
@@ -373,14 +401,27 @@ export default function NutritionReport() {
   }, [sortedRecords]);
   const totalsByGroup = useMemo(() => {
     const totals: Record<string, number> = {};
-    Object.entries(groupedRecords.grouped).forEach(([groupId, records]) => {
-      totals[groupId] = records.length;
+    uniqueStudentRecords.forEach((record) => {
+      const groupId = record.groupId || 'none';
+      totals[groupId] = (totals[groupId] || 0) + 1;
     });
-    if (groupedRecords.noGroup.length > 0) {
-      totals['none'] = groupedRecords.noGroup.length;
-    }
     return totals;
-  }, [groupedRecords]);
+  }, [uniqueStudentRecords]);
+  const noFoodTotalsByGroup = useMemo(() => {
+    const totals: Record<string, Set<string>> = {};
+    controllerAttendanceData.forEach((attendance: any) => {
+      const studentId = attendance?.enrollments?.students?.id;
+      if (!studentId || foodStudentIds.has(studentId)) return;
+      const groupId = attendance?.enrollments?.students?.group_id || 'none';
+      if (!totals[groupId]) totals[groupId] = new Set();
+      totals[groupId].add(studentId);
+    });
+    const result: Record<string, number> = {};
+    Object.entries(totals).forEach(([groupId, set]) => {
+      result[groupId] = set.size;
+    });
+    return result;
+  }, [controllerAttendanceData, foodStudentIds]);
 
   // Handle print
   const handlePrint = () => {
@@ -491,7 +532,7 @@ export default function NutritionReport() {
                 </div>
               </div>
               <div className="text-2xl font-bold text-primary">
-                Всього порцій: {totalPortions}
+                Всього дітей: {totalFoodStudents} з харчуванням · {totalNoFoodStudents} без харчування · Присутні всього: {totalPresentStudents}
               </div>
             </div>
           </CardContent>
@@ -570,7 +611,7 @@ export default function NutritionReport() {
                 <CardTitle>Підсумки</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-md border p-4">
                     <p className="font-medium mb-2">За типом харчування</p>
                     <div className="text-sm text-muted-foreground">
@@ -580,7 +621,7 @@ export default function NutritionReport() {
                     </div>
                   </div>
                   <div className="rounded-md border p-4">
-                    <p className="font-medium mb-2">За групами</p>
+                    <p className="font-medium mb-2">За групами (з харчуванням)</p>
                     <div className="text-sm text-muted-foreground space-y-1">
                       {Object.entries(totalsByGroup).map(([groupId, count]) => {
                         const groupName = groupId === 'none'
@@ -592,7 +633,23 @@ export default function NutritionReport() {
                           </div>
                         );
                       })}
-                      <div className="font-semibold text-foreground">Всього: {totalPortions}</div>
+                      <div className="font-semibold text-foreground">Всього з харчуванням: {totalFoodStudents}</div>
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-4">
+                    <p className="font-medium mb-2">За групами (без харчування)</p>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      {Object.entries(noFoodTotalsByGroup).map(([groupId, count]) => {
+                        const groupName = groupId === 'none'
+                          ? 'Без групи'
+                          : groups.find(g => g.id === groupId)?.name || 'Невідома група';
+                        return (
+                          <div key={`summary-no-food-${groupId}`}>
+                            {groupName}: {count}
+                          </div>
+                        );
+                      })}
+                      <div className="font-semibold text-foreground">Всього без харчування: {totalNoFoodStudents}</div>
                     </div>
                   </div>
                 </div>

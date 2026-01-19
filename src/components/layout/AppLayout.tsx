@@ -86,9 +86,8 @@ export function AppLayout({ children }: AppLayoutProps) {
       <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
         <div className="w-full px-2 sm:px-4 h-16 flex items-center justify-between">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <GraduationCap className="h-8 w-8 text-primary" />
-            <span className="text-lg font-semibold text-foreground">КіндерCRM</span>
+          <Link to="/" className="flex items-center">
+            <img src="/logoiris.png" alt="Iris" className="h-10 w-10" />
           </Link>
 
           {/* Desktop Navigation */}

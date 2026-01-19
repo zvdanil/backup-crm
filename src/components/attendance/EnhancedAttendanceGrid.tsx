@@ -519,6 +519,60 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return totals;
   }, [filteredEnrollments, days, attendanceMap]);
 
+  const visibleGroupRows = useMemo(() => {
+    const ids = new Set<string>();
+
+    if (selectedGroups.has('all')) {
+      Array.from(groupedEnrollments.groupsMap.keys()).forEach((id) => ids.add(id));
+      if (groupedEnrollments.noGroupEnrollments.length > 0) ids.add('none');
+    } else {
+      selectedGroups.forEach((id) => {
+        if (id !== 'all') ids.add(id);
+      });
+    }
+
+    const rows: Array<{ id: string; name: string; color?: string }> = [];
+    Array.from(ids.values()).forEach((id) => {
+      if (id === 'none') {
+        rows.push({ id, name: 'Без групи', color: '#94a3b8' });
+        return;
+      }
+      const group = groups.find((g) => g.id === id);
+      if (group) {
+        rows.push({ id, name: group.name, color: group.color });
+      }
+    });
+
+    return rows;
+  }, [groups, groupedEnrollments, selectedGroups]);
+
+  const groupDailyTotals = useMemo(() => {
+    const totals: Record<string, Record<string, number>> = {};
+    const initDates = (groupId: string) => {
+      if (!totals[groupId]) totals[groupId] = {};
+      days.forEach((day) => {
+        totals[groupId][formatDateString(day)] = 0;
+      });
+    };
+
+    visibleGroupRows.forEach((row) => initDates(row.id));
+
+    filteredEnrollments.forEach((enrollment) => {
+      const groupId = enrollment.students?.group_id || 'none';
+      if (!totals[groupId]) initDates(groupId);
+      days.forEach((day) => {
+        const dateStr = formatDateString(day);
+        const key = `${enrollment.id}-${dateStr}`;
+        const attendance = attendanceMap.get(key);
+        if (attendance?.status === 'present') {
+          totals[groupId][dateStr] = (totals[groupId][dateStr] || 0) + 1;
+        }
+      });
+    });
+
+    return totals;
+  }, [visibleGroupRows, filteredEnrollments, days, attendanceMap]);
+
   const monthlyAccruals = useMemo(() => {
     const records = buildAttendanceRecordsFromMap();
     return calculateMonthlyStaffAccruals({
@@ -802,6 +856,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           </div>
         </div>
 
+
         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
           <p>Немає дітей за обраними фільтрами</p>
         </div>
@@ -868,6 +923,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           )}
         </div>
       </div>
+
 
       {/* Grid */}
       {isMobile && (
@@ -1049,9 +1105,9 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         <div className="overflow-x-auto border rounded-xl">
           <table className="w-full border-collapse">
           <thead>
-            {/* Рядки ітогів за день - тепер над заголовком */}
+            {/* Рядки підсумків під датами */}
             <tr className="bg-muted/30 border-t-2 font-semibold">
-              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">П: Присутні</th>
+              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Всього дітей</th>
               {days.map((day) => {
                 const dateStr = formatDateString(day);
                 const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
@@ -1071,69 +1127,37 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 {Object.values(studentTotals).reduce((sum, t) => sum + t.present, 0)}
               </th>
             </tr>
-            <tr className="bg-muted/30 font-semibold">
-              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Х: Хворі</th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
-                return (
-                  <th
-                    key={dateStr}
-                    className={cn(
-                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
-                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
-                    )}
-                  >
-                    {totals.sick}
-                  </th>
-                );
-              })}
-              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
-                {Object.values(studentTotals).reduce((sum, t) => sum + t.sick, 0)}
-              </th>
-            </tr>
-            <tr className="bg-muted/30 font-semibold">
-              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Н: Пропуски</th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
-                return (
-                  <th
-                    key={dateStr}
-                    className={cn(
-                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
-                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
-                    )}
-                  >
-                    {totals.absent}
-                  </th>
-                );
-              })}
-              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
-                {Object.values(studentTotals).reduce((sum, t) => sum + t.absent, 0)}
-              </th>
-            </tr>
-            <tr className="bg-muted/30 font-semibold border-b-2">
-              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Значення</th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
-                return (
-                  <th
-                    key={dateStr}
-                    className={cn(
-                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
-                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
-                    )}
-                  >
-                    {totals.values > 0 ? totals.values : ''}
-                  </th>
-                );
-              })}
-              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
-                {Object.values(studentTotals).reduce((sum, t) => sum + t.values, 0)}
-              </th>
-            </tr>
+            {visibleGroupRows.map((groupRow) => (
+              <tr key={groupRow.id} className="bg-muted/30 font-semibold">
+                <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">
+                  <span className="inline-flex items-center gap-2">
+                    <span
+                      className="h-3 w-3 rounded-full"
+                      style={{ backgroundColor: groupRow.color || '#94a3b8' }}
+                    />
+                    {groupRow.name}
+                  </span>
+                </th>
+                {days.map((day) => {
+                  const dateStr = formatDateString(day);
+                  const value = groupDailyTotals[groupRow.id]?.[dateStr] || 0;
+                  return (
+                    <th
+                      key={dateStr}
+                      className={cn(
+                        "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
+                        isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                      )}
+                    >
+                      {value}
+                    </th>
+                  );
+                })}
+                <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
+                  {Object.values(groupDailyTotals[groupRow.id] || {}).reduce((sum, v) => sum + v, 0)}
+                </th>
+              </tr>
+            ))}
             
             {/* Рядок оплати педагогу */}
             <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">

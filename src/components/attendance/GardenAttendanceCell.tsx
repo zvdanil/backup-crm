@@ -40,7 +40,7 @@ export function GardenAttendanceCell({
           variant={status === 'present' ? 'default' : 'outline'}
           size="sm"
           className={cn(
-            'h-7 w-7 p-0 text-xs font-semibold',
+            'h-6 w-6 p-0 text-[10px] font-semibold',
             status === 'present' && 'bg-green-500 hover:bg-green-600 text-white',
             !status && 'hover:bg-green-100',
             isWeekend && !status && 'bg-muted/50',
@@ -56,7 +56,7 @@ export function GardenAttendanceCell({
           variant={status === 'absent' ? 'default' : 'outline'}
           size="sm"
           className={cn(
-            'h-7 w-7 p-0 text-xs font-semibold',
+            'h-6 w-6 p-0 text-[10px] font-semibold',
             status === 'absent' && 'bg-red-500 hover:bg-red-600 text-white',
             !status && 'hover:bg-red-100',
             isWeekend && !status && 'bg-muted/50',

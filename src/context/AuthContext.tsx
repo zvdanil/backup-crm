@@ -24,6 +24,8 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
   const { data: existing, error: existingError } = await supabase
@@ -70,6 +72,19 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
   });
 }
 
+async function withRetry<T>(fn: () => Promise<T>, retries: number, delayMs: number): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (error) {
+      attempt += 1;
+      if (attempt > retries) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -79,10 +94,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadSession = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await withTimeout(
-        supabase.auth.getSession(),
-        10000,
-        'Auth session timeout'
+      if (!supabaseUrl || !supabaseKey) {
+        console.error('Supabase env missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
+        toast({
+          title: 'Помилка конфігурації',
+          description: 'Не задано VITE_SUPABASE_URL або VITE_SUPABASE_PUBLISHABLE_KEY.',
+          variant: 'destructive',
+        });
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        return;
+      }
+
+      const { data, error } = await withRetry(
+        () => withTimeout(supabase.auth.getSession(), 15000, 'Auth session timeout'),
+        1,
+        500
       );
       if (error) {
         console.error('Auth session error', error);
@@ -93,10 +121,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(data.session?.user ?? null);
       if (data.session?.user) {
         try {
-          const profileData = await withTimeout(
-            fetchOrCreateProfile(data.session.user),
-            10000,
-            'Profile load timeout'
+          const profileData = await withRetry(
+            () => withTimeout(fetchOrCreateProfile(data.session.user), 15000, 'Profile load timeout'),
+            1,
+            500
           );
           if (profileData && !profileData.is_active) {
             await supabase.auth.signOut();
@@ -129,10 +157,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
         try {
-          const profileData = await withTimeout(
-            fetchOrCreateProfile(newSession.user),
-            10000,
-            'Profile load timeout'
+          const profileData = await withRetry(
+            () => withTimeout(fetchOrCreateProfile(newSession.user), 15000, 'Profile load timeout'),
+            1,
+            500
           );
           if (profileData && !profileData.is_active) {
             await supabase.auth.signOut();
@@ -157,6 +185,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadSession]);
 
   const signInWithProvider = useCallback(async (provider: 'google' | 'apple') => {
+    if (!supabaseUrl || !supabaseKey) {
+      toast({
+        title: 'Помилка конфігурації',
+        description: 'Не задано VITE_SUPABASE_URL або VITE_SUPABASE_PUBLISHABLE_KEY.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
