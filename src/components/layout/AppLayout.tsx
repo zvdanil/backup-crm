@@ -14,24 +14,29 @@ import {
   Wallet,
   ClipboardList,
   UtensilsCrossed,
-  Landmark
+  Landmark,
+  Shield,
+  User
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { useAuth } from '@/context/AuthContext';
+import { canAccessSection } from '@/lib/permissions';
 
 const navigation = [
-  { name: 'Дашборд', href: '/', icon: LayoutDashboard },
-  { name: 'Діти', href: '/students', icon: Users },
-  { name: 'Активності', href: '/activities', icon: BookOpen },
-  { name: 'Рахунки', href: '/accounts', icon: Landmark },
-  { name: 'Журнал', href: '/attendance', icon: Calendar },
-  { name: 'Журнал відвідування', href: '/garden-attendance', icon: ClipboardList },
-  { name: 'Відомість харчування', href: '/nutrition-report', icon: UtensilsCrossed },
-  { name: 'Групи', href: '/groups', icon: UsersRound },
-  { name: 'Персонал', href: '/staff', icon: UserCog },
-  { name: 'Журнал витрат', href: '/staff-expenses', icon: Receipt },
-  { name: 'Ведомість', href: '/staff-payroll', icon: Wallet },
+  { name: 'Дашборд', href: '/', icon: LayoutDashboard, section: 'dashboard' },
+  { name: 'Діти', href: '/students', icon: Users, section: 'students' },
+  { name: 'Активності', href: '/activities', icon: BookOpen, section: 'activities' },
+  { name: 'Рахунки', href: '/accounts', icon: Landmark, section: 'accounts' },
+  { name: 'Журнал', href: '/attendance', icon: Calendar, section: 'attendance' },
+  { name: 'Журнал відвідування', href: '/garden-attendance', icon: ClipboardList, section: 'garden_attendance' },
+  { name: 'Відомість харчування', href: '/nutrition-report', icon: UtensilsCrossed, section: 'nutrition' },
+  { name: 'Групи', href: '/groups', icon: UsersRound, section: 'groups' },
+  { name: 'Персонал', href: '/staff', icon: UserCog, section: 'staff' },
+  { name: 'Журнал витрат', href: '/staff-expenses', icon: Receipt, section: 'staff_expenses' },
+  { name: 'Ведомість', href: '/staff-payroll', icon: Wallet, section: 'staff_payroll' },
+  { name: 'Користувачі', href: '/users', icon: Shield, section: 'users' },
 ];
 
 interface AppLayoutProps {
@@ -41,6 +46,7 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { role, signOut } = useAuth();
 
   const isActive = (href: string) => {
     if (href === '/') {
@@ -49,9 +55,13 @@ export function AppLayout({ children }: AppLayoutProps) {
     return location.pathname.startsWith(href);
   };
 
+  const navItems = role === 'parent'
+    ? [{ name: 'Кабінет', href: '/parent', icon: User }]
+    : navigation.filter((item) => canAccessSection(role, item.section));
+
   const NavLinks = () => (
     <>
-      {navigation.map((item) => (
+      {navItems.map((item) => (
         <Link
           key={item.name}
           to={item.href}
@@ -74,7 +84,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Horizontal Header */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="w-full px-2 sm:px-4 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
             <GraduationCap className="h-8 w-8 text-primary" />
@@ -86,19 +96,27 @@ export function AppLayout({ children }: AppLayoutProps) {
             <NavLinks />
           </nav>
 
-          {/* Mobile Menu */}
-          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-[250px]">
-              <div className="flex flex-col gap-2 mt-8">
-                <NavLinks />
-              </div>
-            </SheetContent>
-          </Sheet>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={signOut} className="hidden md:inline-flex">
+              Вийти
+            </Button>
+            {/* Mobile Menu */}
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="md:hidden">
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[250px]">
+                <div className="flex flex-col gap-2 mt-8">
+                  <NavLinks />
+                  <Button variant="ghost" onClick={signOut} className="justify-start">
+                    Вийти
+                  </Button>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
       </header>
 

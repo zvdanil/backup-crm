@@ -78,6 +78,7 @@ export default function StaffDetail() {
   
   // Financial Calendar data
   const { data: journalEntries = [] } = useStaffJournalEntries(id, calendarMonth, calendarYear);
+  const { data: allJournalEntries = [] } = useStaffJournalEntries(id);
   const { data: payouts = [] } = useStaffPayouts(id);
   const { data: activities = [] } = useActivities();
   const createPayout = useCreateStaffPayout();
@@ -195,6 +196,23 @@ export default function StaffDetail() {
       setCalendarMonth(calendarMonth + 1);
     }
   };
+
+  const monthSummary = useMemo(() => {
+    const startDate = new Date(calendarYear, calendarMonth, 1).toISOString().split('T')[0];
+    const endDate = new Date(calendarYear, calendarMonth + 1, 0).toISOString().split('T')[0];
+    const accrued = journalEntries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+    const paid = payouts
+      .filter((payout) => payout.payout_date >= startDate && payout.payout_date <= endDate)
+      .reduce((sum, payout) => sum + (Number(payout.amount) || 0), 0);
+
+    return { accrued, paid, balance: accrued - paid };
+  }, [journalEntries, payouts, calendarMonth, calendarYear]);
+
+  const totalSummary = useMemo(() => {
+    const accrued = allJournalEntries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+    const paid = payouts.reduce((sum, payout) => sum + (Number(payout.amount) || 0), 0);
+    return { accrued, paid, balance: accrued - paid };
+  }, [allJournalEntries, payouts]);
   
   const handlePayoutCellClick = (date: string) => {
     setSelectedPayoutDate(date);
@@ -393,6 +411,38 @@ export default function StaffDetail() {
 
                   <TabsContent value="history" className="mt-6">
                     <div className="space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-base">Баланс за місяць</CardTitle>
+                            <CardDescription>
+                              {['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'][calendarMonth]} {calendarYear}
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className={cn("text-2xl font-semibold", monthSummary.balance >= 0 ? "text-success" : "text-destructive")}>
+                              {formatCurrency(monthSummary.balance)}
+                            </div>
+                            <div className="mt-2 text-sm text-muted-foreground">
+                              Нараховано: {formatCurrency(monthSummary.accrued)} · Виплачено: {formatCurrency(monthSummary.paid)}
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-base">Баланс за весь період</CardTitle>
+                            <CardDescription>Від початку співпраці</CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <div className={cn("text-2xl font-semibold", totalSummary.balance >= 0 ? "text-success" : "text-destructive")}>
+                              {formatCurrency(totalSummary.balance)}
+                            </div>
+                            <div className="mt-2 text-sm text-muted-foreground">
+                              Нараховано: {formatCurrency(totalSummary.accrued)} · Виплачено: {formatCurrency(totalSummary.paid)}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="text-lg font-semibold">Фінансова історія</h3>

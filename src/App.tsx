@@ -2,8 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AuthProvider } from "@/context/AuthContext";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Students from "./pages/Students";
 import StudentDetail from "./pages/StudentDetail";
@@ -18,6 +20,10 @@ import StaffExpenseJournal from "./pages/StaffExpenseJournal";
 import StaffPayrollRegistry from "./pages/StaffPayrollRegistry";
 import GardenAttendanceJournal from "./pages/GardenAttendanceJournal";
 import NutritionReport from "./pages/NutritionReport";
+import Users from "./pages/Users";
+import Login from "./pages/Login";
+import ParentPortal from "./pages/ParentPortal";
+import ParentStudentDetail from "./pages/ParentStudentDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -41,31 +47,173 @@ if (typeof window !== 'undefined') {
   };
 }
 
+const AppRoutes = () => {
+  const location = useLocation();
+  const isLogin = location.pathname === '/login';
+
+  if (isLogin) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="*" element={<Login />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <AppLayout>
+      <Routes>
+        <Route
+          path="/"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'viewer']}>
+              <Index />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/students"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <Students />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/students/:id"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <StudentDetail />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/activities"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <Activities />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/activities/:id/expenses"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <ActivityExpenseJournal />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/accounts"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'accountant']}>
+              <Accounts />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/attendance"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <Attendance />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/groups"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <Groups />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/staff"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'accountant', 'viewer']}>
+              <Staff />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/staff/:id"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'accountant', 'viewer']}>
+              <StaffDetail />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/staff-expenses"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <StaffExpenseJournal />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/staff-payroll"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'accountant', 'viewer']}>
+              <StaffPayrollRegistry />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/garden-attendance"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <GardenAttendanceJournal />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/nutrition-report"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <NutritionReport />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/users"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin']}>
+              <Users />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/parent"
+          element={(
+            <ProtectedRoute allowedRoles={['parent']}>
+              <ParentPortal />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/parent/students/:id"
+          element={(
+            <ProtectedRoute allowedRoles={['parent']}>
+              <ParentStudentDetail />
+            </ProtectedRoute>
+          )}
+        />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </AppLayout>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <AppLayout>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/students" element={<Students />} />
-            <Route path="/students/:id" element={<StudentDetail />} />
-            <Route path="/activities" element={<Activities />} />
-            <Route path="/activities/:id/expenses" element={<ActivityExpenseJournal />} />
-            <Route path="/accounts" element={<Accounts />} />
-            <Route path="/attendance" element={<Attendance />} />
-            <Route path="/groups" element={<Groups />} />
-            <Route path="/staff" element={<Staff />} />
-            <Route path="/staff/:id" element={<StaffDetail />} />
-            <Route path="/staff-expenses" element={<StaffExpenseJournal />} />
-            <Route path="/staff-payroll" element={<StaffPayrollRegistry />} />
-            <Route path="/garden-attendance" element={<GardenAttendanceJournal />} />
-            <Route path="/nutrition-report" element={<NutritionReport />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AppLayout>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

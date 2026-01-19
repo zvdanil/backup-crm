@@ -27,6 +27,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useAuth } from '@/context/AuthContext';
+import { useParentLinks, useAddParentLink, useRemoveParentLink } from '@/hooks/useParentLinks';
+import { useUserProfiles } from '@/hooks/useUserProfiles';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -62,6 +65,8 @@ export default function StudentDetail() {
   const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
   const [balanceYear, setBalanceYear] = useState(now.getFullYear());
   const isMobile = useIsMobile();
+  const { role } = useAuth();
+  const [selectedParentId, setSelectedParentId] = useState<string>('none');
 
   const { data: student, isLoading: studentLoading } = useStudent(id!);
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
@@ -70,6 +75,10 @@ export default function StudentDetail() {
   });
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
+  const { data: userProfiles = [] } = useUserProfiles();
+  const { data: parentLinks = [] } = useParentLinks(id);
+  const addParentLink = useAddParentLink();
+  const removeParentLink = useRemoveParentLink();
   const createEnrollment = useCreateEnrollment();
   const updateStudent = useUpdateStudent();
   const updateEnrollment = useUpdateEnrollment();
@@ -131,6 +140,16 @@ export default function StudentDetail() {
     });
     return map;
   }, [accountBalances]);
+
+  const parentOptions = useMemo(() => {
+    const linkedIds = new Set(parentLinks.map((link) => link.parent_id));
+    return userProfiles
+      .filter((profile) => profile.role === 'parent' && !linkedIds.has(profile.id))
+      .map((profile) => ({
+        id: profile.id,
+        label: profile.full_name || profile.id,
+      }));
+  }, [parentLinks, userProfiles]);
 
   const accountGroups = useMemo(() => {
     const groups = new Map<string, { id: string; label: string; enrollments: EnrollmentWithRelations[] }>();
@@ -330,6 +349,58 @@ export default function StudentDetail() {
                 year={balanceYear}
               />
             </div>
+
+            {(role === 'owner' || role === 'admin') && (
+              <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
+                <h3 className="text-lg font-semibold mb-4">Доступ для батьків</h3>
+                <div className="space-y-3">
+                  {parentLinks.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">Немає привʼязаних батьків</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {parentLinks.map((link) => (
+                        <div key={link.id} className="flex items-center justify-between text-sm border rounded-md p-2">
+                          <span className="font-medium">{link.user_profiles?.full_name || link.parent_id}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeParentLink.mutate({ linkId: link.id, student_id: id! })}
+                          >
+                            Видалити
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                    <Select value={selectedParentId} onValueChange={setSelectedParentId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Обрати батьківський акаунт" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не вибрано</SelectItem>
+                        {parentOptions.map((option) => (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={() => {
+                        if (selectedParentId === 'none') return;
+                        addParentLink.mutate({ parent_id: selectedParentId, student_id: id! });
+                        setSelectedParentId('none');
+                      }}
+                      disabled={selectedParentId === 'none'}
+                    >
+                      Додати
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Balance by activities */}
             {balanceEnrollments.length > 0 && (
