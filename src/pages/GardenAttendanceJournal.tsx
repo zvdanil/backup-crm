@@ -37,6 +37,7 @@ export default function GardenAttendanceJournal() {
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
   const [controllerActivityId, setControllerActivityId] = useState<string>('');
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const isMobile = useIsMobile();
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const totalsScrollRef = useRef<HTMLDivElement>(null);
@@ -452,6 +453,7 @@ export default function GardenAttendanceJournal() {
     await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
   }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient]);
 
+
   const handlePrevMonth = () => {
     if (month === 0) {
       setMonth(11);
@@ -469,6 +471,79 @@ export default function GardenAttendanceJournal() {
       setMonth(month + 1);
     }
   };
+
+  const runBatched = useCallback(async (tasks: Array<() => Promise<void>>, batchSize = 10) => {
+    for (let i = 0; i < tasks.length; i += batchSize) {
+      const batch = tasks.slice(i, i + batchSize);
+      await Promise.all(batch.map((task) => task()));
+    }
+  }, []);
+
+  const handleFillPresentForMonth = useCallback(async () => {
+    setIsBulkUpdating(true);
+    const existingKeys = new Set(attendanceData.map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
+
+    try {
+      const tasks: Array<() => Promise<void>> = [];
+      for (const enrollment of filteredEnrollments) {
+        for (const day of days) {
+          const dateStr = formatDateString(day);
+          const key = `${enrollment.id}-${dateStr}`;
+          if (existingKeys.has(key)) continue;
+          tasks.push(async () => {
+            await handleStatusChange(enrollment.id, enrollment.student_id, dateStr, 'present');
+            existingKeys.add(key);
+          });
+        }
+      }
+      await runBatched(tasks, 10);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  }, [attendanceData, filteredEnrollments, days, handleStatusChange, runBatched]);
+
+  const handleClearMonth = useCallback(async () => {
+    setIsBulkUpdating(true);
+    const existingKeys = new Set(attendanceData.map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
+
+    try {
+      const tasks: Array<() => Promise<void>> = [];
+      for (const enrollment of filteredEnrollments) {
+        for (const day of days) {
+          const dateStr = formatDateString(day);
+          const key = `${enrollment.id}-${dateStr}`;
+          if (!existingKeys.has(key)) continue;
+          tasks.push(async () => {
+            await handleStatusChange(enrollment.id, enrollment.student_id, dateStr, null);
+            existingKeys.delete(key);
+          });
+        }
+      }
+      await runBatched(tasks, 10);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  }, [attendanceData, filteredEnrollments, days, handleStatusChange, runBatched]);
+
+  const handleFillPresentForDate = useCallback(async (dateStr: string) => {
+    setIsBulkUpdating(true);
+    const existingKeys = new Set(attendanceData.map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
+
+    try {
+      const tasks: Array<() => Promise<void>> = [];
+      for (const enrollment of filteredEnrollments) {
+        const key = `${enrollment.id}-${dateStr}`;
+        if (existingKeys.has(key)) continue;
+        tasks.push(async () => {
+          await handleStatusChange(enrollment.id, enrollment.student_id, dateStr, 'present');
+          existingKeys.add(key);
+        });
+      }
+      await runBatched(tasks, 10);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  }, [attendanceData, filteredEnrollments, handleStatusChange, runBatched]);
 
   const handleGroupToggle = (groupId: string) => {
     const newSelected = new Set(selectedGroups);
@@ -601,6 +676,24 @@ export default function GardenAttendanceJournal() {
                 </Label>
               </div>
             )}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleFillPresentForMonth}
+              disabled={isBulkUpdating}
+            >
+              Заповнити «П» за місяць
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearMonth}
+              disabled={isBulkUpdating}
+            >
+              Очистити місяць
+            </Button>
           </div>
         </div>
 
@@ -826,6 +919,35 @@ export default function GardenAttendanceJournal() {
                           <div className="font-semibold">{formatShortDate(day)}</div>
                         </th>
                       ))}
+                    </tr>
+                    <tr className="bg-muted/50 border-t">
+                      <th className="sticky left-0 z-30 bg-muted/50 px-4 py-2 text-left text-xs text-muted-foreground">
+                        Заповнити П
+                      </th>
+                      {days.map((day) => {
+                        const dateStr = formatDateString(day);
+                        return (
+                          <th
+                            key={`${dateStr}-fill`}
+                            className={cn(
+                              "px-1 py-1 text-center text-xs font-medium bg-muted/50 border-l-2 border-border/60",
+                              isWeekend(day)
+                                ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
+                                : 'text-muted-foreground'
+                            )}
+                          >
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-[10px]"
+                              onClick={() => handleFillPresentForDate(dateStr)}
+                              disabled={isBulkUpdating}
+                            >
+                              П
+                            </Button>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                 </table>

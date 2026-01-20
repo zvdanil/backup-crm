@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -722,26 +722,16 @@ export default function EnhancedDashboard() {
           }
 
           return (
-            <div key={category} className="rounded-xl bg-card border border-border shadow-soft overflow-hidden">
+            <div key={category} className="rounded-xl bg-card border border-border shadow-soft overflow-visible">
               <div className={cn("px-6 py-3 border-b flex items-center justify-between", styles.bg, styles.border)}>
                 <h3 className={cn("font-semibold", styles.text)}>{ACTIVITY_CATEGORY_LABELS[category]}</h3>
                 <span className={cn("text-lg font-bold", styles.text)}>{formatCurrency(summaryByCategory[category] || 0)}</span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
-                      <th className="text-left py-2 px-4 font-medium sticky left-0 bg-muted/30 min-w-[200px]">Дитина / Активність</th>
-                      {days.map((day) => (
-                        <th key={formatDateString(day)} className={cn("py-2 px-1 text-center min-w-[40px] font-medium", isWeekend(day) && "bg-muted/50")}>
-                          <div className="text-xs text-muted-foreground">{getWeekdayShort(day)}</div>
-                          <div>{formatShortDate(day)}</div>
-                        </th>
-                      ))}
-                      <th className="py-2 px-4 text-right font-semibold sticky right-0 bg-muted/30 min-w-[100px]">Разом</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <StickyDateTable
+                days={days}
+                leftHeader="Дитина / Активність"
+                rightHeader="Разом"
+              >
                     {categoryStudents.map((student, studentIndex) => 
                       student.activities.map((activity, activityIndex) => {
                         const enrollment = data?.enrollments.find(e => e.id === activity.enrollmentId);
@@ -937,33 +927,21 @@ export default function EnhancedDashboard() {
                         {formatCurrency(summaryByCategory[category] || 0)}
                       </td>
                     </tr>
-                  </tbody>
-                </table>
-              </div>
+              </StickyDateTable>
             </div>
           );
         })}
 
         {/* Загальний рядок "Разом за день" (Доходи - Витрати) */}
-        <div className="rounded-xl bg-card border border-border shadow-soft overflow-hidden">
+        <div className="rounded-xl bg-card border border-border shadow-soft overflow-visible">
           <div className="px-6 py-3 border-b bg-muted/20">
             <h3 className="font-semibold text-foreground">Разом за день (Доходи - Витрати)</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className="text-left py-2 px-4 font-medium sticky left-0 bg-muted/30 min-w-[200px]">Розрахунок</th>
-                  {days.map((day) => (
-                    <th key={formatDateString(day)} className={cn("py-2 px-1 text-center min-w-[40px] font-medium", isWeekend(day) && "bg-muted/50")}>
-                      <div className="text-xs text-muted-foreground">{getWeekdayShort(day)}</div>
-                      <div>{formatShortDate(day)}</div>
-                    </th>
-                  ))}
-                  <th className="py-2 px-4 text-right font-semibold sticky right-0 bg-muted/30 min-w-[100px]">Разом</th>
-                </tr>
-              </thead>
-              <tbody>
+          <StickyDateTable
+            days={days}
+            leftHeader="Розрахунок"
+            rightHeader="Разом"
+          >
                 {/* Рядок "Доходи" */}
                 <tr className="border-b hover:bg-muted/20">
                   <td className="py-2 px-4 sticky left-0 bg-card font-medium text-success">Доходи</td>
@@ -1022,9 +1000,7 @@ export default function EnhancedDashboard() {
                     {formatCurrency(Object.values(dailyDisplayTotals.net).reduce((sum, val) => sum + val, 0))}
                   </td>
                 </tr>
-              </tbody>
-            </table>
-          </div>
+          </StickyDateTable>
         </div>
 
         {studentsGrouped.length === 0 && (
@@ -1035,5 +1011,102 @@ export default function EnhancedDashboard() {
         )}
       </div>
     </>
+  );
+}
+
+function StickyDateTable({
+  days,
+  leftHeader,
+  rightHeader,
+  children,
+  topOffsetClass = 'top-16',
+  colWidths = { left: 200, day: 40, right: 100 },
+}: {
+  days: Date[];
+  leftHeader: React.ReactNode;
+  rightHeader: React.ReactNode;
+  children: React.ReactNode;
+  topOffsetClass?: string;
+  colWidths?: { left: number; day: number; right: number };
+}) {
+  const headerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+
+    const sync = () => {
+      if (headerRef.current) {
+        headerRef.current.scrollLeft = body.scrollLeft;
+      }
+    };
+
+    body.addEventListener('scroll', sync, { passive: true });
+    sync();
+    return () => body.removeEventListener('scroll', sync);
+  }, [days.length]);
+
+  return (
+    <div className="space-y-0">
+      <div className={cn("sticky z-20 bg-card", topOffsetClass)}>
+        <div ref={headerRef} className="overflow-x-hidden">
+          <div className="min-w-max">
+            <table className="w-full text-sm border-collapse">
+              <colgroup>
+                <col style={{ width: `${colWidths.left}px` }} />
+                {days.map((day) => (
+                  <col key={formatDateString(day)} style={{ width: `${colWidths.day}px` }} />
+                ))}
+                <col style={{ width: `${colWidths.right}px` }} />
+              </colgroup>
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <th
+                    className="text-left py-2 px-4 font-medium sticky left-0 bg-muted/30"
+                    style={{ width: colWidths.left }}
+                  >
+                    {leftHeader}
+                  </th>
+                  {days.map((day) => (
+                    <th
+                      key={formatDateString(day)}
+                      className={cn(
+                        "py-2 px-1 text-center font-medium bg-muted/30",
+                        isWeekend(day) && "bg-muted/50"
+                      )}
+                      style={{ width: colWidths.day }}
+                    >
+                      <div className="text-xs text-muted-foreground">{getWeekdayShort(day)}</div>
+                      <div>{formatShortDate(day)}</div>
+                    </th>
+                  ))}
+                  <th
+                    className="py-2 px-4 text-right font-semibold sticky right-0 bg-muted/30"
+                    style={{ width: colWidths.right }}
+                  >
+                    {rightHeader}
+                  </th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div ref={bodyRef} className="overflow-x-auto">
+        <div className="min-w-max">
+          <table className="w-full text-sm border-collapse">
+            <colgroup>
+              <col style={{ width: `${colWidths.left}px` }} />
+              {days.map((day) => (
+                <col key={formatDateString(day)} style={{ width: `${colWidths.day}px` }} />
+              ))}
+              <col style={{ width: `${colWidths.right}px` }} />
+            </colgroup>
+            <tbody>{children}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
