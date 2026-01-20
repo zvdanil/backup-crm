@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 import type { Database } from '@/integrations/supabase/types';
@@ -90,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const lastProfileUserIdRef = useRef<string | null>(null);
 
   const loadSession = useCallback(async () => {
     setIsLoading(true);
@@ -123,12 +124,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(data.session);
       setUser(data.session?.user ?? null);
       if (data.session?.user) {
+        const userId = data.session.user.id;
         try {
-          const profileData = await withRetry(
-            () => withTimeout(fetchOrCreateProfile(data.session.user), 15000, 'Profile load timeout'),
-            1,
-            500
-          );
+          const profileData = lastProfileUserIdRef.current === userId && profile
+            ? profile
+            : await withRetry(
+                () => withTimeout(fetchOrCreateProfile(data.session.user), 15000, 'Profile load timeout'),
+                1,
+                500
+              );
           if (profileData && !profileData.is_active) {
             await supabase.auth.signOut();
             toast({
@@ -138,14 +142,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(null);
           } else {
             setProfile(profileData);
+            lastProfileUserIdRef.current = userId;
           }
         } catch (profileError: any) {
           console.error('Profile load error', profileError);
-          toast({ title: 'Помилка', description: profileError.message, variant: 'destructive' });
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          await supabase.auth.signOut();
+          toast({ title: 'Помилка профілю', description: 'Не вдалося завантажити профіль. Спробуйте оновити сторінку.', variant: 'destructive' });
+          // Keep session and user to avoid forced re-login on transient errors.
         }
       } else {
         setProfile(null);
@@ -166,12 +168,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
+        const userId = newSession.user.id;
         try {
-          const profileData = await withRetry(
-            () => withTimeout(fetchOrCreateProfile(newSession.user), 15000, 'Profile load timeout'),
-            1,
-            500
-          );
+          const profileData = lastProfileUserIdRef.current === userId && profile
+            ? profile
+            : await withRetry(
+                () => withTimeout(fetchOrCreateProfile(newSession.user), 15000, 'Profile load timeout'),
+                1,
+                500
+              );
           if (profileData && !profileData.is_active) {
             await supabase.auth.signOut();
             toast({
@@ -181,14 +186,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(null);
           } else {
             setProfile(profileData);
+            lastProfileUserIdRef.current = userId;
           }
         } catch (profileError: any) {
           console.error('Profile load error', profileError);
-          toast({ title: 'Помилка', description: profileError.message, variant: 'destructive' });
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          await supabase.auth.signOut();
+          toast({ title: 'Помилка профілю', description: 'Не вдалося завантажити профіль. Спробуйте оновити сторінку.', variant: 'destructive' });
+          // Keep session and user to avoid forced re-login on transient errors.
         }
       } else {
         setProfile(null);
