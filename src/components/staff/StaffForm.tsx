@@ -23,7 +23,6 @@ import type { Staff, StaffInsert } from '@/hooks/useStaff';
 const staffSchema = z.object({
   full_name: z.string().min(2, 'Мінімум 2 символи').max(100),
   position: z.string().min(1, 'Вкажіть посаду').max(100),
-  accrual_mode: z.enum(['auto', 'manual']),
 });
 
 type StaffFormData = z.infer<typeof staffSchema>;
@@ -37,12 +36,11 @@ interface StaffFormProps {
 }
 
 export function StaffForm({ open, onOpenChange, onSubmit, initialData, isLoading }: StaffFormProps) {
-  const { register, handleSubmit, formState: { errors }, reset, watch, setValue } = useForm<StaffFormData>({
+  const { register, handleSubmit, formState: { errors }, reset } = useForm<StaffFormData>({
     resolver: zodResolver(staffSchema),
     defaultValues: {
       full_name: '',
       position: '',
-      accrual_mode: 'auto',
     },
   });
 
@@ -52,7 +50,6 @@ export function StaffForm({ open, onOpenChange, onSubmit, initialData, isLoading
       reset({
         full_name: initialData?.full_name || '',
         position: initialData?.position || '',
-        accrual_mode: initialData?.accrual_mode || 'auto',
       });
     }
   }, [open, initialData, reset]);
@@ -63,7 +60,7 @@ export function StaffForm({ open, onOpenChange, onSubmit, initialData, isLoading
       position: data.position,
       is_active: true,
       deductions: null,
-      accrual_mode: data.accrual_mode,
+      accrual_mode: initialData?.accrual_mode || 'auto',
     });
     reset();
     onOpenChange(false);
@@ -101,27 +98,6 @@ export function StaffForm({ open, onOpenChange, onSubmit, initialData, isLoading
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="accrual_mode">Режим нарахування</Label>
-            <Select
-              value={watch('accrual_mode')}
-              onValueChange={(value) => setValue('accrual_mode', value as 'auto' | 'manual')}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Виберіть режим" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Автоматичне (з журналу відвідуваності)</SelectItem>
-                <SelectItem value="manual">Ручне (в журналі витрат)</SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.accrual_mode && (
-              <p className="text-sm text-destructive">{errors.accrual_mode.message}</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Для ручного режиму ставки налаштовуються в картці співробітника (вкладка "Ставки для ручного режиму")
-            </p>
-          </div>
 
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

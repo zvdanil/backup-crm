@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Trash2, Calendar } from 'lucide-react';
 import type { StaffManualRateHistory } from '@/hooks/useStaffBilling';
+import { useActivities } from '@/hooks/useActivities';
 
 type StaffManualRateHistoryInput = Omit<StaffManualRateHistory, 'id' | 'staff_id' | 'created_at' | 'updated_at'>;
 
@@ -28,6 +29,7 @@ export function StaffManualRateHistoryEditor({
   effectiveFrom,
   onEffectiveFromChange,
 }: StaffManualRateHistoryEditorProps) {
+  const { data: activities = [] } = useActivities();
   const [localHistory, setLocalHistory] = useState<StaffManualRateHistoryInput[]>(history);
 
   useEffect(() => {
@@ -36,6 +38,7 @@ export function StaffManualRateHistoryEditor({
 
   const handleAddEntry = () => {
     const newEntry: StaffManualRateHistoryInput = {
+      activity_id: null,
       manual_rate_type: 'per_session',
       manual_rate_value: 0,
       effective_from: effectiveFrom || new Date().toISOString().split('T')[0],
@@ -54,8 +57,8 @@ export function StaffManualRateHistoryEditor({
 
   const handleChange = (
     index: number,
-    field: 'manual_rate_type' | 'manual_rate_value',
-    value: string | number
+    field: 'manual_rate_type' | 'manual_rate_value' | 'activity_id',
+    value: string | number | null
   ) => {
     const updated = localHistory.map((entry, i) => {
       if (i === index) {
@@ -101,6 +104,26 @@ export function StaffManualRateHistoryEditor({
         {localHistory.map((entry, index) => (
           <div key={index} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-lg">
             <div className="col-span-4">
+              <Label htmlFor={`entry-activity-${index}`}>Активність</Label>
+              <Select
+                value={entry.activity_id || 'all'}
+                onValueChange={(value) => handleChange(index, 'activity_id', value === 'all' ? null : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Всі активності" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Всі активності</SelectItem>
+                  {activities.map((activity) => (
+                    <SelectItem key={activity.id} value={activity.id}>
+                      {activity.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="col-span-3">
               <Label htmlFor={`entry-type-${index}`}>Тип ставки</Label>
               <Select
                 value={entry.manual_rate_type}
@@ -116,7 +139,7 @@ export function StaffManualRateHistoryEditor({
               </Select>
             </div>
 
-            <div className="col-span-6">
+            <div className="col-span-3">
               <Label htmlFor={`entry-value-${index}`}>
                 Значення ({entry.manual_rate_type === 'hourly' ? '₴/год' : '₴/заняття'})
               </Label>

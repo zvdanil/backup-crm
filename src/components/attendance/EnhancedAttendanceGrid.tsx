@@ -9,8 +9,10 @@ import { useEnrollments } from '@/hooks/useEnrollments';
 import { useAttendance, useSetAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
 import { useActivity } from '@/hooks/useActivities';
 import { useGroups } from '@/hooks/useGroups';
+import { useStaff } from '@/hooks/useStaff';
 import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate } from '@/hooks/useStaffBilling';
 import { calculateMonthlyStaffAccruals, type AttendanceRecord } from '@/lib/salaryCalculator';
+import { applyDeductionsToAmount } from '@/lib/staffSalary';
 import { 
   getDaysInMonth, 
   formatShortDate, 
@@ -48,6 +50,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const { data: priceHistory } = useActivityPriceHistory(activityId);
   const { data: allStaffBillingRules = [] } = useAllStaffBillingRulesForActivity(activityId);
   const { data: groups = [] } = useGroups();
+  const { data: staff = [] } = useStaff();
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
     activityId
   });
@@ -173,6 +176,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return map;
   }, [allStaffBillingRules]);
 
+  const staffMap = useMemo(() => {
+    const map = new Map<string, (typeof staff)[number]>();
+    staff.forEach((member) => {
+      map.set(member.id, member);
+    });
+    return map;
+  }, [staff]);
+
   const buildAttendanceRecordsFromMap = useCallback((mapOverride?: Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; manual_value_edit: boolean }>) => {
     const map = mapOverride ?? attendanceMap;
     const records: AttendanceRecord[] = [];
@@ -263,14 +274,20 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       dateStrings.forEach((date) => {
         const dayAccrual = accruals.get(staffId)?.get(date);
         if (dayAccrual && dayAccrual.amount > 0) {
+          const staffMember = staffMap.get(staffId);
+          const { finalAmount, deductionsApplied } = applyDeductionsToAmount(
+            dayAccrual.amount,
+            (staffMember?.deductions as any) || []
+          );
+
           promises.push(
             upsertStaffJournalEntry.mutateAsync({
               staff_id: staffId,
               activity_id: activityId,
               date,
-              amount: dayAccrual.amount,
+              amount: finalAmount,
               base_amount: dayAccrual.amount,
-              deductions_applied: [],
+              deductions_applied: deductionsApplied,
               is_manual_override: false,
               notes: dayAccrual.notes.join('; ') || null,
             })
@@ -290,7 +307,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     if (promises.length > 0) {
       await Promise.allSettled(promises);
     }
-  }, [activityId, allStaffBillingRules, buildAttendanceRecordsFromMap, days, deleteStaffJournalEntry, getBillingRuleForDate, upsertStaffJournalEntry]);
+  }, [activityId, allStaffBillingRules, buildAttendanceRecordsFromMap, days, deleteStaffJournalEntry, getBillingRuleForDate, staffMap, upsertStaffJournalEntry]);
 
   // Отримуємо billing rules для активності на дату
   const getActivityBillingRulesForDate = useCallback((date: string) => {
@@ -590,14 +607,18 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       payments[dateStr] = 0;
     });
 
-    monthlyAccruals.forEach((staffMap) => {
-      staffMap.forEach((accrual, date) => {
-        payments[date] = (payments[date] || 0) + accrual.amount;
+    monthlyAccruals.forEach((staffMapForDay, staffId) => {
+      const staffMember = staffMap.get(staffId);
+      const deductions = (staffMember?.deductions as any) || [];
+
+      staffMapForDay.forEach((accrual, date) => {
+        const { finalAmount } = applyDeductionsToAmount(accrual.amount, deductions);
+        payments[date] = (payments[date] || 0) + finalAmount;
       });
     });
 
     return payments;
-  }, [days, monthlyAccruals]);
+  }, [days, monthlyAccruals, staffMap]);
 
   const handlePrevMonth = () => {
     if (month === 0) {

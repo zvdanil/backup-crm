@@ -54,6 +54,7 @@ export interface DeductionApplied {
 export interface StaffManualRateHistory {
   id: string;
   staff_id: string;
+  activity_id: string | null;
   manual_rate_type: 'hourly' | 'per_session';
   manual_rate_value: number;
   effective_from: string;
@@ -571,21 +572,34 @@ export function useStaffManualRateHistory(staffId: string | undefined) {
 // Get manual rate for a specific date
 export function getStaffManualRateForDate(
   history: StaffManualRateHistory[] | undefined,
-  date: string
+  date: string,
+  activityId: string | null = null
 ): StaffManualRateHistory | null {
   if (!history || history.length === 0) return null;
 
   const dateObj = new Date(date);
-  
-  // Find applicable history entry
+
   const applicableEntry = history.find(entry => {
+    if (activityId !== null && entry.activity_id !== activityId && entry.activity_id !== null) {
+      return false;
+    }
     const fromDate = new Date(entry.effective_from);
     const toDate = entry.effective_to ? new Date(entry.effective_to) : null;
     
     return dateObj >= fromDate && (!toDate || dateObj < toDate);
   });
   
-  return applicableEntry || null;
+  if (!applicableEntry) return null;
+  if (activityId === null) return applicableEntry;
+
+  const specific = history.find(entry => {
+    if (entry.activity_id !== activityId) return false;
+    const fromDate = new Date(entry.effective_from);
+    const toDate = entry.effective_to ? new Date(entry.effective_to) : null;
+    return dateObj >= fromDate && (!toDate || dateObj < toDate);
+  });
+
+  return specific || applicableEntry;
 }
 
 // Create staff manual rate history entry
@@ -595,12 +609,17 @@ export function useCreateStaffManualRateHistory() {
   return useMutation({
     mutationFn: async (entry: StaffManualRateHistoryInsert) => {
       // Close previous entry if exists
-      const { data: previousEntry, error: findError } = await supabase
+      let previousQuery = supabase
         .from('staff_manual_rate_history' as any)
         .select('id')
         .eq('staff_id', entry.staff_id)
-        .is('effective_to', null)
-        .maybeSingle();
+        .is('effective_to', null);
+
+      previousQuery = entry.activity_id === null
+        ? previousQuery.is('activity_id', null)
+        : previousQuery.eq('activity_id', entry.activity_id);
+
+      const { data: previousEntry, error: findError } = await previousQuery.maybeSingle();
 
       if (findError) throw findError;
 

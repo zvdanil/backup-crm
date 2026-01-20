@@ -23,6 +23,35 @@ export interface SalaryCalculationResult {
   finalAmount: number; // Фінальна сума після застосування всіх комісій
 }
 
+export function applyDeductionsToAmount(baseAmount: number, deductions: Deduction[]) {
+  const deductionsApplied: DeductionApplied[] = [];
+  let finalAmount = baseAmount;
+
+  deductions.forEach((deduction) => {
+    let deductionAmount = 0;
+
+    if (deduction.type === 'percent') {
+      deductionAmount = (finalAmount * deduction.value) / 100;
+    } else if (deduction.type === 'fixed') {
+      deductionAmount = deduction.value;
+    }
+
+    if (deductionAmount > 0) {
+      deductionsApplied.push({
+        name: deduction.name,
+        type: deduction.type,
+        value: deduction.value,
+        amount: Math.round(deductionAmount * 100) / 100,
+      });
+      finalAmount -= deductionAmount;
+    }
+  });
+
+  finalAmount = Math.max(0, Math.round(finalAmount * 100) / 100);
+
+  return { finalAmount, deductionsApplied };
+}
+
 /**
  * Calculate staff salary for a specific date
  * Priority: 1. staff_billing_rules (індивідуальна ставка для активності)
@@ -103,32 +132,7 @@ export function calculateStaffSalary(input: SalaryCalculationInput): SalaryCalcu
     return null; // No salary to calculate
   }
 
-  // Apply deductions
-  const deductionsApplied: DeductionApplied[] = [];
-  let finalAmount = baseAmount;
-
-  deductions.forEach(deduction => {
-    let deductionAmount = 0;
-    
-    if (deduction.type === 'percent') {
-      deductionAmount = (finalAmount * deduction.value) / 100;
-    } else if (deduction.type === 'fixed') {
-      deductionAmount = deduction.value;
-    }
-    
-    if (deductionAmount > 0) {
-      deductionsApplied.push({
-        name: deduction.name,
-        type: deduction.type,
-        value: deduction.value,
-        amount: Math.round(deductionAmount * 100) / 100,
-      });
-      finalAmount -= deductionAmount;
-    }
-  });
-
-  // Ensure final amount is not negative
-  finalAmount = Math.max(0, Math.round(finalAmount * 100) / 100);
+  const { finalAmount, deductionsApplied } = applyDeductionsToAmount(baseAmount, deductions);
 
   return {
     baseAmount: Math.round(baseAmount * 100) / 100,

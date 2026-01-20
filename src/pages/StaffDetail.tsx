@@ -47,6 +47,7 @@ import { z } from 'zod';
 import { cn } from '@/lib/utils';
 import { useActivities } from '@/hooks/useActivities';
 import { useMemo } from 'react';
+import { toast } from '@/hooks/use-toast';
 
 export default function StaffDetail() {
   const { id } = useParams<{ id: string }>();
@@ -120,6 +121,23 @@ export default function StaffDetail() {
 
   const handleSaveBillingRules = () => {
     if (!id) return;
+    const manualActivityIds = new Set(
+      [...manualRateHistory, ...manualRateHistoryState].map((entry) => entry.activity_id ?? 'all')
+    );
+    const hasManualAll = manualActivityIds.has('all');
+    const autoActivityIds = new Set(
+      billingRulesState.map((rule) => (rule.activity_id === 'null' ? null : rule.activity_id) ?? 'all')
+    );
+    const hasAutoConflict = hasManualAll && autoActivityIds.size > 0
+      || Array.from(autoActivityIds).some((idKey) => idKey !== 'all' && manualActivityIds.has(idKey));
+    if (hasAutoConflict) {
+      toast({
+        title: 'Конфлікт ставок',
+        description: 'Ставка для цієї активності вже визначена у ручному режимі.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     // Save each new rule
     billingRulesState.forEach((rule) => {
@@ -144,11 +162,29 @@ export default function StaffDetail() {
 
   const handleSaveManualRateHistory = () => {
     if (!id) return;
+    const autoActivityIds = new Set(
+      [...billingRules, ...billingRulesState].map((rule) => rule.activity_id ?? 'all')
+    );
+    const hasAutoAll = autoActivityIds.has('all');
+    const manualActivityIds = new Set(
+      manualRateHistoryState.map((entry) => entry.activity_id ?? 'all')
+    );
+    const hasManualConflict = hasAutoAll && manualActivityIds.size > 0
+      || Array.from(manualActivityIds).some((idKey) => idKey !== 'all' && autoActivityIds.has(idKey));
+    if (hasManualConflict) {
+      toast({
+        title: 'Конфлікт ставок',
+        description: 'Ставка для цієї активності вже визначена у автоматичному режимі.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     // Save each new entry
     manualRateHistoryState.forEach((entry) => {
       createManualRateHistory.mutate({
         staff_id: id,
+        activity_id: entry.activity_id ?? null,
         manual_rate_type: entry.manual_rate_type,
         manual_rate_value: entry.manual_rate_value,
         effective_from: effectiveFrom,
@@ -562,6 +598,7 @@ export default function StaffDetail() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Активність</TableHead>
                         <TableHead>Тип</TableHead>
                         <TableHead>Значення</TableHead>
                         <TableHead>Діє з</TableHead>
@@ -572,6 +609,15 @@ export default function StaffDetail() {
                     <TableBody>
                       {manualRateHistory.map((entry) => (
                         <TableRow key={entry.id}>
+                          <TableCell>
+                            {entry.activity_id ? (
+                              <Badge variant="outline" className="bg-blue-50">
+                                {activities.find((activity) => activity.id === entry.activity_id)?.name || 'Активність'}
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">Всі активності</Badge>
+                            )}
+                          </TableCell>
                           <TableCell>
                             {entry.manual_rate_type === 'hourly' ? 'Почасово' : 'За заняття'}
                           </TableCell>

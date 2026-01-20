@@ -204,31 +204,11 @@ export default function StaffExpenseJournal() {
     if (!editingCell) return;
 
     const staffMember = activeStaff.find(s => s.id === editingCell.staffId);
-    if (!staffMember || staffMember.accrual_mode !== 'manual') {
-      // Якщо не manual режим, просто зберігаємо значення як є
-      if (!manualValue) return;
-      const amount = parseFloat(manualValue);
-      if (isNaN(amount)) return;
+    if (!staffMember) return;
 
-      upsertJournalEntry.mutate({
-        staff_id: editingCell.staffId,
-        activity_id: editingCell.activityId,
-        date: editingCell.date,
-        amount,
-        base_amount: null,
-        deductions_applied: [],
-        is_manual_override: true,
-        notes: null,
-      });
-
-      setEditingCell(null);
-      setManualValue('');
-      return;
-    }
-
-    // Для manual режиму використовуємо логіку типу ставки з історії
+    // Використовуємо ручні ставки, якщо вони налаштовані для активності
     const history = manualRateHistoryMap.get(editingCell.staffId);
-    const currentRate = getStaffManualRateForDate(history, editingCell.date);
+    const currentRate = getStaffManualRateForDate(history, editingCell.date, editingCell.activityId || null);
     const rateType = currentRate?.manual_rate_type || null;
     const rateValue = currentRate?.manual_rate_value || 0;
 
@@ -509,13 +489,14 @@ export default function StaffExpenseJournal() {
                               <PopoverContent className="w-64">
                                 <div className="space-y-3">
                                   {(() => {
-                                    const isManualMode = staffMember.accrual_mode === 'manual';
                                     const history = manualRateHistoryMap.get(staffMember.id);
-                                    const currentRate = editingCell ? getStaffManualRateForDate(history, editingCell.date) : null;
+                                    const currentRate = editingCell
+                                      ? getStaffManualRateForDate(history, editingCell.date, editingCell.activityId || null)
+                                      : null;
                                     const rateType = currentRate?.manual_rate_type || null;
                                     const rateValue = currentRate?.manual_rate_value || 0;
 
-                                    if (isManualMode && rateType === 'hourly') {
+                                    if (rateType === 'hourly') {
                                       // Почасово: вводимо кількість годин
                                       return (
                                         <>
@@ -561,7 +542,7 @@ export default function StaffExpenseJournal() {
                                           </div>
                                         </>
                                       );
-                                    } else if (isManualMode && rateType === 'per_session') {
+                                    } else if (rateType === 'per_session') {
                                       // За заняття: можна ввести число або залишити порожнім для ставки за замовчуванням
                                       return (
                                         <>

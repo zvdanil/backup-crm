@@ -114,6 +114,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
       if (error) {
         console.error('Auth session error', error);
+        setSession(null);
+        setUser(null);
+        setProfile(null);
         return;
       }
 
@@ -139,12 +142,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (profileError: any) {
           console.error('Profile load error', profileError);
           toast({ title: 'Помилка', description: profileError.message, variant: 'destructive' });
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          await supabase.auth.signOut();
         }
       } else {
         setProfile(null);
       }
     } catch (error) {
       console.error('Auth session error', error);
+      setSession(null);
+      setUser(null);
+      setProfile(null);
     } finally {
       setIsLoading(false);
     }
@@ -175,6 +185,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (profileError: any) {
           console.error('Profile load error', profileError);
           toast({ title: 'Помилка', description: profileError.message, variant: 'destructive' });
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          await supabase.auth.signOut();
         }
       } else {
         setProfile(null);
