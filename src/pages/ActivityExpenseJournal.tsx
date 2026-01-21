@@ -70,6 +70,7 @@ export default function ActivityExpenseJournal() {
       const { data, error } = await supabase
         .from('staff_payouts' as any)
         .select('id, staff_id, payout_date, amount, notes')
+        .or('is_deleted.is.null,is_deleted.eq.false')
         .gte('payout_date', startDate)
         .lte('payout_date', endDate);
       if (error) throw error;

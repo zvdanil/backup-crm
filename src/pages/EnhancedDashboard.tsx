@@ -224,18 +224,6 @@ export default function EnhancedDashboard() {
     return map;
   }, [data?.attendance, dataUpdatedAt]);
 
-  const salaryPayoutsDaily = useMemo(() => {
-    const totals: Record<string, number> = {};
-    data?.financeTransactions?.forEach((trans) => {
-      if (trans.type !== 'salary') return;
-      totals[trans.date] = (totals[trans.date] || 0) + (trans.amount || 0);
-    });
-    data?.staffPayouts?.forEach((payout) => {
-      totals[payout.payout_date] = (totals[payout.payout_date] || 0) + (payout.amount || 0);
-    });
-    return totals;
-  }, [data?.financeTransactions, data?.staffPayouts, dataUpdatedAt]);
-
   const salaryAccrualsDaily = useMemo(() => {
     const totals: Record<string, number> = {};
     data?.staffExpenses?.forEach((expense) => {
@@ -248,11 +236,10 @@ export default function EnhancedDashboard() {
     const totals: Record<string, number> = {};
     days.forEach((day) => {
       const dateStr = formatDateString(day);
-      totals[dateStr] =
-        (salaryPayoutsDaily[dateStr] || 0) + (salaryAccrualsDaily[dateStr] || 0);
+      totals[dateStr] = salaryAccrualsDaily[dateStr] || 0;
     });
     return totals;
-  }, [days, salaryPayoutsDaily, salaryAccrualsDaily]);
+  }, [days, salaryAccrualsDaily]);
 
   // Map finance transactions by student_id + activity_id + date (for Garden Attendance Journal)
   // income = positive, expense = negative (for dashboard perspective)
@@ -334,10 +321,6 @@ export default function EnhancedDashboard() {
     // Підсумовуємо витрати з staff_journal_entries (категорія 'salary')
     data?.staffExpenses?.forEach((expense) => {
       totals.salary[expense.date] = (totals.salary[expense.date] || 0) + (expense.amount || 0);
-    });
-    // Підсумовуємо виплати з staff_payouts
-    data?.staffPayouts?.forEach((payout) => {
-      totals.salary[payout.payout_date] = (totals.salary[payout.payout_date] || 0) + (payout.amount || 0);
     });
     return totals;
   }, [data, allActivities, baseTariffIds, foodTariffIds]);
@@ -829,35 +812,6 @@ export default function EnhancedDashboard() {
                           </tr>
                         );
                       })
-                    )}
-                    {/* Для категорії "salary" відображаємо витрати на зарплату */}
-                    {category === 'salary' && categoryStudents.length === 0 && hasDailyTotals && (
-                      <tr className="border-b hover:bg-muted/20">
-                        <td className="py-2 px-4 sticky left-0 bg-card">
-                          <div className="flex items-center gap-2">
-                            <div className="min-w-0">
-                              <p className="font-medium truncate">Виплати зарплати</p>
-                              <p className="text-xs text-muted-foreground truncate">З журналу витрат</p>
-                            </div>
-                          </div>
-                        </td>
-                        {days.map((day) => {
-                          const dateStr = formatDateString(day);
-                          const dayTotal = salaryPayoutsDaily[dateStr] || 0;
-                          return (
-                            <td key={formatDateString(day)} className={cn("py-2 px-1 text-center", isWeekend(day) && "bg-muted/30")}>
-                              {dayTotal !== 0 && (
-                                <span className="text-xs font-medium text-destructive">
-                                  {formatCurrency(Math.abs(dayTotal))}
-                                </span>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-destructive">
-                          {formatCurrency(Math.abs(Object.values(salaryPayoutsDaily).reduce((sum, val) => sum + (val || 0), 0)))}
-                        </td>
-                      </tr>
                     )}
                     {category === 'salary' && categoryStudents.length === 0 && Object.values(salaryAccrualsDaily).some((value) => value !== 0) && (
                       <tr className="border-b hover:bg-muted/20">

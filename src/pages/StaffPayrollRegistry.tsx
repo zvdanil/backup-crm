@@ -84,6 +84,7 @@ export default function StaffPayrollRegistry() {
       const { data, error } = await supabase
         .from('staff_payouts' as any)
         .select('staff_id, amount')
+        .or('is_deleted.is.null,is_deleted.eq.false')
         .gte('payout_date', startDate)
         .lte('payout_date', endDate)
         .order('payout_date', { ascending: true });

@@ -71,6 +71,9 @@ export interface StaffPayout {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+  deleted_note?: string | null;
 }
 
 export type StaffPayoutInsert = Omit<StaffPayout, 'id' | 'created_at' | 'updated_at'>;
@@ -713,6 +716,7 @@ export function useStaffPayouts(staffId: string | undefined) {
         .from('staff_payouts' as any)
         .select('*')
         .eq('staff_id', staffId)
+        .or('is_deleted.is.null,is_deleted.eq.false')
         .order('payout_date', { ascending: false });
       
       if (error) throw error;
@@ -730,6 +734,7 @@ export function useAllStaffPayouts() {
       const { data, error } = await supabase
         .from('staff_payouts' as any)
         .select('*')
+        .or('is_deleted.is.null,is_deleted.eq.false')
         .order('payout_date', { ascending: false });
       
       if (error) throw error;
@@ -800,10 +805,14 @@ export function useDeleteStaffPayout() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ id, staffId }: { id: string; staffId: string }) => {
+    mutationFn: async ({ id, staffId, deleteNote }: { id: string; staffId: string; deleteNote?: string | null }) => {
       const { error } = await supabase
         .from('staff_payouts' as any)
-        .delete()
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_note: deleteNote || null,
+        })
         .eq('id', id);
       
       if (error) throw error;

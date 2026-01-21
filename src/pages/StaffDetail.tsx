@@ -19,6 +19,8 @@ import {
   useStaffJournalEntries,
   useStaffPayouts,
   useCreateStaffPayout,
+  useUpdateStaffPayout,
+  useDeleteStaffPayout,
   getStaffBillingRuleForDate,
   type StaffBillingRule,
   type StaffManualRateHistory,
@@ -48,6 +50,7 @@ import { cn } from '@/lib/utils';
 import { useActivities } from '@/hooks/useActivities';
 import { useMemo } from 'react';
 import { toast } from '@/hooks/use-toast';
+import { Switch } from '@/components/ui/switch';
 
 export default function StaffDetail() {
   const { id } = useParams<{ id: string }>();
@@ -73,9 +76,11 @@ export default function StaffDetail() {
   // Financial Calendar state
   const now = new Date();
   const [calendarYear, setCalendarYear] = useState(now.getFullYear());
+  const [auditMode, setAuditMode] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(now.getMonth());
   const [selectedPayoutDate, setSelectedPayoutDate] = useState<string | null>(null);
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
+  const [editingPayoutId, setEditingPayoutId] = useState<string | null>(null);
   
   // Financial Calendar data
   const { data: journalEntries = [] } = useStaffJournalEntries(id, calendarMonth, calendarYear);
@@ -83,6 +88,8 @@ export default function StaffDetail() {
   const { data: payouts = [] } = useStaffPayouts(id);
   const { data: activities = [] } = useActivities();
   const createPayout = useCreateStaffPayout();
+  const updatePayout = useUpdateStaffPayout();
+  const deletePayout = useDeleteStaffPayout();
   
   const payoutSchema = z.object({
     amount: z.number().min(0.01, 'Сума має бути більше 0'),
@@ -222,6 +229,7 @@ export default function StaffDetail() {
   const handlePayoutCellClick = (date: string) => {
     setSelectedPayoutDate(date);
     setIsPayoutDialogOpen(true);
+    setEditingPayoutId(null);
     reset({
       amount: 0,
       payout_date: date,
@@ -233,19 +241,34 @@ export default function StaffDetail() {
     if (!id) return;
     
     try {
-      await createPayout.mutateAsync({
-        staff_id: id,
-        amount: data.amount,
-        payout_date: data.payout_date,
-        notes: data.notes || null,
-      });
+      if (editingPayoutId) {
+        await updatePayout.mutateAsync({
+          id: editingPayoutId,
+          amount: data.amount,
+          payout_date: data.payout_date,
+          notes: data.notes || null,
+        });
+      } else {
+        await createPayout.mutateAsync({
+          staff_id: id,
+          amount: data.amount,
+          payout_date: data.payout_date,
+          notes: data.notes || null,
+        });
+      }
       reset();
       setIsPayoutDialogOpen(false);
       setSelectedPayoutDate(null);
+      setEditingPayoutId(null);
     } catch (error) {
       // Error handling is done in the mutation
     }
   };
+
+  const payoutsForSelectedDate = useMemo(() => {
+    if (!selectedPayoutDate) return [];
+    return payouts.filter((payout) => payout.payout_date === selectedPayoutDate);
+  }, [payouts, selectedPayoutDate]);
 
   if (staffLoading) {
     return (
@@ -455,16 +478,22 @@ export default function StaffDetail() {
                             Нарахування по активностях та виплати за місяць
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button variant="outline" size="icon" onClick={handlePrevMonth}>
-                            <ChevronLeft className="h-4 w-4" />
-                          </Button>
-                          <span className="text-sm font-medium min-w-[150px] text-center">
-                            {['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'][calendarMonth]} {calendarYear}
-                          </span>
-                          <Button variant="outline" size="icon" onClick={handleNextMonth}>
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
+                        <div className="flex items-center gap-4">
+                          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Switch checked={auditMode} onCheckedChange={setAuditMode} />
+                            Режим перевірки
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+                              <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <span className="text-sm font-medium min-w-[150px] text-center">
+                              {['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'][calendarMonth]} {calendarYear}
+                            </span>
+                            <Button variant="outline" size="icon" onClick={handleNextMonth}>
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                       <FinancialCalendarTable
@@ -474,6 +503,7 @@ export default function StaffDetail() {
                         journalEntries={journalEntries}
                         payouts={payouts}
                         activities={activities}
+                        auditMode={auditMode}
                         onPayoutCellClick={handlePayoutCellClick}
                       />
                     </div>
@@ -667,15 +697,62 @@ export default function StaffDetail() {
                 onClick={() => {
                   setIsPayoutDialogOpen(false);
                   setSelectedPayoutDate(null);
+                  setEditingPayoutId(null);
                 }}
               >
                 Скасувати
               </Button>
               <Button type="submit" disabled={createPayout.isPending}>
-                {createPayout.isPending ? 'Збереження...' : 'Зберегти'}
+                {createPayout.isPending || updatePayout.isPending ? 'Збереження...' : 'Зберегти'}
               </Button>
             </div>
           </form>
+          {payoutsForSelectedDate.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <div className="text-sm font-medium">Виплати за дату</div>
+              <div className="space-y-2">
+                {payoutsForSelectedDate.map((payout) => (
+                  <div key={payout.id} className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium text-destructive">{formatCurrency(payout.amount)}</div>
+                      {payout.notes && (
+                        <div className="text-xs text-muted-foreground break-words">{payout.notes}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingPayoutId(payout.id);
+                          reset({
+                            amount: payout.amount,
+                            payout_date: payout.payout_date,
+                            notes: payout.notes || '',
+                          });
+                        }}
+                      >
+                        Редагувати
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={async () => {
+                          const note = window.prompt('Причина видалення (обовʼязково):');
+                          if (!note || !note.trim()) return;
+                          await deletePayout.mutateAsync({ id: payout.id, staffId: staff?.id || '', deleteNote: note.trim() });
+                        }}
+                      >
+                        Видалити
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -698,6 +775,7 @@ interface FinancialCalendarTableProps {
   journalEntries: any[];
   payouts: any[];
   activities: any[];
+  auditMode: boolean;
   onPayoutCellClick: (date: string) => void;
 }
 
@@ -708,9 +786,14 @@ function FinancialCalendarTable({
   journalEntries, 
   payouts, 
   activities,
+  auditMode,
   onPayoutCellClick 
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const salaryActivityId = useMemo(
+    () => activities.find((activity) => activity.category === 'salary')?.id || null,
+    [activities]
+  );
   
   // Group journal entries by activity + mode (auto/manual)
   const entriesByRow = useMemo(() => {
@@ -729,6 +812,24 @@ function FinancialCalendarTable({
       activityMap.set(dateStr, currentAmount + (Number(entry.amount) || 0));
     });
 
+    return map;
+  }, [journalEntries]);
+
+  const entryDetailsByRow = useMemo(() => {
+    const map = new Map<string, Map<string, any[]>>();
+    journalEntries.forEach((entry) => {
+      const activityId = entry.activity_id || 'none';
+      const mode = entry.is_manual_override ? 'manual' : 'auto';
+      const rowKey = `${activityId}:${mode}`;
+      if (!map.has(rowKey)) {
+        map.set(rowKey, new Map());
+      }
+      const dateMap = map.get(rowKey)!;
+      const dateStr = entry.date;
+      const list = dateMap.get(dateStr) || [];
+      list.push(entry);
+      dateMap.set(dateStr, list);
+    });
     return map;
   }, [journalEntries]);
   
@@ -771,6 +872,7 @@ function FinancialCalendarTable({
       return {
         id: rowKey,
         name,
+        source: 'staff-expenses' as const,
       };
     });
 
@@ -780,6 +882,13 @@ function FinancialCalendarTable({
   
   const getDateString = (date: Date) => {
     return formatDateString(date);
+  };
+
+  const buildAuditLink = (target: 'staff-expenses' | 'salary-expenses', dateStr: string) => {
+    if (target === 'salary-expenses' && salaryActivityId) {
+      return `/activities/${salaryActivityId}/expenses?date=${dateStr}&staffId=${staffId}`;
+    }
+    return `/staff-expenses?date=${dateStr}&staffId=${staffId}`;
   };
 
   return (
@@ -820,6 +929,8 @@ function FinancialCalendarTable({
                   {days.map((date) => {
                     const dateStr = getDateString(date);
                     const amount = activityEntries.get(dateStr) || 0;
+                    const details = entryDetailsByRow.get(activity.id)?.get(dateStr) || [];
+                    const hasDetails = details.length > 0;
                     return (
                       <TableCell 
                         key={dateStr} 
@@ -828,7 +939,38 @@ function FinancialCalendarTable({
                           isWeekend(date) && "bg-muted/30"
                         )}
                       >
-                        {amount > 0 ? formatCurrency(amount) : '—'}
+                        {amount > 0 ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <Link
+                              to={buildAuditLink('staff-expenses', dateStr)}
+                              className="text-primary hover:underline"
+                            >
+                              {formatCurrency(amount)}
+                            </Link>
+                            {auditMode && hasDetails && (
+                              <Tooltip>
+                                <TooltipTrigger className="text-xs text-muted-foreground">i</TooltipTrigger>
+                                <TooltipContent>
+                                  <div className="space-y-1 text-xs">
+                                    {details.map((entry, idx) => (
+                                      <div key={`${entry.id}-${idx}`}>
+                                        <div>{formatCurrency(entry.amount || 0)}</div>
+                                        {entry.notes && (
+                                          <div className="text-muted-foreground">{entry.notes}</div>
+                                        )}
+                                        {entry.deductions_applied?.length > 0 && (
+                                          <div className="text-muted-foreground">
+                                            Комісії: -{formatCurrency(entry.deductions_applied.reduce((sum: number, d: any) => sum + (d.amount || 0), 0))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                        ) : '—'}
                       </TableCell>
                     );
                   })}
@@ -853,7 +995,40 @@ function FinancialCalendarTable({
               const hasNotes = notes.length > 0;
               
               const cellContent = amount > 0 ? (
-                <span className="text-red-600 font-semibold">{formatCurrency(amount)}</span>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-red-600 font-semibold">{formatCurrency(amount)}</span>
+                  {auditMode && (
+                    <Link
+                      to={buildAuditLink('salary-expenses', dateStr)}
+                      className="text-xs text-muted-foreground hover:underline"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      журнал
+                    </Link>
+                  )}
+                  {auditMode && (hasNotes || notes.length > 0) && (
+                    <Tooltip>
+                      <TooltipTrigger
+                        className="text-xs text-muted-foreground"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        i
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <div className="space-y-1 text-xs">
+                          {notes.map((item, idx) => (
+                            <div key={`${item.date}-${idx}`}>
+                              <div>{formatCurrency(item.amount)}</div>
+                              {item.note && (
+                                <div className="text-muted-foreground">{item.note}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
               ) : (
                 <span className="text-muted-foreground">—</span>
               );

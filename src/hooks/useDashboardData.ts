@@ -62,13 +62,6 @@ export interface DashboardFinanceTransaction {
   };
 }
 
-export interface DashboardStaffPayout {
-  id: string;
-  staff_id: string;
-  payout_date: string;
-  amount: number;
-  notes: string | null;
-}
 
 export function useDashboardData(year: number, month: number) {
   return useQuery({
@@ -80,7 +73,7 @@ export function useDashboardData(year: number, month: number) {
       const startDate = new Date(year, month, 1).toISOString().split('T')[0];
       const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
 
-      const [enrollmentsResult, attendanceResult, staffExpensesResult, financeTransactionsResult, staffPayoutsResult] = await Promise.all([
+      const [enrollmentsResult, attendanceResult, staffExpensesResult, financeTransactionsResult] = await Promise.all([
         supabase
           .from('enrollments')
           .select(`
@@ -119,25 +112,18 @@ export function useDashboardData(year: number, month: number) {
           .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
           .lte('date', endDate),
-        supabase
-          .from('staff_payouts' as any)
-          .select('id, staff_id, payout_date, amount, notes')
-          .gte('payout_date', startDate)
-          .lte('payout_date', endDate),
       ]);
 
       if (enrollmentsResult.error) throw enrollmentsResult.error;
       if (attendanceResult.error) throw attendanceResult.error;
       if (staffExpensesResult.error) throw staffExpensesResult.error;
       if (financeTransactionsResult.error) throw financeTransactionsResult.error;
-      if (staffPayoutsResult.error) throw staffPayoutsResult.error;
 
       return {
         enrollments: enrollmentsResult.data as unknown as DashboardEnrollment[],
         attendance: attendanceResult.data as DashboardAttendance[],
         staffExpenses: (staffExpensesResult.data || []) as DashboardStaffExpense[],
         financeTransactions: (financeTransactionsResult.data || []) as DashboardFinanceTransaction[],
-        staffPayouts: (staffPayoutsResult.data || []) as DashboardStaffPayout[],
       };
     },
   });
@@ -153,7 +139,7 @@ export function useCategorySummary(year: number, month: number) {
       const startDate = new Date(year, month, 1).toISOString().split('T')[0];
       const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
 
-      const [attendanceResult, financeTransactionsResult, staffExpensesResult, staffPayoutsResult] = await Promise.all([
+      const [attendanceResult, financeTransactionsResult, staffExpensesResult] = await Promise.all([
         supabase
           .from('attendance')
           .select(`
@@ -181,17 +167,11 @@ export function useCategorySummary(year: number, month: number) {
           .select('amount, date')
           .gte('date', startDate)
           .lte('date', endDate),
-        supabase
-          .from('staff_payouts' as any)
-          .select('amount, payout_date')
-          .gte('payout_date', startDate)
-          .lte('payout_date', endDate),
       ]);
 
       if (attendanceResult.error) throw attendanceResult.error;
       if (financeTransactionsResult.error) throw financeTransactionsResult.error;
       if (staffExpensesResult.error) throw staffExpensesResult.error;
-      if (staffPayoutsResult.error) throw staffPayoutsResult.error;
 
       const summary: Record<ActivityCategory, number> = {
         income: 0,
@@ -233,10 +213,6 @@ export function useCategorySummary(year: number, month: number) {
         summary.salary += item.amount || 0;
       });
 
-      // Підсумовуємо виплати зарплати з staff_payouts
-      staffPayoutsResult.data?.forEach((item: any) => {
-        summary.salary += item.amount || 0;
-      });
 
       return summary;
     },
