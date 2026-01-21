@@ -169,6 +169,7 @@ export type Database = {
           created_at: string | null
           date: string
           enrollment_id: string
+          group_lesson_id: string | null
           id: string
           notes: string | null
           status: Database["public"]["Enums"]["attendance_status"]
@@ -181,6 +182,7 @@ export type Database = {
           created_at?: string | null
           date: string
           enrollment_id: string
+          group_lesson_id?: string | null
           id?: string
           notes?: string | null
           status?: Database["public"]["Enums"]["attendance_status"]
@@ -193,6 +195,7 @@ export type Database = {
           created_at?: string | null
           date?: string
           enrollment_id?: string
+          group_lesson_id?: string | null
           id?: string
           notes?: string | null
           status?: Database["public"]["Enums"]["attendance_status"]
@@ -206,6 +209,81 @@ export type Database = {
             columns: ["enrollment_id"]
             isOneToOne: false
             referencedRelation: "enrollments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_group_lesson_id_fkey"
+            columns: ["group_lesson_id"]
+            isOneToOne: false
+            referencedRelation: "group_lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_lessons: {
+        Row: {
+          activity_id: string
+          created_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          activity_id: string
+          created_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          activity_id?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_lessons_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_lesson_staff: {
+        Row: {
+          created_at: string | null
+          group_lesson_id: string
+          id: string
+          staff_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          group_lesson_id: string
+          id?: string
+          staff_id: string
+        }
+        Update: {
+          created_at?: string | null
+          group_lesson_id?: string
+          id?: string
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_lesson_staff_group_lesson_id_fkey"
+            columns: ["group_lesson_id"]
+            isOneToOne: false
+            referencedRelation: "group_lessons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "group_lesson_staff_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
             referencedColumns: ["id"]
           },
         ]
@@ -313,6 +391,7 @@ export type Database = {
           effective_from: string
           effective_to: string | null
           extra_lesson_rate: number | null
+          group_lesson_id: string | null
           id: string
           lesson_limit: number | null
           penalty_percent: number | null
@@ -328,6 +407,7 @@ export type Database = {
           effective_from: string
           effective_to?: string | null
           extra_lesson_rate?: number | null
+          group_lesson_id?: string | null
           id?: string
           lesson_limit?: number | null
           penalty_percent?: number | null
@@ -343,6 +423,7 @@ export type Database = {
           effective_from?: string
           effective_to?: string | null
           extra_lesson_rate?: number | null
+          group_lesson_id?: string | null
           id?: string
           lesson_limit?: number | null
           penalty_percent?: number | null
@@ -358,6 +439,13 @@ export type Database = {
             columns: ["activity_id"]
             isOneToOne: false
             referencedRelation: "activities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_billing_rules_group_lesson_id_fkey"
+            columns: ["group_lesson_id"]
+            isOneToOne: false
+            referencedRelation: "group_lessons"
             referencedColumns: ["id"]
           },
           {
@@ -377,6 +465,7 @@ export type Database = {
           created_at: string | null
           date: string
           deductions_applied: Json | null
+          group_lesson_id: string | null
           id: string
           is_manual_override: boolean | null
           notes: string | null
@@ -390,6 +479,7 @@ export type Database = {
           created_at?: string | null
           date: string
           deductions_applied?: Json | null
+          group_lesson_id?: string | null
           id?: string
           is_manual_override?: boolean | null
           notes?: string | null
@@ -403,6 +493,7 @@ export type Database = {
           created_at?: string | null
           date?: string
           deductions_applied?: Json | null
+          group_lesson_id?: string | null
           id?: string
           is_manual_override?: boolean | null
           notes?: string | null
@@ -418,10 +509,55 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "staff_journal_entries_group_lesson_id_fkey"
+            columns: ["group_lesson_id"]
+            isOneToOne: false
+            referencedRelation: "group_lessons"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "staff_journal_entries_staff_id_fkey"
             columns: ["staff_id"]
             isOneToOne: false
             referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_lesson_sessions: {
+        Row: {
+          created_at: string | null
+          group_lesson_id: string
+          id: string
+          notes: string | null
+          session_date: string
+          sessions_count: number
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          group_lesson_id: string
+          id?: string
+          notes?: string | null
+          session_date: string
+          sessions_count?: number
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          group_lesson_id?: string
+          id?: string
+          notes?: string | null
+          session_date?: string
+          sessions_count?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_lesson_sessions_group_lesson_id_fkey"
+            columns: ["group_lesson_id"]
+            isOneToOne: false
+            referencedRelation: "group_lessons"
             referencedColumns: ["id"]
           },
         ]

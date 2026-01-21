@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Trash2, Calendar } from 'lucide-react';
 import { useActivities } from '@/hooks/useActivities';
+import { useGroupLessons } from '@/hooks/useGroupLessons';
 import type { StaffBillingRule } from '@/hooks/useStaffBilling';
 
 type StaffBillingRuleInput = Omit<StaffBillingRule, 'id' | 'staff_id' | 'created_at' | 'updated_at'>;
@@ -36,6 +37,7 @@ export function StaffBillingEditorNew({
   onEffectiveFromChange,
 }: StaffBillingEditorNewProps) {
   const { data: activities = [] } = useActivities();
+  const { data: groupLessons = [] } = useGroupLessons();
   const [localRules, setLocalRules] = useState<StaffBillingRuleInput[]>(rules);
 
   useEffect(() => {
@@ -45,6 +47,7 @@ export function StaffBillingEditorNew({
   const handleAddRule = () => {
     const newRule: StaffBillingRuleInput = {
       activity_id: null,
+      group_lesson_id: null,
       rate_type: 'percent',
       rate: 0,
       lesson_limit: null,
@@ -73,6 +76,9 @@ export function StaffBillingEditorNew({
     const updated = localRules.map((rule, i) => {
       if (i === index) {
         const nextRule = { ...rule, [field]: value } as StaffBillingRuleInput;
+        if (field === 'activity_id' && value === null) {
+          nextRule.group_lesson_id = null;
+        }
         if (field === 'rate_type' && value !== 'subscription') {
           nextRule.lesson_limit = null;
           nextRule.penalty_trigger_percent = null;
@@ -193,6 +199,34 @@ export function StaffBillingEditorNew({
                 </Button>
               </div>
             </div>
+
+            {rule.activity_id && (
+              <div className="grid grid-cols-12 gap-2">
+                <div className="col-span-6">
+                  <Label htmlFor={`rule-group-lesson-${index}`}>Групове заняття (опціонально)</Label>
+                  <Select
+                    value={rule.group_lesson_id || 'none'}
+                    onValueChange={(value) =>
+                      handleChange(index, 'group_lesson_id', value === 'none' ? null : value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Без групового" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Без групового</SelectItem>
+                      {groupLessons
+                        .filter((lesson) => lesson.activity_id === rule.activity_id)
+                        .map((lesson) => (
+                          <SelectItem key={lesson.id} value={lesson.id}>
+                            {lesson.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
 
             {rule.rate_type === 'subscription' && (
               <div className="grid grid-cols-12 gap-2">

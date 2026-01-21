@@ -13,6 +13,7 @@ import Activities from "./pages/Activities";
 import ActivityExpenseJournal from "./pages/ActivityExpenseJournal";
 import Accounts from "./pages/Accounts";
 import Attendance from "./pages/Attendance";
+import GroupLessonsJournal from "./pages/GroupLessonsJournal";
 import Groups from "./pages/Groups";
 import Staff from "./pages/Staff";
 import StaffDetail from "./pages/StaffDetail";
@@ -116,6 +117,14 @@ const AppRoutes = () => {
           element={(
             <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
               <Attendance />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/group-lessons"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <GroupLessonsJournal />
             </ProtectedRoute>
           )}
         />

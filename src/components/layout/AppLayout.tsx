@@ -30,6 +30,7 @@ const navigation = [
   { name: 'Активності', href: '/activities', icon: BookOpen, section: 'activities' },
   { name: 'Рахунки', href: '/accounts', icon: Landmark, section: 'accounts' },
   { name: 'Журнал', href: '/attendance', icon: Calendar, section: 'attendance' },
+  { name: 'Журнал групових', href: '/group-lessons', icon: ClipboardList, section: 'group_lessons_journal' },
   { name: 'Журнал відвідування', href: '/garden-attendance', icon: ClipboardList, section: 'garden_attendance' },
   { name: 'Відомість харчування', href: '/nutrition-report', icon: UtensilsCrossed, section: 'nutrition' },
   { name: 'Групи', href: '/groups', icon: UsersRound, section: 'groups' },

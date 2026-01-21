@@ -7,6 +7,7 @@ export type AppSection =
   | 'accounts'
   | 'groups'
   | 'attendance'
+  | 'group_lessons_journal'
   | 'garden_attendance'
   | 'nutrition'
   | 'staff'
@@ -22,6 +23,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'accounts',
     'groups',
     'attendance',
+    'group_lessons_journal',
     'garden_attendance',
     'nutrition',
     'staff',
@@ -36,6 +38,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'accounts',
     'groups',
     'attendance',
+    'group_lessons_journal',
     'garden_attendance',
     'nutrition',
     'staff',
@@ -48,6 +51,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'activities',
     'groups',
     'attendance',
+    'group_lessons_journal',
     'garden_attendance',
     'nutrition',
     'staff_expenses',
@@ -58,6 +62,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'accounts',
     'groups',
     'attendance',
+    'group_lessons_journal',
     'garden_attendance',
     'nutrition',
     'staff',
@@ -70,6 +75,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'activities',
     'groups',
     'attendance',
+    'group_lessons_journal',
     'garden_attendance',
     'nutrition',
     'staff',

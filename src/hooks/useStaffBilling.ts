@@ -6,6 +6,7 @@ export interface StaffBillingRule {
   id: string;
   staff_id: string;
   activity_id: string | null;
+  group_lesson_id?: string | null;
   rate_type: 'fixed' | 'percent' | 'per_session' | 'subscription' | 'per_student';
   rate: number; // Changed from rate_value to rate
   lesson_limit?: number | null;
@@ -23,6 +24,7 @@ export interface StaffJournalEntry {
   id: string;
   staff_id: string;
   activity_id: string | null;
+  group_lesson_id?: string | null;
   date: string;
   amount: number;
   base_amount: number | null;
@@ -177,17 +179,27 @@ export function useCreateStaffBillingRule() {
   return useMutation({
     mutationFn: async (rule: StaffBillingRuleInsert) => {
       // Close previous rule if exists
-      const { data: previousRule, error: findError } = await supabase
+      let query = supabase
         .from('staff_billing_rules' as any)
         .select('id')
         .eq('staff_id', rule.staff_id)
         .eq('activity_id', rule.activity_id)
         .is('effective_to', null)
-        .maybeSingle();
+        .limit(1);
+
+      if (rule.group_lesson_id === null || rule.group_lesson_id === undefined) {
+        query = query.is('group_lesson_id', null);
+      } else {
+        query = query.eq('group_lesson_id', rule.group_lesson_id);
+      }
+
+      const { data: previousRuleArray, error: findError } = await query;
 
       if (findError) throw findError;
 
-      if (previousRule && (previousRule as any).id) {
+      const previousRule = (previousRuleArray && previousRuleArray.length > 0 ? previousRuleArray[0] : null) as { id: string } | null;
+
+      if (previousRule && typeof previousRule === 'object' && 'id' in previousRule) {
         const effectiveToDate = new Date(rule.effective_from);
         effectiveToDate.setDate(effectiveToDate.getDate() - 1);
         const effectiveToStr = effectiveToDate.toISOString().split('T')[0];
@@ -376,6 +388,12 @@ export function useUpsertStaffJournalEntry() {
       } else {
         query = query.eq('activity_id', entry.activity_id);
       }
+
+      if (entry.group_lesson_id === null || entry.group_lesson_id === undefined) {
+        query = query.is('group_lesson_id', null);
+      } else {
+        query = query.eq('group_lesson_id', entry.group_lesson_id);
+      }
       
       // Використовуємо масив замість maybeSingle, щоб уникнути помилки "multiple rows"
       const { data: existingArray, error: checkError } = await query;
@@ -410,6 +428,7 @@ export function useUpsertStaffJournalEntry() {
             .insert({
               staff_id: entry.staff_id,
               activity_id: entry.activity_id,
+              group_lesson_id: entry.group_lesson_id ?? null,
               date: entry.date,
               amount: entry.amount,
               base_amount: entry.base_amount,
@@ -429,9 +448,10 @@ export function useUpsertStaffJournalEntry() {
         // Якщо запис не існує - створюємо новий
         const { data, error } = await supabase
           .from('staff_journal_entries' as any)
-          .insert({
+        .insert({
             staff_id: entry.staff_id,
             activity_id: entry.activity_id,
+          group_lesson_id: entry.group_lesson_id ?? null,
             date: entry.date,
             amount: entry.amount,
             base_amount: entry.base_amount,
@@ -482,12 +502,14 @@ export function useDeleteStaffJournalEntry() {
       staff_id, 
       activity_id, 
       date,
+      group_lesson_id,
       is_manual_override
     }: { 
       id?: string; 
       staff_id?: string; 
       activity_id?: string; 
       date?: string;
+      group_lesson_id?: string | null;
       is_manual_override?: boolean;
       staffId?: string; // Legacy support
     }) => {
@@ -503,6 +525,11 @@ export function useDeleteStaffJournalEntry() {
                      .eq('date', date);
         if (typeof is_manual_override === 'boolean') {
           query = query.eq('is_manual_override', is_manual_override);
+        }
+        if (group_lesson_id === null) {
+          query = query.is('group_lesson_id', null);
+        } else if (group_lesson_id) {
+          query = query.eq('group_lesson_id', group_lesson_id);
         }
       } else {
         throw new Error('Either id or (staff_id, activity_id, date) must be provided');
@@ -536,26 +563,39 @@ export function useDeleteStaffJournalEntry() {
 export function getStaffBillingRuleForDate(
   rules: StaffBillingRule[] | undefined,
   date: string,
-  activityId: string | null = null
+  activityId: string | null = null,
+  groupLessonId: string | null = null
 ): StaffBillingRule | null {
   if (!rules || rules.length === 0) return null;
 
   const dateObj = new Date(date);
-  
-  // Find applicable rule
-  const applicableRule = rules.find(rule => {
-    // Match activity_id (null means global rule)
+
+  const matchesActivity = (rule: StaffBillingRule) => {
     if (activityId !== null && rule.activity_id !== activityId && rule.activity_id !== null) {
       return false;
     }
-    
+    return true;
+  };
+
+  const matchesDate = (rule: StaffBillingRule) => {
     const fromDate = new Date(rule.effective_from);
     const toDate = rule.effective_to ? new Date(rule.effective_to) : null;
-    
     return dateObj >= fromDate && (!toDate || dateObj < toDate);
-  });
-  
-  return applicableRule || null;
+  };
+
+  const findApplicable = (candidateRules: StaffBillingRule[]) =>
+    candidateRules.find((rule) => matchesDate(rule)) || null;
+
+  if (groupLessonId) {
+    const lessonRule = findApplicable(
+      rules.filter((rule) => matchesActivity(rule) && rule.group_lesson_id === groupLessonId)
+    );
+    if (lessonRule) return lessonRule;
+  }
+
+  return findApplicable(
+    rules.filter((rule) => matchesActivity(rule) && (rule.group_lesson_id === null || rule.group_lesson_id === undefined))
+  );
 }
 
 // Get staff manual rate history for a specific staff member
