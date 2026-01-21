@@ -25,6 +25,7 @@ import Users from "./pages/Users";
 import Login from "./pages/Login";
 import ParentPortal from "./pages/ParentPortal";
 import ParentStudentDetail from "./pages/ParentStudentDetail";
+import PendingActivation from "./pages/PendingActivation";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -189,6 +190,14 @@ const AppRoutes = () => {
           element={(
             <ProtectedRoute allowedRoles={['owner', 'admin']}>
               <Users />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/pending"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer', 'parent', 'newregistration']}>
+              <PendingActivation />
             </ProtectedRoute>
           )}
         />

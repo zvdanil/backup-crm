@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth, type UserRole } from '@/context/AuthContext';
 
 interface ProtectedRouteProps {
@@ -8,7 +8,8 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles, redirectTo = '/login' }: ProtectedRouteProps) {
-  const { user, role, isLoading } = useAuth();
+  const { user, role, profile, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -20,6 +21,14 @@ export function ProtectedRoute({ children, allowedRoles, redirectTo = '/login' }
 
   if (!user) {
     return <Navigate to={redirectTo} replace />;
+  }
+
+  if (profile && (!profile.is_active || role === 'newregistration')) {
+    if (location.pathname !== '/pending') {
+      return <Navigate to="/pending" replace />;
+    }
+  } else if (location.pathname === '/pending') {
+    return <Navigate to="/" replace />;
   }
 
   if (allowedRoles && role && !allowedRoles.includes(role)) {

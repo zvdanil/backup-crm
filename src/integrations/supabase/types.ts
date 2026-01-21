@@ -617,7 +617,7 @@ export type Database = {
         | "salary"
       attendance_status: "present" | "sick" | "absent" | "vacation"
       payment_type: "subscription" | "per_session"
-      user_role: "owner" | "admin" | "manager" | "accountant" | "viewer" | "parent"
+      user_role: "owner" | "admin" | "manager" | "accountant" | "viewer" | "parent" | "newregistration"
     }
     CompositeTypes: {
       [_ in never]: never

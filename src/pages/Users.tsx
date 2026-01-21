@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useUserProfiles, useUpdateUserProfile } from '@/hooks/useUserProfiles';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,6 +14,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   accountant: 'Accountant',
   viewer: 'Viewer',
   parent: 'Parent',
+  newregistration: 'New registration',
 };
 
 export default function Users() {
@@ -21,6 +22,22 @@ export default function Users() {
   const { data: profiles = [], isLoading } = useUserProfiles();
   const updateProfile = useUpdateUserProfile();
   const isReadOnly = role !== 'owner';
+  const [authDebugEnabled, setAuthDebugEnabled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setAuthDebugEnabled(window.localStorage.getItem('auth_debug') === '1');
+  }, []);
+
+  const handleAuthDebugToggle = (checked: boolean) => {
+    setAuthDebugEnabled(checked);
+    if (typeof window === 'undefined') return;
+    if (checked) {
+      window.localStorage.setItem('auth_debug', '1');
+    } else {
+      window.localStorage.removeItem('auth_debug');
+    }
+  };
 
   const sortedProfiles = useMemo(() => (
     [...profiles].sort((a, b) => a.created_at.localeCompare(b.created_at))
@@ -30,6 +47,17 @@ export default function Users() {
     <>
       <PageHeader title="Користувачі" description={`${profiles.length} користувачів`} />
       <div className="p-8">
+        <div className="mb-6 rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Діагностика авторизації</div>
+              <div className="text-xs text-muted-foreground">
+                Вмикає логування процесу авторизації в консоль (тег [Auth]).
+              </div>
+            </div>
+            <Switch checked={authDebugEnabled} onCheckedChange={handleAuthDebugToggle} />
+          </div>
+        </div>
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

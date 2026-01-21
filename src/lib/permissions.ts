@@ -83,6 +83,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'staff_payroll',
   ],
   parent: [],
+  newregistration: [],
 };
 
 export function canAccessSection(role: UserRole | null, section: AppSection): boolean {
