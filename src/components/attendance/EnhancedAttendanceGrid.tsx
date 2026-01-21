@@ -4,12 +4,27 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { EnhancedAttendanceCell } from './EnhancedAttendanceCell';
-import { useEnrollments } from '@/hooks/useEnrollments';
+import { useEnrollments, useCreateEnrollment } from '@/hooks/useEnrollments';
 import { useAttendance, useSetAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
 import { useActivity } from '@/hooks/useActivities';
 import { useGroups } from '@/hooks/useGroups';
 import { useStaff } from '@/hooks/useStaff';
+import { useStudents } from '@/hooks/useStudents';
 import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate } from '@/hooks/useStaffBilling';
 import { calculateMonthlyStaffAccruals, type AttendanceRecord } from '@/lib/salaryCalculator';
 import { applyDeductionsToAmount } from '@/lib/staffSalary';
@@ -45,11 +60,16 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
   const isMobile = useIsMobile();
+  const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+  const [discountPercent, setDiscountPercent] = useState('0');
 
   const { data: activity } = useActivity(activityId);
   const { data: priceHistory } = useActivityPriceHistory(activityId);
   const { data: allStaffBillingRules = [] } = useAllStaffBillingRulesForActivity(activityId);
   const { data: groups = [] } = useGroups();
+  const { data: students = [] } = useStudents();
   const { data: staff = [] } = useStaff();
   const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
     activityId
@@ -63,6 +83,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const deleteAttendance = useDeleteAttendance();
   const upsertStaffJournalEntry = useUpsertStaffJournalEntry();
   const deleteStaffJournalEntry = useDeleteStaffJournalEntry();
+  const createEnrollment = useCreateEnrollment();
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const selectedDay = days[selectedDayIndex] || days[0];
@@ -87,6 +108,37 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     });
     return set;
   }, [attendanceData]);
+
+  const activeEnrollmentStudentIds = useMemo(() => {
+    const ids = new Set<string>();
+    enrollments.forEach((enrollment) => {
+      if (enrollment.is_active) {
+        ids.add(enrollment.student_id);
+      }
+    });
+    return ids;
+  }, [enrollments]);
+
+  const eligibleStudents = useMemo(() => {
+    return students.filter((student) => {
+      if (student.status !== 'active') return false;
+      return !activeEnrollmentStudentIds.has(student.id);
+    });
+  }, [students, activeEnrollmentStudentIds]);
+
+  const handleAddStudent = async () => {
+    if (!selectedStudentId || selectedStudentId === 'none') return;
+    await createEnrollment.mutateAsync({
+      student_id: selectedStudentId,
+      activity_id: activityId,
+      custom_price: customPrice.trim() ? parseFloat(customPrice) : null,
+      discount_percent: discountPercent.trim() ? parseFloat(discountPercent) : 0,
+    });
+    setSelectedStudentId('');
+    setCustomPrice('');
+    setDiscountPercent('0');
+    setIsAddStudentOpen(false);
+  };
 
   const visibleEnrollments = useMemo(() => (
     enrollments.filter(enrollment => enrollment.is_active || enrollmentsWithCharges.has(enrollment.id))
@@ -835,7 +887,12 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
         {/* Filters */}
         <div className="mb-4 p-4 border rounded-lg bg-card">
-          <Label className="mb-3 block font-medium">Фільтр по групах:</Label>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <Label className="block font-medium">Фільтр по групах:</Label>
+            <Button size="sm" onClick={() => setIsAddStudentOpen(true)}>
+              Додати дитину
+            </Button>
+          </div>
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center space-x-2">
               <Checkbox
@@ -903,7 +960,12 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
       {/* Filters */}
       <div className="mb-4 p-4 border rounded-lg bg-card">
-        <Label className="mb-3 block font-medium">Фільтр по групах:</Label>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <Label className="block font-medium">Фільтр по групах:</Label>
+          <Button size="sm" onClick={() => setIsAddStudentOpen(true)}>
+            Додати дитину
+          </Button>
+        </div>
         <div className="flex flex-wrap gap-4">
           <div className="flex items-center space-x-2">
             <Checkbox
@@ -1429,6 +1491,68 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         </table>
       </div>
       )}
+      <Dialog open={isAddStudentOpen} onOpenChange={setIsAddStudentOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Додати дитину до активності</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Дитина</Label>
+              <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Оберіть дитину" />
+                </SelectTrigger>
+                <SelectContent>
+                  {eligibleStudents.length === 0 && (
+                    <SelectItem value="none" disabled>
+                      Немає доступних дітей
+                    </SelectItem>
+                  )}
+                  {eligibleStudents.map((student) => (
+                    <SelectItem key={student.id} value={student.id}>
+                      {student.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Індивідуальна ціна (опціонально)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={customPrice}
+                onChange={(event) => setCustomPrice(event.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Знижка (%)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={discountPercent}
+                onChange={(event) => setDiscountPercent(event.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsAddStudentOpen(false)}>
+                Скасувати
+              </Button>
+              <Button
+                onClick={handleAddStudent}
+                disabled={!selectedStudentId || selectedStudentId === 'none' || createEnrollment.isPending}
+              >
+                Додати
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
