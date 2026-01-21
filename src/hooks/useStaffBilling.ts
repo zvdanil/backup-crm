@@ -365,6 +365,7 @@ export function useUpsertStaffJournalEntry() {
         .select('id')
         .eq('staff_id', entry.staff_id)
         .eq('date', entry.date)
+        .eq('is_manual_override', entry.is_manual_override)
         .limit(1);
       
       if (entry.activity_id === null) {
@@ -477,12 +478,14 @@ export function useDeleteStaffJournalEntry() {
       id, 
       staff_id, 
       activity_id, 
-      date 
+      date,
+      is_manual_override
     }: { 
       id?: string; 
       staff_id?: string; 
       activity_id?: string; 
       date?: string;
+      is_manual_override?: boolean;
       staffId?: string; // Legacy support
     }) => {
       let query = supabase
@@ -495,6 +498,9 @@ export function useDeleteStaffJournalEntry() {
         query = query.eq('staff_id', staff_id)
                      .eq('activity_id', activity_id)
                      .eq('date', date);
+        if (typeof is_manual_override === 'boolean') {
+          query = query.eq('is_manual_override', is_manual_override);
+        }
       } else {
         throw new Error('Either id or (staff_id, activity_id, date) must be provided');
       }

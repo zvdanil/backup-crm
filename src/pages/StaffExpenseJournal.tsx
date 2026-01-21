@@ -55,16 +55,6 @@ export default function StaffExpenseJournal() {
     );
   }, [activities]);
 
-  const salaryTransactionsMap = useMemo(() => {
-    const map = new Map<string, number>();
-    salaryTransactions.forEach((t) => {
-      if (!t.staff_id) return;
-      const key = `${t.staff_id}-${t.date}`;
-      map.set(key, (map.get(key) || 0) + (t.amount || 0));
-    });
-    return map;
-  }, [salaryTransactions]);
-  
   // Load all staff manual rate history
   const { data: allManualRateHistory = [] } = useQuery({
     queryKey: ['staff-manual-rate-history-all'],
@@ -76,6 +66,47 @@ export default function StaffExpenseJournal() {
       
       if (error) throw error;
       return ((data as any) || []) as StaffManualRateHistory[];
+    },
+  });
+
+  const { data: staffPayouts = [] } = useQuery({
+    queryKey: ['staff-payouts-all', month, year],
+    queryFn: async () => {
+      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('staff_payouts' as any)
+        .select('id, staff_id, payout_date, amount')
+        .gte('payout_date', startDate)
+        .lte('payout_date', endDate);
+      if (error) throw error;
+      return (data as any[]) || [];
+    },
+  });
+
+  const payoutMap = useMemo(() => {
+    const map = new Map<string, number>();
+    salaryTransactions.forEach((t) => {
+      if (!t.staff_id) return;
+      const key = `${t.staff_id}-${t.date}`;
+      map.set(key, (map.get(key) || 0) + (t.amount || 0));
+    });
+    staffPayouts.forEach((payout) => {
+      if (!payout.staff_id) return;
+      const key = `${payout.staff_id}-${payout.payout_date}`;
+      map.set(key, (map.get(key) || 0) + (payout.amount || 0));
+    });
+    return map;
+  }, [salaryTransactions, staffPayouts]);
+
+  const { data: allBillingRules = [] } = useQuery({
+    queryKey: ['staff-billing-rules-all'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_billing_rules' as any)
+        .select('*');
+      if (error) throw error;
+      return (data as any[]) || [];
     },
   });
 
@@ -101,7 +132,21 @@ export default function StaffExpenseJournal() {
   }, [journalEntries, month, year]);
 
   // Compute derived data using useMemo
-  const activeStaff = useMemo(() => staff.filter(s => s.is_active), [staff]);
+  const eligibleStaffIds = useMemo(() => {
+    const ids = new Set<string>();
+    allBillingRules.forEach((rule: any) => {
+      if (rule?.staff_id) ids.add(rule.staff_id);
+    });
+    allManualRateHistory.forEach((entry) => {
+      if (entry?.staff_id) ids.add(entry.staff_id);
+    });
+    return ids;
+  }, [allBillingRules, allManualRateHistory]);
+
+  const activeStaff = useMemo(
+    () => staff.filter(s => s.is_active && eligibleStaffIds.has(s.id)),
+    [staff, eligibleStaffIds]
+  );
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   
   // Create a map of manual rate history by staff_id
@@ -141,7 +186,7 @@ export default function StaffExpenseJournal() {
     
     journalEntries.forEach(entry => {
       // Store individual entries by full key (for manual overrides lookup)
-      const fullKey = `${entry.staff_id}-${entry.activity_id || 'null'}-${entry.date}`;
+      const fullKey = `${entry.staff_id}-${entry.activity_id || 'null'}-${entry.date}-${entry.is_manual_override ? 'manual' : 'auto'}`;
       map.set(fullKey, entry);
       
       // Sum all entries for staff_id + date (for display)
@@ -157,6 +202,38 @@ export default function StaffExpenseJournal() {
     
     return map;
   }, [journalEntries]);
+
+  const manualActivitiesByStaff = useMemo(() => {
+    const map = new Map<string, { activityId: string | null; name: string }[]>();
+
+    const addActivity = (staffId: string, activityId: string | null) => {
+      const list = map.get(staffId) || [];
+      if (list.some((item) => item.activityId === activityId)) return;
+
+      const name = activityId
+        ? activities.find((activity) => activity.id === activityId)?.name || 'Активність'
+        : 'Ручні (без активності)';
+
+      list.push({ activityId, name });
+      map.set(staffId, list);
+    };
+
+    allManualRateHistory.forEach((entry) => {
+      addActivity(entry.staff_id, entry.activity_id ?? null);
+    });
+
+    journalEntries.forEach((entry) => {
+      if (!entry.is_manual_override) return;
+      addActivity(entry.staff_id, entry.activity_id ?? null);
+    });
+
+    map.forEach((list, staffId) => {
+      const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name, 'uk-UA'));
+      map.set(staffId, sorted);
+    });
+
+    return map;
+  }, [activities, allManualRateHistory, journalEntries]);
 
   // Create a map of attendance for automatic calculations
   const attendanceMap = useMemo(() => {
@@ -194,7 +271,7 @@ export default function StaffExpenseJournal() {
   };
 
   const handleCellClick = (staffId: string, activityId: string | null, date: string) => {
-    const key = `${staffId}-${activityId || 'null'}-${date}`;
+    const key = `${staffId}-${activityId || 'null'}-${date}-manual`;
     const existing = journalMap.get(key);
     setEditingCell({ staffId, activityId, date });
     setManualValue(existing?.amount.toString() || '');
@@ -216,7 +293,7 @@ export default function StaffExpenseJournal() {
       // Почасово: вводимо кількість годин, нарахування = години * ставка
       if (!manualValue || manualValue.trim() === '') {
         // Якщо поле порожнє - видаляємо запис
-        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}`;
+        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}-manual`;
         const existing = journalMap.get(key);
         if (existing?.id) {
           deleteJournalEntry.mutate({ id: existing.id });
@@ -225,6 +302,7 @@ export default function StaffExpenseJournal() {
             staff_id: editingCell.staffId,
             activity_id: editingCell.activityId,
             date: editingCell.date,
+            is_manual_override: true,
           });
         }
         setEditingCell(null);
@@ -237,7 +315,7 @@ export default function StaffExpenseJournal() {
 
       // Якщо години = 0, видаляємо запис
       if (hours === 0) {
-        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}`;
+        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}-manual`;
         const existing = journalMap.get(key);
         if (existing?.id) {
           deleteJournalEntry.mutate({ id: existing.id });
@@ -246,6 +324,7 @@ export default function StaffExpenseJournal() {
             staff_id: editingCell.staffId,
             activity_id: editingCell.activityId,
             date: editingCell.date,
+            is_manual_override: true,
           });
         }
         setEditingCell(null);
@@ -269,15 +348,47 @@ export default function StaffExpenseJournal() {
       setEditingCell(null);
       setManualValue('');
     } else if (rateType === 'per_session') {
-      // За заняття: можна ввести число вручну або залишити порожнім для використання ставки за замовчуванням
-      let amount: number;
-      if (manualValue && manualValue.trim() !== '') {
-        amount = parseFloat(manualValue);
-        if (isNaN(amount) || amount < 0) return;
-      } else {
-        // Якщо порожньо, використовуємо ставку за замовчуванням
-        amount = rateValue;
+      // За заняття: вводимо кількість занять, нарахування = кількість * ставка
+      if (!manualValue || manualValue.trim() === '') {
+        // Якщо поле порожнє - видаляємо запис
+        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}-manual`;
+        const existing = journalMap.get(key);
+        if (existing?.id) {
+          deleteJournalEntry.mutate({ id: existing.id });
+        } else {
+          deleteJournalEntry.mutate({
+            staff_id: editingCell.staffId,
+            activity_id: editingCell.activityId,
+            date: editingCell.date,
+            is_manual_override: true,
+          });
+        }
+        setEditingCell(null);
+        setManualValue('');
+        return;
       }
+
+      const sessions = parseFloat(manualValue);
+      if (isNaN(sessions) || sessions < 0) return;
+      if (sessions === 0) {
+        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}-manual`;
+        const existing = journalMap.get(key);
+        if (existing?.id) {
+          deleteJournalEntry.mutate({ id: existing.id });
+        } else {
+          deleteJournalEntry.mutate({
+            staff_id: editingCell.staffId,
+            activity_id: editingCell.activityId,
+            date: editingCell.date,
+            is_manual_override: true,
+          });
+        }
+        setEditingCell(null);
+        setManualValue('');
+        return;
+      }
+
+      const amount = sessions * rateValue;
 
       upsertJournalEntry.mutate({
         staff_id: editingCell.staffId,
@@ -287,7 +398,7 @@ export default function StaffExpenseJournal() {
         base_amount: rateValue,
         deductions_applied: [],
         is_manual_override: true,
-        notes: manualValue && manualValue.trim() !== '' ? 'Введено вручну' : 'За замовчуванням',
+        notes: `${sessions} зан. × ${rateValue} ₴`,
       });
 
       setEditingCell(null);
@@ -314,75 +425,238 @@ export default function StaffExpenseJournal() {
     }
   };
 
-  // Component to fetch billing rules for a staff member (used in getCellValue)
-  // FIXED: Now sums all entries for staff_id + date, regardless of activity_id
-  const getCellValue = (staffId: string, activityId: string | null, date: string): number | null => {
-    // When activityId is null, we want to sum ALL entries for this staff member on this date
-    if (activityId === null) {
-      // Sum all journal entries for this staff_id + date
-      const entriesForDate = journalEntries.filter(
-        entry => entry.staff_id === staffId && entry.date === date
-      );
-      
-      const journalTotal = entriesForDate.reduce((sum, entry) => sum + (entry.amount || 0), 0);
-      const salaryTotal = salaryTransactionsMap.get(`${staffId}-${date}`) || 0;
-      const combinedTotal = journalTotal + salaryTotal;
-      if (combinedTotal > 0) {
-        console.log(`[getCellValue] Summed ${entriesForDate.length} journal entries and ${salaryTotal} salary for ${staffId} on ${date}: ${combinedTotal}`);
-        return combinedTotal;
-      }
-      
-      // If no journal entries, try to calculate from attendance
-      // Sum all attendance-based calculations for this staff member on this date
-      const staffMember = activeStaff.find(s => s.id === staffId);
-      if (!staffMember) return null;
-      
-      // Find all activities where this staff member is the teacher
-      const relevantActivities = activities.filter(activity => {
-        return enrollments.some(e => 
-          e.teacher_id === staffId && 
-          e.activity_id === activity.id
-        );
-      });
-      
-      let calculatedTotal = 0;
-      let hasCalculations = false;
-      
-      relevantActivities.forEach(activity => {
-        const attendanceKey = `${staffId}-${activity.id}-${date}`;
-        const attendance = attendanceMap.get(attendanceKey);
-        
-        if (attendance) {
-          const activityBillingRules = activity.billing_rules || null;
-          const calculation = calculateStaffSalary({
-            staff: staffMember,
-            activity,
-            date,
-            attendanceValue: attendance.value,
-            attendanceStatus: attendance.status as any,
-            staffBillingRule: null, // Would need to fetch from staff_billing_rules
-            activityBillingRules,
-            deductions: (staffMember.deductions as any) || [],
-          });
-          
-          if (calculation && calculation.finalAmount > 0) {
-            calculatedTotal += calculation.finalAmount;
-            hasCalculations = true;
-          }
-        }
-      });
-      
-      return hasCalculations ? calculatedTotal : null;
-    }
-    
-    // If activityId is provided, look for specific entry (for manual overrides)
-    const key = `${staffId}-${activityId}-${date}`;
-    const journalEntry = journalMap.get(key);
-    if (journalEntry) {
-      return journalEntry.amount;
+  const getAutoCellValue = (staffId: string, date: string): number | null => {
+    const entriesForDate = journalEntries.filter(
+      entry => entry.staff_id === staffId && entry.date === date && !entry.is_manual_override
+    );
+
+    const journalTotal = entriesForDate.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+    if (journalTotal > 0) {
+      return journalTotal;
     }
 
+    // If no journal entries, try to calculate from attendance
+    const staffMember = activeStaff.find(s => s.id === staffId);
+    if (!staffMember) return null;
+
+    const relevantActivities = activities.filter(activity => {
+      return enrollments.some(e =>
+        e.teacher_id === staffId &&
+        e.activity_id === activity.id
+      );
+    });
+
+    let calculatedTotal = 0;
+    let hasCalculations = false;
+
+    relevantActivities.forEach(activity => {
+      const attendanceKey = `${staffId}-${activity.id}-${date}`;
+      const attendance = attendanceMap.get(attendanceKey);
+
+      if (attendance) {
+        const activityBillingRules = activity.billing_rules || null;
+        const calculation = calculateStaffSalary({
+          staff: staffMember,
+          activity,
+          date,
+          attendanceValue: attendance.value,
+          attendanceStatus: attendance.status as any,
+          staffBillingRule: null, // Would need to fetch from staff_billing_rules
+          activityBillingRules,
+          deductions: (staffMember.deductions as any) || [],
+        });
+
+        if (calculation && calculation.finalAmount > 0) {
+          calculatedTotal += calculation.finalAmount;
+          hasCalculations = true;
+        }
+      }
+    });
+
+    return hasCalculations ? calculatedTotal : null;
+  };
+
+  const getManualCellValue = (staffId: string, activityId: string | null, date: string): number | null => {
+    const key = `${staffId}-${activityId || 'null'}-${date}-manual`;
+    const journalEntry = journalMap.get(key);
+    if (journalEntry && journalEntry.is_manual_override) {
+      return journalEntry.amount;
+    }
     return null;
+  };
+
+  const renderManualCell = (staffId: string, activityId: string | null, dateStr: string, isWeekendDay: boolean) => {
+    const cellValue = getManualCellValue(staffId, activityId, dateStr);
+    const isEditing = editingCell?.staffId === staffId &&
+      editingCell?.activityId === activityId &&
+      editingCell?.date === dateStr;
+
+    return (
+      <td
+        key={dateStr}
+        className={cn(
+          "p-0.5 text-center",
+          isWeekendDay && "bg-amber-50/70 dark:bg-amber-900/20"
+        )}
+      >
+        <Popover open={isEditing} onOpenChange={(open) => !open && setEditingCell(null)}>
+          <PopoverTrigger asChild>
+            <button
+              onClick={() => handleCellClick(staffId, activityId, dateStr)}
+              className={cn(
+                "w-full h-8 text-xs rounded hover:bg-muted transition-colors",
+                cellValue !== null ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground"
+              )}
+            >
+              {cellValue !== null ? formatCurrency(cellValue) : '—'}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64">
+            <div className="space-y-3">
+              {(() => {
+                const history = manualRateHistoryMap.get(staffId);
+                const currentRate = editingCell
+                  ? getStaffManualRateForDate(history, editingCell.date, editingCell.activityId || null)
+                  : null;
+                const rateType = currentRate?.manual_rate_type || null;
+                const rateValue = currentRate?.manual_rate_value || 0;
+
+                if (rateType === 'hourly') {
+                  return (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">Кількість годин</label>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          value={manualValue}
+                          onChange={(e) => setManualValue(e.target.value)}
+                          placeholder="0"
+                          className="mt-1"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Ставка: {rateValue} ₴/год
+                        </p>
+                        {manualValue && !isNaN(parseFloat(manualValue)) && (
+                          <p className="text-xs font-medium text-primary mt-1">
+                            Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleSaveManualEntry}
+                          className="flex-1"
+                          disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                        >
+                          Зберегти
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingCell(null);
+                            setManualValue('');
+                          }}
+                        >
+                          Скасувати
+                        </Button>
+                      </div>
+                    </>
+                  );
+                }
+
+                if (rateType === 'per_session') {
+                  return (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">Кількість занять</label>
+                        <Input
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={manualValue}
+                          onChange={(e) => setManualValue(e.target.value)}
+                          placeholder="0"
+                          className="mt-1"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Ставка: {formatCurrency(rateValue)} / заняття
+                        </p>
+                        {manualValue && !isNaN(parseFloat(manualValue)) && (
+                          <p className="text-xs font-medium text-primary mt-1">
+                            Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleSaveManualEntry}
+                          className="flex-1"
+                          disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                        >
+                          Зберегти
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingCell(null);
+                            setManualValue('');
+                          }}
+                        >
+                          Скасувати
+                        </Button>
+                      </div>
+                    </>
+                  );
+                }
+
+                return (
+                  <>
+                    <div>
+                      <label className="text-sm font-medium">Сума (₴)</label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={manualValue}
+                        onChange={(e) => setManualValue(e.target.value)}
+                        placeholder="0"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleSaveManualEntry}
+                        className="flex-1"
+                        disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                      >
+                        Зберегти
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingCell(null);
+                          setManualValue('');
+                        }}
+                      >
+                        Скасувати
+                      </Button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </td>
+    );
   };
 
   return (
@@ -450,7 +724,7 @@ export default function StaffExpenseJournal() {
                 return (
                   <React.Fragment key={staffMember.id}>
                     {/* Staff row with all activities combined */}
-                    <tr className="border-t hover:bg-muted/20">
+                  <tr className="border-t hover:bg-muted/20">
                       <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
                         <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
                           {staffMember.full_name}
@@ -458,13 +732,13 @@ export default function StaffExpenseJournal() {
                         <div className="text-xs text-muted-foreground mt-1">
                           {staffMember.position}
                         </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Авто нарахування
+                        </div>
                       </td>
                       {days.map((day) => {
                         const dateStr = formatDateString(day);
-                        const cellValue = getCellValue(staffMember.id, null, dateStr);
-                        const isEditing = editingCell?.staffId === staffMember.id && 
-                                         editingCell?.activityId === null && 
-                                         editingCell?.date === dateStr;
+                        const cellValue = getAutoCellValue(staffMember.id, dateStr);
 
                         return (
                           <td
@@ -474,161 +748,47 @@ export default function StaffExpenseJournal() {
                               isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
                             )}
                           >
-                            <Popover open={isEditing} onOpenChange={(open) => !open && setEditingCell(null)}>
-                              <PopoverTrigger asChild>
-                                <button
-                                  onClick={() => handleCellClick(staffMember.id, null, dateStr)}
-                                  className={cn(
-                                    "w-full h-8 text-xs rounded hover:bg-muted transition-colors",
-                                    cellValue !== null ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground"
-                                  )}
-                                >
-                                  {cellValue !== null ? formatCurrency(cellValue) : '—'}
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-64">
-                                <div className="space-y-3">
-                                  {(() => {
-                                    const history = manualRateHistoryMap.get(staffMember.id);
-                                    const currentRate = editingCell
-                                      ? getStaffManualRateForDate(history, editingCell.date, editingCell.activityId || null)
-                                      : null;
-                                    const rateType = currentRate?.manual_rate_type || null;
-                                    const rateValue = currentRate?.manual_rate_value || 0;
-
-                                    if (rateType === 'hourly') {
-                                      // Почасово: вводимо кількість годин
-                                      return (
-                                        <>
-                                          <div>
-                                            <label className="text-sm font-medium">Кількість годин</label>
-                                            <Input
-                                              type="number"
-                                              step="0.5"
-                                              min="0"
-                                              value={manualValue}
-                                              onChange={(e) => setManualValue(e.target.value)}
-                                              placeholder="0"
-                                              className="mt-1"
-                                            />
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                              Ставка: {rateValue} ₴/год
-                                            </p>
-                                            {manualValue && !isNaN(parseFloat(manualValue)) && (
-                                              <p className="text-xs font-medium text-primary mt-1">
-                                                Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
-                                              </p>
-                                            )}
-                                          </div>
-                                          <div className="flex gap-2">
-                                            <Button
-                                              size="sm"
-                                              onClick={handleSaveManualEntry}
-                                              className="flex-1"
-                                              disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
-                                            >
-                                              Зберегти
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={() => {
-                                                setEditingCell(null);
-                                                setManualValue('');
-                                              }}
-                                            >
-                                              Скасувати
-                                            </Button>
-                                          </div>
-                                        </>
-                                      );
-                                    } else if (rateType === 'per_session') {
-                                      // За заняття: можна ввести число або залишити порожнім для ставки за замовчуванням
-                                      return (
-                                        <>
-                                          <div>
-                                            <label className="text-sm font-medium">Сума (₴)</label>
-                                            <Input
-                                              type="number"
-                                              step="0.01"
-                                              min="0"
-                                              value={manualValue}
-                                              onChange={(e) => setManualValue(e.target.value)}
-                                              placeholder={rateValue > 0 ? rateValue.toString() : "0"}
-                                              className="mt-1"
-                                            />
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                              Ставка за замовчуванням: {formatCurrency(rateValue)}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                              Залиште порожнім, щоб використати ставку за замовчуванням
-                                            </p>
-                                          </div>
-                                          <div className="flex gap-2">
-                                            <Button
-                                              size="sm"
-                                              onClick={handleSaveManualEntry}
-                                              className="flex-1"
-                                              disabled={manualValue !== '' && (isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0)}
-                                            >
-                                              Зберегти
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={() => {
-                                                setEditingCell(null);
-                                                setManualValue('');
-                                              }}
-                                            >
-                                              Скасувати
-                                            </Button>
-                                          </div>
-                                        </>
-                                      );
-                                    } else {
-                                      // Звичайний режим: вводимо суму
-                                      return (
-                                        <>
-                                          <div>
-                                            <label className="text-sm font-medium">Сума (₴)</label>
-                                            <Input
-                                              type="number"
-                                              step="0.01"
-                                              min="0"
-                                              value={manualValue}
-                                              onChange={(e) => setManualValue(e.target.value)}
-                                              placeholder="0"
-                                              className="mt-1"
-                                            />
-                                          </div>
-                                          <div className="flex gap-2">
-                                            <Button
-                                              size="sm"
-                                              onClick={handleSaveManualEntry}
-                                              className="flex-1"
-                                              disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
-                                            >
-                                              Зберегти
-                                            </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={() => {
-                                                setEditingCell(null);
-                                                setManualValue('');
-                                              }}
-                                            >
-                                              Скасувати
-                                            </Button>
-                                          </div>
-                                        </>
-                                      );
-                                    }
-                                  })()}
-                                </div>
-                              </PopoverContent>
-                            </Popover>
+                            <div className={cn(
+                              "w-full h-8 text-xs rounded flex items-center justify-center",
+                              cellValue !== null ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground"
+                            )}>
+                              {cellValue !== null ? formatCurrency(cellValue) : '—'}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {(manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
+                      <tr key={`${staffMember.id}-${manualActivity.activityId || 'null'}`} className="border-t bg-muted/10">
+                        <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
+                          {staffMember.full_name} — {manualActivity.name}
+                        </td>
+                        {days.map((day) =>
+                          renderManualCell(
+                            staffMember.id,
+                            manualActivity.activityId,
+                            formatDateString(day),
+                            isWeekend(day)
+                          )
+                        )}
+                      </tr>
+                    ))}
+                    <tr className="border-t bg-muted/20">
+                      <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
+                        {staffMember.full_name} — Виплати
+                      </td>
+                      {days.map((day) => {
+                        const dateStr = formatDateString(day);
+                        const amount = payoutMap.get(`${staffMember.id}-${dateStr}`) || 0;
+                        return (
+                          <td
+                            key={dateStr}
+                            className={cn(
+                              "p-0.5 text-center text-red-600 font-medium",
+                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                            )}
+                          >
+                            {amount > 0 ? formatCurrency(amount) : '—'}
                           </td>
                         );
                       })}

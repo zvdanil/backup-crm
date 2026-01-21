@@ -14,6 +14,7 @@ import { useExpenseCategories, useCreateExpenseCategory } from '@/hooks/useExpen
 import { useStaff } from '@/hooks/useStaff';
 import { formatCurrency, formatDate, formatDateString } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -61,14 +62,45 @@ export default function ActivityExpenseJournal() {
     type: transactionType,
   });
 
+  const { data: staffPayouts = [] } = useQuery({
+    queryKey: ['staff-payouts-all', month, year],
+    queryFn: async () => {
+      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('staff_payouts' as any)
+        .select('id, staff_id, payout_date, amount, notes')
+        .gte('payout_date', startDate)
+        .lte('payout_date', endDate);
+      if (error) throw error;
+      return (data as any[]) || [];
+    },
+    enabled: isSalary,
+  });
+
   const categoriesMap = useMemo(() => {
     const map = new Map<string, string>();
     categories.forEach((c) => map.set(c.id, c.name));
     return map;
   }, [categories]);
 
+  const combinedTransactions = useMemo(() => {
+    if (!isSalary) return transactions;
+    const payoutItems = staffPayouts.map((payout) => ({
+      id: `payout-${payout.id}`,
+      activity_id: id,
+      staff_id: payout.staff_id,
+      expense_category_id: null,
+      amount: payout.amount,
+      date: payout.payout_date,
+      description: payout.notes || 'Виплата із фін історії',
+      source: 'payout',
+    }));
+    return [...transactions, ...payoutItems];
+  }, [transactions, staffPayouts, isSalary, id]);
+
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((t) => {
+    return combinedTransactions.filter((t) => {
       const matchesCategory =
         filterCategoryId === 'all' ||
         (filterCategoryId === 'none' && !t.expense_category_id) ||
@@ -82,10 +114,10 @@ export default function ActivityExpenseJournal() {
         (t.description || '').toLowerCase().includes(search.trim().toLowerCase());
       return matchesCategory && matchesStaff && matchesSearch;
     });
-  }, [transactions, filterCategoryId, filterStaffId, search]);
+  }, [combinedTransactions, filterCategoryId, filterStaffId, search]);
 
   const groupedByCategory = useMemo(() => {
-    const groups = new Map<string, typeof transactions>();
+    const groups = new Map<string, typeof combinedTransactions>();
     filteredTransactions.forEach((t) => {
       const key = t.expense_category_id || 'none';
       const list = groups.get(key) || [];
@@ -286,7 +318,9 @@ export default function ActivityExpenseJournal() {
                     <span className="text-destructive">{formatCurrency(groupTotal)}</span>
                   </div>
                   <div className="divide-y">
-                    {items.map((t) => (
+                    {items.map((t) => {
+                      const isPayout = t.source === 'payout';
+                      return (
                       <div key={t.id} className="p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -299,41 +333,51 @@ export default function ActivityExpenseJournal() {
                             <div className="text-xs text-muted-foreground break-words">
                               {t.description || '—'}
                             </div>
+                            {isPayout && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Виплата з фінансової історії
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <div className={cn("text-sm font-semibold", "text-destructive")}>
                               {formatCurrency(t.amount || 0)}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => {
-                                setEditingId(t.id);
-                                setAmount((t.amount || 0).toString());
-                                setDate(t.date);
-                                setDescription(t.description || '');
-                                setStaffId(t.staff_id || '');
-                                setCategoryId(t.expense_category_id || 'none');
-                                setNewCategoryName('');
-                                setDialogOpen(true);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={async () => {
-                                if (!window.confirm('Видалити цей запис?')) return;
-                                await deleteTransaction.mutateAsync({ id: t.id });
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            {!isPayout && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    setEditingId(t.id);
+                                    setAmount((t.amount || 0).toString());
+                                    setDate(t.date);
+                                    setDescription(t.description || '');
+                                    setStaffId(t.staff_id || '');
+                                    setCategoryId(t.expense_category_id || 'none');
+                                    setNewCategoryName('');
+                                    setDialogOpen(true);
+                                  }}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={async () => {
+                                    if (!window.confirm('Видалити цей запис?')) return;
+                                    await deleteTransaction.mutateAsync({ id: t.id });
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );

@@ -298,6 +298,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
               staff_id: staffId,
               activity_id: activityId,
               date,
+              is_manual_override: false,
             })
           );
         }

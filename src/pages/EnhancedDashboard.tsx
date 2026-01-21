@@ -230,8 +230,11 @@ export default function EnhancedDashboard() {
       if (trans.type !== 'salary') return;
       totals[trans.date] = (totals[trans.date] || 0) + (trans.amount || 0);
     });
+    data?.staffPayouts?.forEach((payout) => {
+      totals[payout.payout_date] = (totals[payout.payout_date] || 0) + (payout.amount || 0);
+    });
     return totals;
-  }, [data?.financeTransactions, dataUpdatedAt]);
+  }, [data?.financeTransactions, data?.staffPayouts, dataUpdatedAt]);
 
   const salaryAccrualsDaily = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -331,6 +334,10 @@ export default function EnhancedDashboard() {
     // Підсумовуємо витрати з staff_journal_entries (категорія 'salary')
     data?.staffExpenses?.forEach((expense) => {
       totals.salary[expense.date] = (totals.salary[expense.date] || 0) + (expense.amount || 0);
+    });
+    // Підсумовуємо виплати з staff_payouts
+    data?.staffPayouts?.forEach((payout) => {
+      totals.salary[payout.payout_date] = (totals.salary[payout.payout_date] || 0) + (payout.amount || 0);
     });
     return totals;
   }, [data, allActivities, baseTariffIds, foodTariffIds]);

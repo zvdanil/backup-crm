@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StaffForm } from '@/components/staff/StaffForm';
 import { useStaffMember, useUpdateStaff } from '@/hooks/useStaff';
-import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend } from '@/lib/attendance';
+import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString } from '@/lib/attendance';
 import { StaffBillingEditorNew } from '@/components/staff/StaffBillingEditorNew';
 import { StaffManualRateHistoryEditor } from '@/components/staff/StaffManualRateHistoryEditor';
 import { DeductionsEditor } from '@/components/staff/DeductionsEditor';
@@ -121,23 +121,9 @@ export default function StaffDetail() {
 
   const handleSaveBillingRules = () => {
     if (!id) return;
-    const manualActivityIds = new Set(
-      [...manualRateHistory, ...manualRateHistoryState].map((entry) => entry.activity_id ?? 'all')
-    );
-    const hasManualAll = manualActivityIds.has('all');
     const autoActivityIds = new Set(
       billingRulesState.map((rule) => (rule.activity_id === 'null' ? null : rule.activity_id) ?? 'all')
     );
-    const hasAutoConflict = hasManualAll && autoActivityIds.size > 0
-      || Array.from(autoActivityIds).some((idKey) => idKey !== 'all' && manualActivityIds.has(idKey));
-    if (hasAutoConflict) {
-      toast({
-        title: 'Конфлікт ставок',
-        description: 'Ставка для цієї активності вже визначена у ручному режимі.',
-        variant: 'destructive',
-      });
-      return;
-    }
 
     // Save each new rule
     billingRulesState.forEach((rule) => {
@@ -162,23 +148,6 @@ export default function StaffDetail() {
 
   const handleSaveManualRateHistory = () => {
     if (!id) return;
-    const autoActivityIds = new Set(
-      [...billingRules, ...billingRulesState].map((rule) => rule.activity_id ?? 'all')
-    );
-    const hasAutoAll = autoActivityIds.has('all');
-    const manualActivityIds = new Set(
-      manualRateHistoryState.map((entry) => entry.activity_id ?? 'all')
-    );
-    const hasManualConflict = hasAutoAll && manualActivityIds.size > 0
-      || Array.from(manualActivityIds).some((idKey) => idKey !== 'all' && autoActivityIds.has(idKey));
-    if (hasManualConflict) {
-      toast({
-        title: 'Конфлікт ставок',
-        description: 'Ставка для цієї активності вже визначена у автоматичному режимі.',
-        variant: 'destructive',
-      });
-      return;
-    }
 
     // Save each new entry
     manualRateHistoryState.forEach((entry) => {
@@ -743,21 +712,23 @@ function FinancialCalendarTable({
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   
-  // Group journal entries by activity (including manual entries)
-  const entriesByActivity = useMemo(() => {
-    const map = new Map<string, Map<string, number>>(); // activity_id -> date -> amount
-    
+  // Group journal entries by activity + mode (auto/manual)
+  const entriesByRow = useMemo(() => {
+    const map = new Map<string, Map<string, number>>(); // rowKey -> date -> amount
+
     journalEntries.forEach(entry => {
-      const activityId = entry.activity_id || 'manual'; // Use 'manual' for entries without activity_id
-      if (!map.has(activityId)) {
-        map.set(activityId, new Map());
+      const activityId = entry.activity_id || 'none';
+      const mode = entry.is_manual_override ? 'manual' : 'auto';
+      const rowKey = `${activityId}:${mode}`;
+      if (!map.has(rowKey)) {
+        map.set(rowKey, new Map());
       }
-      const activityMap = map.get(activityId)!;
+      const activityMap = map.get(rowKey)!;
       const dateStr = entry.date;
       const currentAmount = activityMap.get(dateStr) || 0;
       activityMap.set(dateStr, currentAmount + (Number(entry.amount) || 0));
     });
-    
+
     return map;
   }, [journalEntries]);
   
@@ -786,22 +757,29 @@ function FinancialCalendarTable({
     return { amounts: amountMap, notes: notesMap };
   }, [payouts, month, year]);
   
-  // Get unique activities from journal entries + manual entries row
+  // Build rows for auto/manual entries per activity
   const activityRows = useMemo(() => {
-    const activityIds = Array.from(entriesByActivity.keys()).filter(id => id !== 'manual');
-    const activityList = activityIds.map(id => activities.find(a => a.id === id)).filter(Boolean);
-    
-    // Add manual entries row if there are manual entries
-    const hasManualEntries = entriesByActivity.has('manual');
-    if (hasManualEntries) {
-      return [...activityList, { id: 'manual', name: 'Ручні записи' }];
-    }
-    
-    return activityList;
-  }, [entriesByActivity, activities]);
+    const rows = Array.from(entriesByRow.keys()).map((rowKey) => {
+      const [activityId, mode] = rowKey.split(':');
+      const isManual = mode === 'manual';
+      const activity = activities.find(a => a.id === activityId);
+      const baseName = activity ? activity.name : 'Без активності';
+      const name = activityId === 'none'
+        ? (isManual ? 'Ручні записи (без активності)' : 'Авто нарахування (без активності)')
+        : `${baseName} — ${isManual ? 'ручні' : 'авто'}`;
+
+      return {
+        id: rowKey,
+        name,
+      };
+    });
+
+    rows.sort((a, b) => a.name.localeCompare(b.name, 'uk-UA'));
+    return rows;
+  }, [entriesByRow, activities]);
   
   const getDateString = (date: Date) => {
-    return date.toISOString().split('T')[0];
+    return formatDateString(date);
   };
 
   return (
@@ -835,7 +813,7 @@ function FinancialCalendarTable({
           {/* Activity rows */}
           {activityRows.length > 0 ? (
             activityRows.map(activity => {
-              const activityEntries = entriesByActivity.get(activity.id) || new Map();
+              const activityEntries = entriesByRow.get(activity.id) || new Map();
               return (
                 <TableRow key={activity.id}>
                   <TableCell className="font-medium sticky left-0 bg-background z-10">{activity.name}</TableCell>
