@@ -6,6 +6,7 @@ import type { AttendanceStatus } from '@/lib/attendance';
 export interface Attendance {
   id: string;
   enrollment_id: string;
+  group_lesson_id?: string | null;
   date: string;
   status: AttendanceStatus | null;
   charged_amount: number;
@@ -16,10 +17,10 @@ export interface Attendance {
   updated_at: string;
 }
 
-export type AttendanceInsert = Pick<Attendance, 'enrollment_id' | 'date' | 'status' | 'charged_amount' | 'value' | 'notes' | 'manual_value_edit'>;
+export type AttendanceInsert = Pick<Attendance, 'enrollment_id' | 'date' | 'status' | 'charged_amount' | 'value' | 'notes' | 'manual_value_edit' | 'group_lesson_id'>;
 export type AttendanceUpdate = Partial<Omit<Attendance, 'id' | 'enrollment_id' | 'created_at' | 'updated_at'>>;
 
-export function useAttendance(filters: { activityId?: string; month?: number; year?: number }) {
+export function useAttendance(filters: { activityId?: string; month?: number; year?: number; groupLessonId?: string | null }) {
   return useQuery({
     queryKey: ['attendance', filters],
     queryFn: async () => {
@@ -30,11 +31,12 @@ export function useAttendance(filters: { activityId?: string; month?: number; ye
       const startDate = new Date(filters.year, filters.month, 1).toISOString().split('T')[0];
       const endDate = new Date(filters.year, filters.month + 1, 0).toISOString().split('T')[0];
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('attendance')
         .select(`
           id,
           enrollment_id,
+          group_lesson_id,
           date,
           status,
           charged_amount,
@@ -53,6 +55,14 @@ export function useAttendance(filters: { activityId?: string; month?: number; ye
         .gte('date', startDate)
         .lte('date', endDate);
 
+      if (filters.groupLessonId === null) {
+        query = query.is('group_lesson_id', null);
+      } else if (filters.groupLessonId) {
+        query = query.eq('group_lesson_id', filters.groupLessonId);
+      }
+
+      const { data, error } = await query;
+
       if (error) throw error;
       return data;
     },
@@ -66,7 +76,7 @@ export function useAttendanceByEnrollment(enrollmentId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('attendance')
-        .select('id, enrollment_id, date, status, charged_amount, value, notes, manual_value_edit, created_at, updated_at')
+        .select('id, enrollment_id, group_lesson_id, date, status, charged_amount, value, notes, manual_value_edit, created_at, updated_at')
         .eq('enrollment_id', enrollmentId)
         .order('date', { ascending: false });
 
@@ -88,6 +98,7 @@ export function useSetAttendance() {
         .upsert(
           {
             enrollment_id: attendance.enrollment_id,
+            group_lesson_id: attendance.group_lesson_id ?? null,
             date: attendance.date,
             status: attendance.status,
             charged_amount: attendance.charged_amount,

@@ -55,7 +55,10 @@ export function EnhancedAttendanceCell({
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [wasClicked, setWasClicked] = useState(false);
+  const [optimisticStatus, setOptimisticStatus] = useState<AttendanceStatus | null>(null);
+  const [optimisticValue, setOptimisticValue] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const justAutoSetRef = useRef(false);
 
   // Синхронізуємо inputValue з пропсами
   useEffect(() => {
@@ -69,9 +72,16 @@ export function EnhancedAttendanceCell({
     } else {
       setInputValue('');
     }
+    if (status || value !== null || value !== undefined) {
+      setOptimisticStatus(null);
+      setOptimisticValue(null);
+    }
   }, [value, status]);
 
   const handleSelect = (newStatus: AttendanceStatus | null) => {
+    setOptimisticStatus(null);
+    setOptimisticValue(null);
+    justAutoSetRef.current = false;
     if (newStatus === null) {
       // Якщо видаляємо статус - очищаємо все
       onChange(null, null);
@@ -109,6 +119,9 @@ export function EnhancedAttendanceCell({
     const newValue = e.target.value;
     setInputValue(newValue);
     setWasClicked(false);
+    setOptimisticStatus(null);
+    setOptimisticValue(null);
+    justAutoSetRef.current = false;
     
     // Якщо вводимо число - видаляємо статус
     if (newValue !== '') {
@@ -128,14 +141,16 @@ export function EnhancedAttendanceCell({
   };
 
   const handleInputBlur = () => {
+    if (justAutoSetRef.current) {
+      justAutoSetRef.current = false;
+      setIsEditing(false);
+      setWasClicked(false);
+      return;
+    }
     if (inputValue === '' && !status) {
       onChange(null, null);
     }
     setIsEditing(false);
-    // Якщо був клік і поле порожнє - відкриваємо поповер
-    if (wasClicked && inputValue === '' && !status) {
-      setTimeout(() => setOpen(true), 100);
-    }
     setWasClicked(false);
   };
 
@@ -151,13 +166,41 @@ export function EnhancedAttendanceCell({
   };
 
   const handleInputClick = (e: React.MouseEvent<HTMLInputElement>) => {
-    // Завжди дозволяємо редагування - навіть для автоматичних відміток
+    // Якщо клікаємо по порожній клітинці - одразу ставимо "Присутній" без поповера
+    if (!status && (value === null || value === undefined || value === 0) && inputValue === '') {
+      const billingRulesForDate = activity && priceHistory
+        ? getBillingRulesForDate(activity, priceHistory, date)
+        : activity?.billing_rules;
+      const calculatedValue = calculateValueFromBillingRules(
+        date,
+        'present',
+        null,
+        customPrice,
+        discountPercent,
+        billingRulesForDate || null
+      );
+      justAutoSetRef.current = true;
+      setOptimisticStatus('present');
+      setOptimisticValue(calculatedValue);
+      onChange('present', calculatedValue);
+      setWasClicked(false);
+      setIsEditing(false);
+      return;
+    }
+
+    // Якщо клікаємо по клітинці з відміткою - відкриваємо поповер для зміни
+    if (status) {
+      setOpen(true);
+      setWasClicked(false);
+      setIsEditing(false);
+      return;
+    }
+
+    // Для числового вводу залишаємо можливість редагування
     if (!isEditing) {
       setIsEditing(true);
       setWasClicked(true);
     }
-    // Якщо поле зі статусом і користувач клікнув - дозволяємо редагування
-    // (раніше відкривався popover, тепер дозволяємо ввести число)
   };
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -182,10 +225,11 @@ export function EnhancedAttendanceCell({
   };
 
   // Визначаємо що показувати в полі
+  const displayStatus = status || optimisticStatus;
   const displayValue = isEditing 
     ? inputValue 
-    : (status 
-      ? ATTENDANCE_LABELS[status] 
+    : (displayStatus 
+      ? ATTENDANCE_LABELS[displayStatus] 
       : (value !== null && value !== undefined && value !== 0) 
         ? value.toString() 
         : '');
@@ -198,7 +242,7 @@ export function EnhancedAttendanceCell({
       : activity?.billing_rules;
 
     // Пріоритет 1: Якщо є custom_price - показуємо його як fixed
-    if (customPrice !== null && customPrice > 0) {
+    if (customPrice !== null && customPrice !== undefined) {
       const discountMultiplier = 1 - (discountPercent / 100);
       const finalPrice = Math.round(customPrice * discountMultiplier * 100) / 100;
       return formatCurrency(finalPrice);
@@ -213,6 +257,7 @@ export function EnhancedAttendanceCell({
     if (!rule || !rule.rate || rule.rate <= 0) {
       return '—';
     }
+    const discountMultiplier = 1 - (discountPercent / 100);
 
     // Parse date string 'YYYY-MM-DD' as local date to avoid timezone issues
     const dateParts = date.split('-').map(Number);
@@ -221,20 +266,25 @@ export function EnhancedAttendanceCell({
     const month = dateObj.getMonth();
 
     switch (rule.type) {
-      case 'fixed':
-        // Разово: показуємо повну ставку
-        return formatCurrency(rule.rate);
+      case 'fixed': {
+        // Разово: показуємо повну ставку з урахуванням знижки
+        const discounted = Math.round(rule.rate * discountMultiplier * 100) / 100;
+        return formatCurrency(discounted);
+      }
 
       case 'subscription': {
         // Абонемент: показуємо ціну за день (ставка / робочі дні)
         const workingDays = getWorkingDaysInMonth(year, month);
         const dailyPrice = workingDays > 0 ? Math.round((rule.rate / workingDays) * 100) / 100 : 0;
-        return `${formatCurrency(dailyPrice)}/день`;
+        const discounted = Math.round(dailyPrice * discountMultiplier * 100) / 100;
+        return `${formatCurrency(discounted)}/день`;
       }
 
-      case 'hourly':
-        // Почасово: показуємо ставку за одиницю (годину)
-        return `${formatCurrency(rule.rate)}/од`;
+      case 'hourly': {
+        // Почасово: показуємо ставку за одиницю (годину) з урахуванням знижки
+        const discounted = Math.round(rule.rate * discountMultiplier * 100) / 100;
+        return `${formatCurrency(discounted)}/од`;
+      }
 
       default:
         return '—';
@@ -259,8 +309,16 @@ export function EnhancedAttendanceCell({
     );
   };
 
+  const handlePopoverOpenChange = (nextOpen: boolean) => {
+    const isEmptyCell = !status && (value === null || value === undefined || value === 0) && inputValue === '';
+    if (nextOpen && isEmptyCell) {
+      return;
+    }
+    setOpen(nextOpen);
+  };
+
   return (
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={handlePopoverOpenChange}>
         <PopoverTrigger asChild>
         <Input
           ref={inputRef}
@@ -272,7 +330,7 @@ export function EnhancedAttendanceCell({
           onBlur={handleInputBlur}
           onClick={handleInputClick}
           onKeyDown={handleInputKeyDown}
-          placeholder="Число або клік"
+          placeholder=""
           readOnly={false}
             className={cn(
             'h-9 w-9 text-center text-xs font-semibold px-1',

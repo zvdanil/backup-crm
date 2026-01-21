@@ -80,7 +80,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const { data: attendanceData = [], isLoading: attendanceLoading } = useAttendance({ 
     activityId, 
     month, 
-    year 
+    year,
   });
   const setAttendance = useSetAttendance();
   const deleteAttendance = useDeleteAttendance();
@@ -207,6 +207,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     sync();
     return () => header.removeEventListener('scroll', sync);
   }, [days.length, filteredEnrollments.length]);
+
 
   const tableColGroup = useMemo(() => (
     <colgroup>

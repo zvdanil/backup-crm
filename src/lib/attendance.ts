@@ -123,8 +123,8 @@ export function calculateValueFromBillingRules(
   discountPercent: number,
   billingRules: any | null | undefined
 ): number | null {
-  // Priority 1: If custom_price exists, use it as fixed
-  if (customPrice !== null && customPrice > 0) {
+  // Priority 1: If custom_price is set, use it as fixed (allow 0)
+  if (customPrice !== null && customPrice !== undefined) {
     const discountMultiplier = 1 - (discountPercent / 100);
     return Math.round(customPrice * discountMultiplier * 100) / 100;
   }
@@ -148,27 +148,38 @@ export function calculateValueFromBillingRules(
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth();
 
+  let baseValue: number | null = null;
   switch (rule.type) {
     case 'fixed':
       // Разово: value = rate
-      return rule.rate;
+      baseValue = rule.rate;
+      break;
 
     case 'subscription':
       // Абонемент: value = rate / [кількість робочих днів у місяці]
       const workingDays = getWorkingDaysInMonth(year, month);
-      return workingDays > 0 ? Math.round((rule.rate / workingDays) * 100) / 100 : 0;
+      baseValue = workingDays > 0 ? Math.round((rule.rate / workingDays) * 100) / 100 : 0;
+      break;
 
     case 'hourly':
       // Почасово: value = rate * [число, введене в журналі]
       // Для hourly тип, valueInput повинен бути переданий окремо
       if (valueInput !== null && valueInput > 0) {
-        return Math.round(rule.rate * valueInput * 100) / 100;
+        baseValue = Math.round(rule.rate * valueInput * 100) / 100;
+      } else {
+        baseValue = null;
       }
-      return null;
+      break;
 
     default:
-      return null;
+      baseValue = null;
+      break;
   }
+
+  if (baseValue === null) return null;
+
+  const discountMultiplier = 1 - (discountPercent / 100);
+  return Math.round(baseValue * discountMultiplier * 100) / 100;
 }
 
 /**
@@ -181,8 +192,8 @@ export function calculateHourlyValueFromRule(
   discountPercent: number,
   billingRules: any | null | undefined
 ): number | null {
-  // Priority 1: If custom_price exists, use it as fixed
-  if (customPrice !== null && customPrice > 0) {
+  // Priority 1: If custom_price is set, use it as fixed (allow 0)
+  if (customPrice !== null && customPrice !== undefined) {
     const discountMultiplier = 1 - (discountPercent / 100);
     return Math.round(customPrice * discountMultiplier * 100) / 100;
   }
@@ -198,11 +209,13 @@ export function calculateHourlyValueFromRule(
   }
 
   if (rule.type === 'hourly' && valueInput !== null && valueInput > 0) {
-    return Math.round(rule.rate * valueInput * 100) / 100;
+    const discountMultiplier = 1 - (discountPercent / 100);
+    return Math.round(rule.rate * valueInput * discountMultiplier * 100) / 100;
   }
 
   if (rule.type === 'fixed') {
-    return rule.rate;
+    const discountMultiplier = 1 - (discountPercent / 100);
+    return Math.round(rule.rate * discountMultiplier * 100) / 100;
   }
 
   return null;
