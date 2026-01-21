@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,9 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [discountPercent, setDiscountPercent] = useState('0');
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const totalsScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
 
   const { data: activity } = useActivity(activityId);
   const { data: priceHistory } = useActivityPriceHistory(activityId);
@@ -191,6 +194,29 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
     return { groupsMap, noGroupEnrollments };
   }, [filteredEnrollments]);
+
+  useEffect(() => {
+    const header = headerScrollRef.current;
+    if (!header) return;
+    const sync = () => {
+      const left = header.scrollLeft;
+      if (totalsScrollRef.current) totalsScrollRef.current.scrollLeft = left;
+      if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = left;
+    };
+    header.addEventListener('scroll', sync, { passive: true });
+    sync();
+    return () => header.removeEventListener('scroll', sync);
+  }, [days.length, filteredEnrollments.length]);
+
+  const tableColGroup = useMemo(() => (
+    <colgroup>
+      <col style={{ width: '200px', minWidth: '200px' }} />
+      {days.map((day) => (
+        <col key={formatDateString(day)} style={{ width: '40px', minWidth: '40px' }} />
+      ))}
+      <col style={{ width: '120px', minWidth: '120px' }} />
+    </colgroup>
+  ), [days]);
 
   // Отримуємо список всіх груп, представлених у записах
   const representedGroups = useMemo(() => {
@@ -1186,111 +1212,127 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto border rounded-xl">
-          <table className="w-full border-collapse">
-          <thead>
-            {/* Рядки підсумків під датами */}
-            <tr className="bg-muted/30 border-t-2 font-semibold">
-              <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">Всього дітей</th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
-                return (
-                  <th
-                    key={dateStr}
-                    className={cn(
-                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
-                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
-                    )}
-                  >
-                    {totals.present}
+        <div className="space-y-0">
+          <div ref={totalsScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
+            <table className="w-full border-collapse">
+              {tableColGroup}
+              <thead>
+                {/* Рядки підсумків під датами */}
+                <tr className="bg-muted/30 border-t-2 font-semibold">
+                  <th className="sticky left-0 z-20 bg-muted/30 px-4 py-2 text-sm text-left">Всього дітей</th>
+                  {days.map((day) => {
+                    const dateStr = formatDateString(day);
+                    const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
+                    return (
+                      <th
+                        key={dateStr}
+                        className={cn(
+                          "px-1 py-1 text-center text-xs font-medium",
+                          isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                        )}
+                      >
+                        {totals.present}
+                      </th>
+                    );
+                  })}
+                  <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
+                    {Object.values(studentTotals).reduce((sum, t) => sum + t.present, 0)}
                   </th>
-                );
-              })}
-              <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
-                {Object.values(studentTotals).reduce((sum, t) => sum + t.present, 0)}
-              </th>
-            </tr>
-            {visibleGroupRows.map((groupRow) => (
-              <tr key={groupRow.id} className="bg-muted/30 font-semibold">
-                <th className="sticky left-0 z-10 bg-muted/30 px-4 py-2 text-sm text-left">
-                  <span className="inline-flex items-center gap-2">
-                    <span
-                      className="h-3 w-3 rounded-full"
-                      style={{ backgroundColor: groupRow.color || '#94a3b8' }}
-                    />
-                    {groupRow.name}
-                  </span>
-                </th>
-                {days.map((day) => {
-                  const dateStr = formatDateString(day);
-                  const value = groupDailyTotals[groupRow.id]?.[dateStr] || 0;
-                  return (
-                    <th
-                      key={dateStr}
-                      className={cn(
-                        "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
-                        isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
-                      )}
-                    >
-                      {value}
+                </tr>
+                {visibleGroupRows.map((groupRow) => (
+                  <tr key={groupRow.id} className="bg-muted/30 font-semibold">
+                    <th className="sticky left-0 z-20 bg-muted/30 px-4 py-2 text-sm text-left">
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          className="h-3 w-3 rounded-full"
+                          style={{ backgroundColor: groupRow.color || '#94a3b8' }}
+                        />
+                        {groupRow.name}
+                      </span>
                     </th>
-                  );
-                })}
-                <th className="sticky right-0 z-10 bg-muted/30 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
-                  {Object.values(groupDailyTotals[groupRow.id] || {}).reduce((sum, v) => sum + v, 0)}
-                </th>
-              </tr>
-            ))}
-            
-            {/* Рядок оплати педагогу */}
-            <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
-              <th className="sticky left-0 z-10 bg-primary/10 px-4 py-2 text-sm text-left">Оплата педагогу</th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                const payment = teacherPayments[dateStr] || 0;
-                return (
-                  <th
-                    key={dateStr}
-                    className={cn(
-                      "px-1 py-1 text-center text-xs font-medium min-w-[40px]",
-                      isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
-                    )}
-                  >
-                    {payment > 0 ? formatCurrency(payment) : ''}
-                  </th>
-                );
-              })}
-              <th className="sticky right-0 z-10 bg-primary/10 px-2 py-1 text-center text-xs font-medium min-w-[120px]">
-                {formatCurrency(Object.values(teacherPayments).reduce((sum, p) => sum + p, 0))}
-              </th>
-            </tr>
+                    {days.map((day) => {
+                      const dateStr = formatDateString(day);
+                      const value = groupDailyTotals[groupRow.id]?.[dateStr] || 0;
+                      return (
+                        <th
+                          key={dateStr}
+                          className={cn(
+                            "px-1 py-1 text-center text-xs font-medium",
+                            isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                          )}
+                        >
+                          {value}
+                        </th>
+                      );
+                    })}
+                    <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
+                      {Object.values(groupDailyTotals[groupRow.id] || {}).reduce((sum, v) => sum + v, 0)}
+                    </th>
+                  </tr>
+                ))}
 
-            {/* Основний заголовок таблиці */}
-            <tr className="bg-muted/50">
-              <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground min-w-[200px]">
-                Учень
-              </th>
-              {days.map((day) => (
-                <th
-                  key={formatDateString(day)}
-                  className={cn(
-                    "px-1 py-2 text-center text-xs font-medium min-w-[40px]",
-                    isWeekend(day)
-                      ? "text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  <div>{getWeekdayShort(day)}</div>
-                  <div className="font-semibold">{formatShortDate(day)}</div>
-                </th>
-              ))}
-              <th className="sticky right-0 z-10 bg-muted/50 px-4 py-2 text-center text-xs font-medium min-w-[120px]">
-                Підсумки
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+                {/* Рядок оплати педагогу */}
+                <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
+                  <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">Оплата педагогу</th>
+                  {days.map((day) => {
+                    const dateStr = formatDateString(day);
+                    const payment = teacherPayments[dateStr] || 0;
+                    return (
+                      <th
+                        key={dateStr}
+                        className={cn(
+                          "px-1 py-1 text-center text-xs font-medium",
+                          isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                        )}
+                      >
+                        {payment > 0 ? formatCurrency(payment) : ''}
+                      </th>
+                    );
+                  })}
+                  <th className="sticky right-0 z-20 bg-primary/10 px-2 py-1 text-center text-xs font-medium">
+                    {formatCurrency(Object.values(teacherPayments).reduce((sum, p) => sum + p, 0))}
+                  </th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+
+          <div className="sticky top-16 z-30 bg-card">
+            <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
+              <table className="w-full border-collapse">
+                {tableColGroup}
+                <thead>
+                  {/* Основний заголовок таблиці */}
+                  <tr className="bg-muted/50">
+                    <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                      Учень
+                    </th>
+                    {days.map((day) => (
+                      <th
+                        key={formatDateString(day)}
+                        className={cn(
+                          "px-1 py-2 text-center text-xs font-medium",
+                          isWeekend(day)
+                            ? "text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        <div>{getWeekdayShort(day)}</div>
+                        <div className="font-semibold">{formatShortDate(day)}</div>
+                      </th>
+                    ))}
+                    <th className="sticky right-0 z-20 bg-muted/50 px-4 py-2 text-center text-xs font-medium">
+                      Підсумки
+                    </th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </div>
+          <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
+            <table className="w-full border-collapse">
+              {tableColGroup}
+              <tbody>
             {/* Рядки учнів з групуванням */}
             {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
               const group = groups.find(g => g.id === groupId);
@@ -1487,9 +1529,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 })}
               </React.Fragment>
             )}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
       <Dialog open={isAddStudentOpen} onOpenChange={setIsAddStudentOpen}>
         <DialogContent>
