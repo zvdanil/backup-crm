@@ -149,6 +149,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Обработка изменения состояния авторизации
+  const handleAuthChange = useCallback(async (event: string, newSession: Session | null) => {
+    logAuth('authStateChange', { event, hasSession: !!newSession });
+    
+    if (event === 'INITIAL_SESSION') {
+      initialSessionHandledRef.current = true;
+    }
+
+    // Обновляем сессию и пользователя
+    setSession(newSession);
+    setUser(newSession?.user ?? null);
+
+    if (newSession?.user) {
+      const userId = newSession.user.id;
+      
+      // Проверяем, нужно ли загружать профиль
+      // Используем только lastProfileUserIdRef, без проверки profile (избегаем проблем с замыканием)
+      if (lastProfileUserIdRef.current === userId) {
+        logAuth('authStateChange:profile-skip', { userId, reason: 'already-loaded' });
+        setIsLoading(false);
+        return;
+      }
+
+      // Загружаем профиль только если userId изменился
+      try {
+        const profileData = await loadProfile(newSession.user);
+        setProfile(profileData);
+        lastProfileUserIdRef.current = userId;
+        logAuth('authStateChange:profile-ready', {
+          userId,
+          role: profileData?.role,
+          isActive: profileData?.is_active,
+        });
+      } catch (profileError: any) {
+        console.error('Profile load error', profileError);
+        logAuth('authStateChange:profile-error', { message: profileError?.message });
+        
+        // Retry механизм с проверкой актуальности пользователя
+        if (!profileRetryTimerRef.current) {
+          const currentUserId = newSession.user.id;
+          profileRetryTimerRef.current = setTimeout(async () => {
+            profileRetryTimerRef.current = null;
+            
+            // Проверяем, что профиль все еще не загружен для этого пользователя
+            // Если lastProfileUserIdRef.current === currentUserId, значит профиль уже загружен, retry не нужен
+            if (lastProfileUserIdRef.current !== currentUserId) {
+              try {
+                const retryProfile = await loadProfile(newSession.user);
+                setProfile(retryProfile);
+                lastProfileUserIdRef.current = currentUserId;
+                logAuth('authStateChange:profile-retry-success', { userId: currentUserId });
+              } catch (retryError: any) {
+                logAuth('authStateChange:profile-retry-error', { message: retryError?.message });
+              }
+            } else {
+              logAuth('authStateChange:profile-retry-skip', { 
+                reason: 'already-loaded', 
+                userId: currentUserId 
+              });
+            }
+          }, 2000);
+        }
+        toast({ 
+          title: 'Помилка профілю', 
+          description: 'Профіль завантажується довше. Зачекайте або оновіть сторінку.', 
+          variant: 'destructive' 
+        });
+      }
+    } else {
+      // Пользователь вышел
+      setProfile(null);
+      lastProfileUserIdRef.current = null;
+    }
+    
+    setIsLoading(false);
+  }, [loadProfile]);
+
   useEffect(() => {
     if (!supabaseUrl || !supabaseKey) {
       console.error('Supabase env missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
@@ -163,53 +240,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       return;
     }
-    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      logAuth('authStateChange', { event: _event, hasSession: !!newSession });
-      if (_event === 'INITIAL_SESSION') {
-        initialSessionHandledRef.current = true;
+
+    // Явная загрузка начальной сессии
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('Error getting initial session:', error);
+        setIsLoading(false);
+        return;
       }
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-      if (newSession?.user) {
-        const userId = newSession.user.id;
-        try {
-          if (lastProfileUserIdRef.current === userId && profile) {
-            setIsLoading(false);
-            return;
-          }
-          const profileData = await loadProfile(newSession.user);
-          setProfile(profileData);
-          lastProfileUserIdRef.current = userId;
-          logAuth('authStateChange:profile-ready', {
-            userId,
-            role: profileData?.role,
-            isActive: profileData?.is_active,
-          });
-        } catch (profileError: any) {
-          console.error('Profile load error', profileError);
-          logAuth('authStateChange:profile-error', { message: profileError?.message });
-          if (!profileRetryTimerRef.current && newSession?.user) {
-            profileRetryTimerRef.current = setTimeout(async () => {
-              profileRetryTimerRef.current = null;
-              try {
-                const retryProfile = await loadProfile(newSession!.user);
-                setProfile(retryProfile);
-                lastProfileUserIdRef.current = newSession!.user.id;
-                logAuth('authStateChange:profile-retry-success', { userId: newSession!.user.id });
-              } catch (retryError: any) {
-                logAuth('authStateChange:profile-retry-error', { message: retryError?.message });
-              }
-            }, 2000);
-          }
-          toast({ title: 'Помилка профілю', description: 'Профіль завантажується довше. Зачекайте або оновіть сторінку.', variant: 'destructive' });
-        }
+      
+      if (session?.user) {
+        logAuth('initialSession:found', { userId: session.user.id });
+        handleAuthChange('INITIAL_SESSION', session);
       } else {
-        setProfile(null);
+        logAuth('initialSession:none');
+        setIsLoading(false);
       }
-      setIsLoading(false);
     });
-    return () => subscription.subscription.unsubscribe();
-  }, [loadProfile]);
+
+    // Подписка на изменения состояния авторизации
+    const { data: subscription } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      // КРИТИЧНО: Игнорируем TOKEN_REFRESHED для загрузки профиля
+      // Это предотвращает постоянные обращения к базе данных
+      if (event === 'TOKEN_REFRESHED') {
+        logAuth('authStateChange:token-refreshed', { hasSession: !!newSession });
+        // Только обновляем сессию, но НЕ загружаем профиль
+        setSession(newSession);
+        return;
+      }
+
+      // Обрабатываем остальные события
+      await handleAuthChange(event, newSession);
+    });
+
+    // Очистка при размонтировании
+    return () => {
+      subscription.subscription.unsubscribe();
+      // Очищаем retry таймер при размонтировании
+      if (profileRetryTimerRef.current) {
+        clearTimeout(profileRetryTimerRef.current);
+        profileRetryTimerRef.current = null;
+      }
+    };
+  }, [handleAuthChange]);
 
   const signInWithProvider = useCallback(async (provider: 'google' | 'apple') => {
     if (!supabaseUrl || !supabaseKey) {
