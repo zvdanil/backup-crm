@@ -60,16 +60,17 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
     return existing as UserProfile;
   }
 
-  const { count, error: countError } = await supabase
+  const { data: existingProfiles, error: countError } = await supabase
     .from('user_profiles')
-    .select('id', { count: 'exact', head: true });
+    .select('id')
+    .limit(1);
 
   if (countError) {
     logAuth('fetchOrCreateProfile:error:count', { message: countError.message });
     throw countError;
   }
 
-  const isFirstUser = count === 0;
+  const isFirstUser = !existingProfiles || existingProfiles.length === 0;
   const role: UserRole = isFirstUser ? 'owner' : 'newregistration';
   const fullName = user.user_metadata?.full_name || user.user_metadata?.name || null;
   logAuth('fetchOrCreateProfile:create', { userId: user.id, role, isFirstUser });
@@ -127,98 +128,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const lastProfileUserIdRef = useRef<string | null>(null);
+  const initialSessionHandledRef = useRef(false);
+  const profilePromiseRef = useRef<Promise<UserProfile | null> | null>(null);
+  const profileRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadSession = useCallback(async () => {
-    const startedAt = performance.now();
-    logAuth('loadSession:start');
-    setIsLoading(true);
+  const loadProfile = useCallback(async (currentUser: User) => {
+    if (profilePromiseRef.current) return profilePromiseRef.current;
+
+    const request = withRetry(
+      () => withTimeout(fetchOrCreateProfile(currentUser), 30000, 'Profile load timeout'),
+      1,
+      500
+    );
+
+    profilePromiseRef.current = request;
     try {
-      if (!supabaseUrl || !supabaseKey) {
-        console.error('Supabase env missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
-        toast({
-          title: 'Помилка конфігурації',
-          description: 'Не задано VITE_SUPABASE_URL або VITE_SUPABASE_PUBLISHABLE_KEY.',
-          variant: 'destructive',
-        });
-        setSession(null);
-        setUser(null);
-        setProfile(null);
-        return;
-      }
-
-      const { data, error } = await withRetry(
-        () => withTimeout(supabase.auth.getSession(), 15000, 'Auth session timeout'),
-        1,
-        500
-      );
-      if (error) {
-        console.error('Auth session error', error);
-        logAuth('loadSession:error', { message: error.message });
-        setSession(null);
-        setUser(null);
-        setProfile(null);
-        return;
-      }
-
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      logAuth('loadSession:session', {
-        hasSession: !!data.session,
-        userId: data.session?.user?.id ?? null,
-        durationMs: Math.round(performance.now() - startedAt),
-      });
-      if (data.session?.user) {
-        const userId = data.session.user.id;
-        try {
-          const profileData = lastProfileUserIdRef.current === userId && profile
-            ? profile
-            : await withRetry(
-                () => withTimeout(fetchOrCreateProfile(data.session.user), 15000, 'Profile load timeout'),
-                1,
-                500
-              );
-          setProfile(profileData);
-          lastProfileUserIdRef.current = userId;
-          logAuth('loadSession:profile-ready', {
-            userId,
-            role: profileData?.role,
-            isActive: profileData?.is_active,
-          });
-        } catch (profileError: any) {
-          console.error('Profile load error', profileError);
-          logAuth('loadSession:profile-error', { message: profileError?.message });
-          toast({ title: 'Помилка профілю', description: 'Не вдалося завантажити профіль. Спробуйте оновити сторінку.', variant: 'destructive' });
-          // Keep session and user to avoid forced re-login on transient errors.
-        }
-      } else {
-        setProfile(null);
-      }
-    } catch (error) {
-      console.error('Auth session error', error);
-      setSession(null);
-      setUser(null);
-      setProfile(null);
+      return await request;
     } finally {
-      setIsLoading(false);
+      profilePromiseRef.current = null;
     }
   }, []);
 
   useEffect(() => {
-    loadSession();
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Supabase env missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
+      toast({
+        title: 'Помилка конфігурації',
+        description: 'Не задано VITE_SUPABASE_URL або VITE_SUPABASE_PUBLISHABLE_KEY.',
+        variant: 'destructive',
+      });
+      setSession(null);
+      setUser(null);
+      setProfile(null);
+      setIsLoading(false);
+      return;
+    }
     const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       logAuth('authStateChange', { event: _event, hasSession: !!newSession });
+      if (_event === 'INITIAL_SESSION') {
+        initialSessionHandledRef.current = true;
+      }
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
         const userId = newSession.user.id;
         try {
-          const profileData = lastProfileUserIdRef.current === userId && profile
-            ? profile
-            : await withRetry(
-                () => withTimeout(fetchOrCreateProfile(newSession.user), 15000, 'Profile load timeout'),
-                1,
-                500
-              );
+          if (lastProfileUserIdRef.current === userId && profile) {
+            setIsLoading(false);
+            return;
+          }
+          const profileData = await loadProfile(newSession.user);
           setProfile(profileData);
           lastProfileUserIdRef.current = userId;
           logAuth('authStateChange:profile-ready', {
@@ -229,8 +188,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (profileError: any) {
           console.error('Profile load error', profileError);
           logAuth('authStateChange:profile-error', { message: profileError?.message });
-          toast({ title: 'Помилка профілю', description: 'Не вдалося завантажити профіль. Спробуйте оновити сторінку.', variant: 'destructive' });
-          // Keep session and user to avoid forced re-login on transient errors.
+          if (!profileRetryTimerRef.current && newSession?.user) {
+            profileRetryTimerRef.current = setTimeout(async () => {
+              profileRetryTimerRef.current = null;
+              try {
+                const retryProfile = await loadProfile(newSession!.user);
+                setProfile(retryProfile);
+                lastProfileUserIdRef.current = newSession!.user.id;
+                logAuth('authStateChange:profile-retry-success', { userId: newSession!.user.id });
+              } catch (retryError: any) {
+                logAuth('authStateChange:profile-retry-error', { message: retryError?.message });
+              }
+            }, 2000);
+          }
+          toast({ title: 'Помилка профілю', description: 'Профіль завантажується довше. Зачекайте або оновіть сторінку.', variant: 'destructive' });
         }
       } else {
         setProfile(null);
@@ -238,7 +209,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     });
     return () => subscription.subscription.unsubscribe();
-  }, [loadSession]);
+  }, [loadProfile]);
 
   const signInWithProvider = useCallback(async (provider: 'google' | 'apple') => {
     if (!supabaseUrl || !supabaseKey) {

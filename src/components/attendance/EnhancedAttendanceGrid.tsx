@@ -647,14 +647,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     const totals: Record<string, Record<string, number>> = {};
     const initDates = (groupId: string) => {
       if (!totals[groupId]) totals[groupId] = {};
-      days.forEach((day) => {
+    days.forEach((day) => {
         totals[groupId][formatDateString(day)] = 0;
       });
     };
 
     visibleGroupRows.forEach((row) => initDates(row.id));
-
-    filteredEnrollments.forEach((enrollment) => {
+      
+      filteredEnrollments.forEach((enrollment) => {
       const groupId = enrollment.students?.group_id || 'none';
       if (!totals[groupId]) initDates(groupId);
       days.forEach((day) => {
@@ -696,7 +696,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         payments[date] = (payments[date] || 0) + finalAmount;
       });
     });
-
+    
     return payments;
   }, [days, monthlyAccruals, staffMap]);
 
@@ -1215,16 +1215,16 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       ) : (
         <div className="space-y-0">
           <div ref={totalsScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-            <table className="w-full border-collapse">
+        <table className="w-full border-collapse">
               {tableColGroup}
-              <thead>
+          <thead>
                 {/* Рядки підсумків під датами */}
-                <tr className="bg-muted/30 border-t-2 font-semibold">
+            <tr className="bg-muted/30 border-t-2 font-semibold">
                   <th className="sticky left-0 z-20 bg-muted/30 px-4 py-2 text-sm text-left">Всього дітей</th>
-                  {days.map((day) => {
-                    const dateStr = formatDateString(day);
-                    const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
-                    return (
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
+                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
+                return (
                       <th
                         key={dateStr}
                         className={cn(
@@ -1232,14 +1232,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                           isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
                         )}
                       >
-                        {totals.present}
-                      </th>
-                    );
-                  })}
-                  <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
-                    {Object.values(studentTotals).reduce((sum, t) => sum + t.present, 0)}
+                    {totals.present}
                   </th>
-                </tr>
+                );
+              })}
+                  <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
+                {Object.values(studentTotals).reduce((sum, t) => sum + t.present, 0)}
+              </th>
+            </tr>
                 {visibleGroupRows.map((groupRow) => (
                   <tr key={groupRow.id} className="bg-muted/30 font-semibold">
                     <th className="sticky left-0 z-20 bg-muted/30 px-4 py-2 text-sm text-left">
@@ -1250,11 +1250,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                         />
                         {groupRow.name}
                       </span>
-                    </th>
-                    {days.map((day) => {
-                      const dateStr = formatDateString(day);
+                  </th>
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
                       const value = groupDailyTotals[groupRow.id]?.[dateStr] || 0;
-                      return (
+                return (
                         <th
                           key={dateStr}
                           className={cn(
@@ -1263,22 +1263,22 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                           )}
                         >
                           {value}
-                        </th>
-                      );
-                    })}
+                  </th>
+                );
+              })}
                     <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
                       {Object.values(groupDailyTotals[groupRow.id] || {}).reduce((sum, v) => sum + v, 0)}
-                    </th>
-                  </tr>
+              </th>
+            </tr>
                 ))}
-
-                {/* Рядок оплати педагогу */}
-                <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
+            
+            {/* Рядок оплати педагогу */}
+            <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
                   <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">Оплата педагогу</th>
-                  {days.map((day) => {
-                    const dateStr = formatDateString(day);
-                    const payment = teacherPayments[dateStr] || 0;
-                    return (
+              {days.map((day) => {
+                const dateStr = formatDateString(day);
+                const payment = teacherPayments[dateStr] || 0;
+                return (
                       <th
                         key={dateStr}
                         className={cn(
@@ -1286,14 +1286,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                           isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
                         )}
                       >
-                        {payment > 0 ? formatCurrency(payment) : ''}
-                      </th>
-                    );
-                  })}
-                  <th className="sticky right-0 z-20 bg-primary/10 px-2 py-1 text-center text-xs font-medium">
-                    {formatCurrency(Object.values(teacherPayments).reduce((sum, p) => sum + p, 0))}
+                    {payment > 0 ? formatCurrency(payment) : ''}
                   </th>
-                </tr>
+                );
+              })}
+                  <th className="sticky right-0 z-20 bg-primary/10 px-2 py-1 text-center text-xs font-medium">
+                {formatCurrency(Object.values(teacherPayments).reduce((sum, p) => sum + p, 0))}
+              </th>
+            </tr>
               </thead>
             </table>
           </div>
@@ -1303,37 +1303,37 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
               <table className="w-full border-collapse">
                 {tableColGroup}
                 <thead>
-                  {/* Основний заголовок таблиці */}
-                  <tr className="bg-muted/50">
+            {/* Основний заголовок таблиці */}
+            <tr className="bg-muted/50">
                     <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                      Учень
-                    </th>
-                    {days.map((day) => (
-                      <th
-                        key={formatDateString(day)}
+                Учень
+              </th>
+              {days.map((day) => (
+                <th
+                  key={formatDateString(day)}
                         className={cn(
                           "px-1 py-2 text-center text-xs font-medium",
                           isWeekend(day)
                             ? "text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20"
                             : "text-muted-foreground"
                         )}
-                      >
-                        <div>{getWeekdayShort(day)}</div>
-                        <div className="font-semibold">{formatShortDate(day)}</div>
-                      </th>
-                    ))}
+                >
+                  <div>{getWeekdayShort(day)}</div>
+                  <div className="font-semibold">{formatShortDate(day)}</div>
+                </th>
+              ))}
                     <th className="sticky right-0 z-20 bg-muted/50 px-4 py-2 text-center text-xs font-medium">
-                      Підсумки
-                    </th>
-                  </tr>
-                </thead>
+                Підсумки
+              </th>
+            </tr>
+          </thead>
               </table>
             </div>
           </div>
           <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
             <table className="w-full border-collapse">
               {tableColGroup}
-              <tbody>
+          <tbody>
             {/* Рядки учнів з групуванням */}
             {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
               const group = groups.find(g => g.id === groupId);
@@ -1368,7 +1368,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                           <div className="flex items-center gap-2">
                             {studentId ? (
                               <Link to={`/students/${studentId}`} className="text-primary hover:underline">
-                                {enrollment.students.full_name}
+                          {enrollment.students.full_name}
                               </Link>
                             ) : (
                               <span>{enrollment.students.full_name}</span>
@@ -1462,7 +1462,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                         <div className="flex items-center gap-2">
                           {studentId ? (
                             <Link to={`/students/${studentId}`} className="text-primary hover:underline">
-                              {enrollment.students.full_name}
+                        {enrollment.students.full_name}
                             </Link>
                           ) : (
                             <span>{enrollment.students.full_name}</span>
@@ -1530,9 +1530,9 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 })}
               </React.Fragment>
             )}
-              </tbody>
-            </table>
-          </div>
+          </tbody>
+        </table>
+      </div>
         </div>
       )}
       <Dialog open={isAddStudentOpen} onOpenChange={setIsAddStudentOpen}>

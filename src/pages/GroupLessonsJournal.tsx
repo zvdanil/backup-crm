@@ -34,6 +34,7 @@ export default function GroupLessonsJournal() {
 
   const { data: activities = [], isLoading: activitiesLoading } = useActivities();
   const { data: staff = [] } = useStaff();
+  const { data: allGroupLessons = [] } = useGroupLessons();
   const { data: groupLessons = [], isLoading: lessonsLoading } = useGroupLessons(activityId || undefined);
   const { data: sessions = [], isLoading: sessionsLoading } = useGroupLessonSessions({ activityId: activityId || undefined, month, year });
   const { data: rules = [] } = useAllStaffBillingRulesForActivity(activityId || undefined);
@@ -45,10 +46,13 @@ export default function GroupLessonsJournal() {
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
 
-  const activityOptions = useMemo(
-    () => activities.filter((activity) => !['expense', 'household_expense', 'salary'].includes(activity.category)),
-    [activities]
-  );
+  const activityOptions = useMemo(() => {
+    const allowed = activities.filter(
+      (activity) => !['expense', 'household_expense', 'salary'].includes(activity.category)
+    );
+    const activityIdsWithLessons = new Set(allGroupLessons.map((lesson) => lesson.activity_id));
+    return allowed.filter((activity) => activityIdsWithLessons.has(activity.id));
+  }, [activities, allGroupLessons]);
 
   useEffect(() => {
     if (!activityId && activityOptions.length > 0) {
