@@ -1,0 +1,45 @@
+========================================
+  КАК ЗАПУСТИТЬ СКРИПТ БЭКАПА
+========================================
+
+ВАРИАНТ 1: В CMD (Command Prompt)
+----------------------------------
+1. Откройте CMD (Win + R → cmd → Enter)
+2. Перейдите в папку проекта:
+   cd C:\Users\User\Downloads\crmbackup-cursor
+3. Выполните:
+   powershell -ExecutionPolicy Bypass -File .\create_backup_interactive.ps1
+
+
+ВАРИАНТ 2: В PowerShell
+------------------------
+1. Откройте PowerShell
+2. Перейдите в папку проекта:
+   cd C:\Users\User\Downloads\crmbackup-cursor
+3. Выполните:
+   powershell -ExecutionPolicy Bypass -File .\create_backup_interactive.ps1
+
+   ИЛИ (если изменили политику выполнения):
+   .\create_backup_interactive.ps1
+
+
+ВАРИАНТ 3: В терминале Cursor/VS Code
+--------------------------------------
+1. Откройте терминал в Cursor (Ctrl + `)
+2. Убедитесь, что вы в папке проекта
+3. Выполните:
+   powershell -ExecutionPolicy Bypass -File .\create_backup_interactive.ps1
+
+
+ЧТО ПРОИЗОЙДЕТ:
+---------------
+1. Скрипт покажет информацию о проекте
+2. Запросит пароль базы данных (пароль НЕ будет виден на экране)
+3. Создаст файл backup_YYYYMMDD_HHMMSS.sql
+4. Покажет размер созданного файла
+
+
+ГДЕ ВЗЯТЬ ПАРОЛЬ:
+-----------------
+https://app.supabase.com/project/qtphickigswerhvintvh/settings/database
+→ раздел "Connection string" или "Database password"
