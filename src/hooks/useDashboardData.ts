@@ -106,15 +106,15 @@ export function useDashboardData(year: number, month: number) {
           .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit')
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true })
-          .limit(10000), // Увеличиваем лимит, чтобы новые записи попадали в результат
+          .order('date', { ascending: true }),
+          // Лимит убран - получаем все записи за месяц
         supabase
           .from('staff_journal_entries' as any)
           .select('id, staff_id, activity_id, date, amount, base_amount, is_manual_override')
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true })
-          .limit(10000),
+          .order('date', { ascending: true }),
+          // Лимит убран - получаем все записи за месяц
         supabase
           .from('finance_transactions' as any)
           .select(`
@@ -131,7 +131,7 @@ export function useDashboardData(year: number, month: number) {
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
-          .limit(10000),
+          // Лимит убран - получаем все записи за месяц
       ]);
 
       // Логирование ошибок
@@ -161,24 +161,28 @@ export function useDashboardData(year: number, month: number) {
       });
 
       const result = {
-        enrollments: enrollmentsResult.data as unknown as DashboardEnrollment[],
-        attendance: attendanceResult.data as DashboardAttendance[],
+        enrollments: (enrollmentsResult.data || []) as unknown as DashboardEnrollment[],
+        attendance: (attendanceResult.data || []) as DashboardAttendance[],
         staffExpenses: (staffExpensesResult.data || []) as unknown as DashboardStaffExpense[],
         financeTransactions: (financeTransactionsResult.data || []) as unknown as DashboardFinanceTransaction[],
       };
 
       // Проверяем диапазон дат в attendance
-      const attendanceDates = result.attendance?.map(a => a.date).sort() || [];
-      const minDate = attendanceDates[0] || null;
-      const maxDate = attendanceDates[attendanceDates.length - 1] || null;
+      const attendanceDates = (result.attendance && Array.isArray(result.attendance)) 
+        ? result.attendance.map(a => a.date).sort() 
+        : [];
+      const minDate = attendanceDates.length > 0 ? attendanceDates[0] : null;
+      const maxDate = attendanceDates.length > 0 ? attendanceDates[attendanceDates.length - 1] : null;
       
       // Проверяем, есть ли записи с датой '2026-01-01' (дата новой записи из логов)
       const testDate = '2026-01-01';
-      const recordsForTestDate = result.attendance?.filter(a => a.date === testDate) || [];
+      const recordsForTestDate = (result.attendance && Array.isArray(result.attendance))
+        ? result.attendance.filter(a => a.date === testDate)
+        : [];
       const testEnrollmentId = 'd1e2088e-6931-4622-8dcb-2236879c8a42'; // enrollment_id из логов
-      const testRecord = result.attendance?.find(a => 
-        a.date === testDate && a.enrollment_id === testEnrollmentId
-      );
+      const testRecord = (result.attendance && Array.isArray(result.attendance))
+        ? result.attendance.find(a => a.date === testDate && a.enrollment_id === testEnrollmentId)
+        : undefined;
       
       console.log('[Dashboard Debug] useDashboardData.queryFn completed', {
         enrollmentsCount: result.enrollments?.length || 0,
@@ -194,7 +198,7 @@ export function useDashboardData(year: number, month: number) {
         testRecordCheck: {
           testDate,
           testEnrollmentId,
-          recordsForTestDateCount: recordsForTestDate.length,
+          recordsForTestDateCount: Array.isArray(recordsForTestDate) ? recordsForTestDate.length : 0,
           testRecordFound: !!testRecord,
           testRecordId: testRecord?.id,
         },
@@ -252,8 +256,8 @@ export function useCategorySummary(year: number, month: number) {
           `)
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true })
-          .limit(10000),
+          .order('date', { ascending: true }),
+          // Лимит убран - получаем все записи за месяц
         supabase
           .from('finance_transactions' as any)
           .select(`
@@ -265,8 +269,8 @@ export function useCategorySummary(year: number, month: number) {
           .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true })
-          .limit(10000),
+          .order('date', { ascending: true }),
+          // Лимит убран - получаем все записи за месяц
         supabase
           .from('staff_journal_entries' as any)
           .select('amount, date')
