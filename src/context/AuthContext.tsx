@@ -30,8 +30,12 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const logAuth = (...args: any[]) => {
   try {
     if (typeof window === 'undefined') return;
-    if (window.localStorage.getItem('auth_debug') !== '1') return;
-    console.info('[Auth]', ...args);
+    // Всегда логируем важные события в консоль
+    console.log('[Auth]', ...args);
+    // Дополнительное детальное логирование при включенной отладке
+    if (window.localStorage.getItem('auth_debug') === '1') {
+      console.info('[Auth Debug]', ...args);
+    }
   } catch {
     // ignore logging errors
   }
@@ -300,11 +304,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Обработка OAuth callback URL (очистка параметров после обработки)
     const urlParams = new URLSearchParams(window.location.search);
     const hasOAuthCode = urlParams.has('code') || urlParams.has('access_token');
+    const hasOAuthError = urlParams.has('error') || urlParams.has('error_description');
+    
+    console.log('[Auth] Initializing auth', { 
+      hasOAuthCode, 
+      hasOAuthError,
+      url: window.location.href,
+      search: window.location.search 
+    });
+    
+    if (hasOAuthError) {
+      const error = urlParams.get('error');
+      const errorDescription = urlParams.get('error_description');
+      console.error('[Auth] OAuth error in URL', { error, errorDescription });
+      toast({
+        title: 'Помилка авторизації',
+        description: errorDescription || error || 'Помилка при авторизації через OAuth',
+        variant: 'destructive',
+      });
+      // Очищаем параметры ошибки из URL
+      window.history.replaceState({}, '', window.location.pathname);
+    }
     
     // Явная загрузка начальной сессии
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
-        console.error('Error getting initial session:', error);
+        console.error('[Auth] Error getting initial session:', error);
         setIsLoading(false);
         return;
       }
@@ -355,7 +380,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [handleAuthChange]);
 
   const signInWithProvider = useCallback(async (provider: 'google' | 'apple') => {
+    console.log('[Auth] signInWithProvider called', { provider, url: window.location.origin });
+    
     if (!supabaseUrl || !supabaseKey) {
+      console.error('[Auth] Missing Supabase configuration', { hasUrl: !!supabaseUrl, hasKey: !!supabaseKey });
       toast({
         title: 'Помилка конфігурації',
         description: 'Не задано VITE_SUPABASE_URL або VITE_SUPABASE_PUBLISHABLE_KEY.',
@@ -363,14 +391,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       return;
     }
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
-    if (error) {
-      toast({ title: 'Помилка входу', description: error.message, variant: 'destructive' });
+    
+    try {
+      console.log('[Auth] Starting OAuth sign in', { provider, redirectTo: window.location.origin });
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+      
+      if (error) {
+        console.error('[Auth] OAuth sign in error', error);
+        toast({ 
+          title: 'Помилка входу', 
+          description: error.message || 'Не вдалося ініціювати вхід через OAuth', 
+          variant: 'destructive' 
+        });
+      } else {
+        console.log('[Auth] OAuth sign in initiated', { provider, data });
+        // OAuth должен редиректить, но если этого не происходит, показываем сообщение
+        // Обычно редирект происходит автоматически
+      }
+    } catch (err: any) {
+      console.error('[Auth] Unexpected error during OAuth sign in', err);
+      toast({ 
+        title: 'Помилка входу', 
+        description: err?.message || 'Несподівана помилка при спробі входу', 
+        variant: 'destructive' 
+      });
     }
   }, []);
 
