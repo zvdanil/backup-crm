@@ -107,6 +107,7 @@ export default function GardenAttendanceJournal() {
 
   const enrollmentsWithCharges = useMemo(() => {
     const set = new Set<string>();
+    if (!attendanceData || !Array.isArray(attendanceData)) return set;
     attendanceData.forEach((entry: any) => {
       const amount = entry.value ?? entry.charged_amount ?? 0;
       if (amount > 0) {
@@ -195,6 +196,7 @@ export default function GardenAttendanceJournal() {
   // Create attendance map
   const attendanceMap = useMemo(() => {
     const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null }>();
+    if (!attendanceData || !Array.isArray(attendanceData)) return map;
     attendanceData.forEach((a: any) => {
       const key = `${a.enrollment_id}-${a.date}`;
       map.set(key, { 
@@ -482,7 +484,7 @@ export default function GardenAttendanceJournal() {
 
   const handleFillPresentForMonth = useCallback(async () => {
     setIsBulkUpdating(true);
-    const existingKeys = new Set(attendanceData.map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
+    const existingKeys = new Set((attendanceData || []).map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
 
     try {
       const tasks: Array<() => Promise<void>> = [];
@@ -505,7 +507,7 @@ export default function GardenAttendanceJournal() {
 
   const handleClearMonth = useCallback(async () => {
     setIsBulkUpdating(true);
-    const existingKeys = new Set(attendanceData.map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
+    const existingKeys = new Set((attendanceData || []).map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
 
     try {
       const tasks: Array<() => Promise<void>> = [];
@@ -528,7 +530,7 @@ export default function GardenAttendanceJournal() {
 
   const handleFillPresentForDate = useCallback(async (dateStr: string) => {
     setIsBulkUpdating(true);
-    const existingKeys = new Set(attendanceData.map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
+    const existingKeys = new Set((attendanceData || []).map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
 
     try {
       const tasks: Array<() => Promise<void>> = [];

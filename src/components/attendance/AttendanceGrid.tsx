@@ -37,6 +37,7 @@ export function AttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const attendanceMap = useMemo(() => {
     const map = new Map<string, { status: AttendanceStatus; amount: number }>();
+    if (!attendanceData || !Array.isArray(attendanceData)) return map;
     attendanceData.forEach((a: any) => {
       const key = `${a.enrollment_id}-${a.date}`;
       map.set(key, { status: a.status, amount: a.charged_amount });
@@ -46,6 +47,7 @@ export function AttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const enrollmentsWithCharges = useMemo(() => {
     const set = new Set<string>();
+    if (!attendanceData || !Array.isArray(attendanceData)) return set;
     attendanceData.forEach((entry: any) => {
       const amount = entry.value ?? entry.charged_amount ?? 0;
       if (amount > 0) {

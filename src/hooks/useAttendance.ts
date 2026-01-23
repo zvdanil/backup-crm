@@ -64,7 +64,7 @@ export function useAttendance(filters: { activityId?: string; month?: number; ye
       const { data, error } = await query;
 
       if (error) throw error;
-      return data;
+      return data || [];
     },
     enabled: !!filters.activityId && filters.month !== undefined && filters.year !== undefined,
   });

@@ -280,6 +280,7 @@ export default function StaffExpenseJournal() {
   // Create a map of attendance for automatic calculations
   const attendanceMap = useMemo(() => {
     const map = new Map<string, { value: number | null; status: string | null; activityId: string }>();
+    if (!attendanceData || !Array.isArray(attendanceData)) return map;
     attendanceData.forEach(att => {
       const enrollment = enrollments.find(e => e.id === att.enrollment_id);
       if (enrollment && enrollment.teacher_id) {
