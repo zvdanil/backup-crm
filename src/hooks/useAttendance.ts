@@ -159,7 +159,22 @@ export function useSetAttendance() {
       
       // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
       console.log('[Dashboard Debug] Refetching dashboard queries...');
-      const refetchResult = await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+      
+      // Получаем все запросы дашборда
+      const allDashboardQueries = queryClient.getQueryCache().findAll({ queryKey: ['dashboard'], exact: false });
+      console.log('[Dashboard Debug] Found dashboard queries', {
+        count: allDashboardQueries.length,
+        queryKeys: allDashboardQueries.map(q => q.queryKey),
+        timestamp: new Date().toISOString(),
+      });
+      
+      // Принудительно перезапрашиваем все найденные запросы
+      const refetchResult = await queryClient.refetchQueries({ 
+        queryKey: ['dashboard'], 
+        exact: false,
+        type: 'all', // Перезапрашиваем все, включая неактивные
+      });
+      
       console.log('[Dashboard Debug] Refetch result', {
         refetchedQueries: refetchResult.length,
         refetchResults: refetchResult.map(r => ({
@@ -168,6 +183,12 @@ export function useSetAttendance() {
         })),
         timestamp: new Date().toISOString(),
       });
+      
+      // Если запросов не найдено или не перезапрошено, принудительно инвалидируем еще раз
+      if (refetchResult.length === 0) {
+        console.warn('[Dashboard Debug] No queries refetched! Forcing invalidation again...');
+        await queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
+      }
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
