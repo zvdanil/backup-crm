@@ -313,21 +313,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       search: window.location.search 
     });
     
-    if (hasOAuthError) {
-      const error = urlParams.get('error');
-      const errorDescription = urlParams.get('error_description');
-      console.error('[Auth] OAuth error in URL', { error, errorDescription });
-      toast({
-        title: 'Помилка авторизації',
-        description: errorDescription || error || 'Помилка при авторизації через OAuth',
-        variant: 'destructive',
-      });
-      // Очищаем параметры ошибки из URL
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-    
     // Явная загрузка начальной сессии
     supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('[Auth] Error getting initial session:', error);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Если есть ошибка OAuth, но сессия существует - пытаемся восстановить
+      if (hasOAuthError && session?.user) {
+        const error = urlParams.get('error');
+        const errorDescription = urlParams.get('error_description');
+        console.log('[Auth] OAuth error but session exists, attempting recovery', { 
+          error, 
+          errorDescription,
+          userId: session.user.id 
+        });
+        
+        // Если ошибка связана с созданием профиля, пытаемся создать его вручную
+        if (error === 'server_error' && errorDescription?.includes('Database error saving new user')) {
+          console.log('[Auth] Attempting to create profile manually after database error');
+          loadProfile(session.user)
+            .then((profile) => {
+              console.log('[Auth] Profile created successfully after error', { profile });
+              setProfile(profile);
+              lastProfileUserIdRef.current = session.user.id;
+              handleAuthChange('INITIAL_SESSION', session);
+            })
+            .catch((profileError) => {
+              console.error('[Auth] Failed to create profile manually', profileError);
+              toast({
+                title: 'Помилка створення профілю',
+                description: 'Користувач створений, але профіль не вдалося створити. Спробуйте увійти ще раз.',
+                variant: 'destructive',
+              });
+            });
+          // Очищаем параметры ошибки из URL
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
+        }
+      }
+      
+      if (hasOAuthError) {
+        const error = urlParams.get('error');
+        const errorDescription = urlParams.get('error_description');
+        console.error('[Auth] OAuth error in URL', { error, errorDescription });
+        toast({
+          title: 'Помилка авторизації',
+          description: errorDescription || error || 'Помилка при авторизації через OAuth',
+          variant: 'destructive',
+        });
+        // Очищаем параметры ошибки из URL
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+      
+      if (session?.user) {
       if (error) {
         console.error('[Auth] Error getting initial session:', error);
         setIsLoading(false);
