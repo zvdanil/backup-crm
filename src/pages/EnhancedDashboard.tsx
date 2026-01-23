@@ -223,7 +223,7 @@ export default function EnhancedDashboard() {
       map[att.enrollment_id][att.date] = amount;
     });
     return map;
-  }, [data?.attendance, dataUpdatedAt]);
+  }, [data?.attendance, dataUpdatedAt, data?.attendance?.length]);
 
   const salaryAccrualsDaily = useMemo(() => {
     const totals: Record<string, number> = {};

@@ -116,10 +116,15 @@ export function useSetAttendance() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['attendance'] });
-      // Invalidate all dashboard queries (with year/month variations)
-      queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
+    onSuccess: async () => {
+      // Invalidate all related queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['attendance'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
+        queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+      ]);
+      // Принудительно перезапрашиваем активные запросы дашборда
+      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
@@ -140,14 +145,17 @@ export function useDeleteAttendance() {
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       // Invalidate all related queries
-      queryClient.invalidateQueries({ queryKey: ['attendance'] });
-      queryClient.invalidateQueries({ queryKey: ['finance_transactions'] });
-      // Invalidate all dashboard queries (with year/month variations)
-      queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] });
-      queryClient.invalidateQueries({ queryKey: ['student_total_balance'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['attendance'] }),
+        queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
+        queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_total_balance'] }),
+      ]);
+      // Принудительно перезапрашиваем активные запросы дашборда
+      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
