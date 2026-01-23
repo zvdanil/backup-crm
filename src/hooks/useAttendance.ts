@@ -162,6 +162,10 @@ export function useSetAttendance() {
       const refetchResult = await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
       console.log('[Dashboard Debug] Refetch result', {
         refetchedQueries: refetchResult.length,
+        refetchResults: refetchResult.map(r => ({
+          status: r.status,
+          dataUpdatedAt: r.dataUpdatedAt ? new Date(r.dataUpdatedAt).toISOString() : null,
+        })),
         timestamp: new Date().toISOString(),
       });
     },

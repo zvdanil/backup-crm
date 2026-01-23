@@ -116,7 +116,7 @@ export function useDashboardData(year: number, month: number) {
           .order('date', { ascending: true })
           .limit(10000),
         supabase
-          .from('finance_transactions')
+          .from('finance_transactions' as any)
           .select(`
             id,
             student_id,
@@ -134,22 +134,51 @@ export function useDashboardData(year: number, month: number) {
           .limit(10000),
       ]);
 
-      if (enrollmentsResult.error) throw enrollmentsResult.error;
-      if (attendanceResult.error) throw attendanceResult.error;
-      if (staffExpensesResult.error) throw staffExpensesResult.error;
-      if (financeTransactionsResult.error) throw financeTransactionsResult.error;
+      // Логирование ошибок
+      if (enrollmentsResult.error) {
+        console.error('[Dashboard Debug] enrollmentsResult.error', enrollmentsResult.error);
+        throw enrollmentsResult.error;
+      }
+      if (attendanceResult.error) {
+        console.error('[Dashboard Debug] attendanceResult.error', attendanceResult.error);
+        throw attendanceResult.error;
+      }
+      if (staffExpensesResult.error) {
+        console.error('[Dashboard Debug] staffExpensesResult.error', staffExpensesResult.error);
+        throw staffExpensesResult.error;
+      }
+      if (financeTransactionsResult.error) {
+        console.error('[Dashboard Debug] financeTransactionsResult.error', financeTransactionsResult.error);
+        throw financeTransactionsResult.error;
+      }
+      
+      // Проверяем, не обрезан ли результат (Supabase может вернуть count)
+      console.log('[Dashboard Debug] Raw query results', {
+        attendanceDataLength: attendanceResult.data?.length || 0,
+        attendanceHasMore: (attendanceResult as any).count !== undefined,
+        attendanceCount: (attendanceResult as any).count,
+        timestamp: new Date().toISOString(),
+      });
 
       const result = {
         enrollments: enrollmentsResult.data as unknown as DashboardEnrollment[],
         attendance: attendanceResult.data as DashboardAttendance[],
-        staffExpenses: (staffExpensesResult.data || []) as DashboardStaffExpense[],
-        financeTransactions: (financeTransactionsResult.data || []) as DashboardFinanceTransaction[],
+        staffExpenses: (staffExpensesResult.data || []) as unknown as DashboardStaffExpense[],
+        financeTransactions: (financeTransactionsResult.data || []) as unknown as DashboardFinanceTransaction[],
       };
 
       // Проверяем диапазон дат в attendance
       const attendanceDates = result.attendance?.map(a => a.date).sort() || [];
       const minDate = attendanceDates[0] || null;
       const maxDate = attendanceDates[attendanceDates.length - 1] || null;
+      
+      // Проверяем, есть ли записи с датой '2026-01-01' (дата новой записи из логов)
+      const testDate = '2026-01-01';
+      const recordsForTestDate = result.attendance?.filter(a => a.date === testDate) || [];
+      const testEnrollmentId = 'd1e2088e-6931-4622-8dcb-2236879c8a42'; // enrollment_id из логов
+      const testRecord = result.attendance?.find(a => 
+        a.date === testDate && a.enrollment_id === testEnrollmentId
+      );
       
       console.log('[Dashboard Debug] useDashboardData.queryFn completed', {
         enrollmentsCount: result.enrollments?.length || 0,
@@ -161,6 +190,13 @@ export function useDashboardData(year: number, month: number) {
           endDate,
           minDateInData: minDate,
           maxDateInData: maxDate,
+        },
+        testRecordCheck: {
+          testDate,
+          testEnrollmentId,
+          recordsForTestDateCount: recordsForTestDate.length,
+          testRecordFound: !!testRecord,
+          testRecordId: testRecord?.id,
         },
         attendanceSample: result.attendance?.slice(0, 3).map(a => ({
           id: a.id,
@@ -219,7 +255,7 @@ export function useCategorySummary(year: number, month: number) {
           .order('date', { ascending: true })
           .limit(10000),
         supabase
-          .from('finance_transactions')
+          .from('finance_transactions' as any)
           .select(`
             amount,
             date,
@@ -228,7 +264,9 @@ export function useCategorySummary(year: number, month: number) {
           `)
           .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
-          .lte('date', endDate),
+          .lte('date', endDate)
+          .order('date', { ascending: true })
+          .limit(10000),
         supabase
           .from('staff_journal_entries' as any)
           .select('amount, date')
