@@ -256,8 +256,8 @@ export function useCategorySummary(year: number, month: number) {
           `)
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true }),
-          // Лимит убран - получаем все записи за месяц
+          .order('date', { ascending: true })
+          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
         supabase
           .from('finance_transactions' as any)
           .select(`
@@ -269,13 +269,14 @@ export function useCategorySummary(year: number, month: number) {
           .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true }),
-          // Лимит убран - получаем все записи за месяц
+          .order('date', { ascending: true })
+          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
         supabase
           .from('staff_journal_entries' as any)
           .select('amount, date')
           .gte('date', startDate)
-          .lte('date', endDate),
+          .lte('date', endDate)
+          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
       ]);
 
       if (attendanceResult.error) throw attendanceResult.error;
