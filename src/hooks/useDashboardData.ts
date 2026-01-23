@@ -106,15 +106,15 @@ export function useDashboardData(year: number, month: number) {
           .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit')
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true }),
-          // Лимит убран - получаем все записи за месяц
+          .order('date', { ascending: true })
+          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
         supabase
           .from('staff_journal_entries' as any)
           .select('id, staff_id, activity_id, date, amount, base_amount, is_manual_override')
           .gte('date', startDate)
           .lte('date', endDate)
-          .order('date', { ascending: true }),
-          // Лимит убран - получаем все записи за месяц
+          .order('date', { ascending: true })
+          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
         supabase
           .from('finance_transactions' as any)
           .select(`
@@ -131,7 +131,7 @@ export function useDashboardData(year: number, month: number) {
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
-          // Лимит убран - получаем все записи за месяц
+          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
       ]);
 
       // Логирование ошибок

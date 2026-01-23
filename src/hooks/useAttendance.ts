@@ -175,17 +175,20 @@ export function useSetAttendance() {
         type: 'all', // Перезапрашиваем все, включая неактивные
       });
       
+      // refetchQueries возвращает Promise, который резолвится в массив результатов
+      const results = Array.isArray(refetchResult) ? refetchResult : [];
+      
       console.log('[Dashboard Debug] Refetch result', {
-        refetchedQueries: refetchResult.length,
-        refetchResults: refetchResult.map(r => ({
-          status: r.status,
-          dataUpdatedAt: r.dataUpdatedAt ? new Date(r.dataUpdatedAt).toISOString() : null,
+        refetchedQueries: results.length,
+        refetchResults: results.map((r: any) => ({
+          status: r?.status,
+          dataUpdatedAt: r?.dataUpdatedAt ? new Date(r.dataUpdatedAt).toISOString() : null,
         })),
         timestamp: new Date().toISOString(),
       });
       
       // Если запросов не найдено или не перезапрошено, принудительно инвалидируем еще раз
-      if (refetchResult.length === 0) {
+      if (results.length === 0) {
         console.warn('[Dashboard Debug] No queries refetched! Forcing invalidation again...');
         await queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
       }
