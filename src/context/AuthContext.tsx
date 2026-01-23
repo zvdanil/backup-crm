@@ -370,13 +370,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (session?.user) {
-      if (error) {
-        console.error('[Auth] Error getting initial session:', error);
-        setIsLoading(false);
-        return;
-      }
-      
-      if (session?.user) {
         logAuth('initialSession:found', { userId: session.user.id, hasOAuthCode });
         handleAuthChange('INITIAL_SESSION', session);
         
