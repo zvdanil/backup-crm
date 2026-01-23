@@ -522,9 +522,13 @@ export default function EnhancedDashboard() {
     // Принудительно обновляем все данные дашборда
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ['attendance'] }),
+      queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
       refetchDashboard(),
       refetchSummary(),
     ]);
+    // Принудительно перезапрашиваем активные запросы дашборда
+    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
   };
 
   const totalIncome = summaryByCategory.income + summaryByCategory.additional_income;
