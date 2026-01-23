@@ -40,6 +40,8 @@ const logAuth = (...args: any[]) => {
 async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
   const startedAt = performance.now();
   logAuth('fetchOrCreateProfile:start', { userId: user.id, email: user.email });
+  
+  // Сначала проверяем существующий профиль
   const { data: existing, error: existingError } = await supabase
     .from('user_profiles')
     .select('*')
@@ -47,9 +49,10 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
     .maybeSingle();
 
   if (existingError) {
-    logAuth('fetchOrCreateProfile:error:select', { message: existingError.message });
+    logAuth('fetchOrCreateProfile:error:select', { message: existingError.message, code: existingError.code });
     throw existingError;
   }
+  
   if (existing) {
     logAuth('fetchOrCreateProfile:found', {
       userId: user.id,
@@ -60,21 +63,24 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
     return existing as UserProfile;
   }
 
+  // Профиль не найден - проверяем, сколько всего профилей (для определения роли)
   const { data: existingProfiles, error: countError } = await supabase
     .from('user_profiles')
     .select('id')
     .limit(1);
 
   if (countError) {
-    logAuth('fetchOrCreateProfile:error:count', { message: countError.message });
+    logAuth('fetchOrCreateProfile:error:count', { message: countError.message, code: countError.code });
     throw countError;
   }
 
   const isFirstUser = !existingProfiles || existingProfiles.length === 0;
   const role: UserRole = isFirstUser ? 'owner' : 'newregistration';
   const fullName = user.user_metadata?.full_name || user.user_metadata?.name || null;
-  logAuth('fetchOrCreateProfile:create', { userId: user.id, role, isFirstUser });
+  logAuth('fetchOrCreateProfile:create', { userId: user.id, role, isFirstUser, fullName });
 
+  // Пытаемся создать профиль
+  // Используем ON CONFLICT для обработки race condition (если триггер уже создал профиль)
   const { data: created, error: createError } = await supabase
     .from('user_profiles')
     .insert({
@@ -87,9 +93,36 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
     .single();
 
   if (createError) {
-    logAuth('fetchOrCreateProfile:error:create', { message: createError.message });
+    // Если ошибка из-за конфликта (профиль уже существует), пытаемся получить его
+    if (createError.code === '23505' || createError.message.includes('duplicate') || createError.message.includes('unique')) {
+      logAuth('fetchOrCreateProfile:conflict-retry', { userId: user.id });
+      // Небольшая задержка и повторная попытка получить профиль
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const { data: retryProfile, error: retryError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      
+      if (retryError) {
+        logAuth('fetchOrCreateProfile:error:retry', { message: retryError.message });
+        throw retryError;
+      }
+      
+      if (retryProfile) {
+        logAuth('fetchOrCreateProfile:retry-success', {
+          userId: user.id,
+          role: (retryProfile as UserProfile).role,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        return retryProfile as UserProfile;
+      }
+    }
+    
+    logAuth('fetchOrCreateProfile:error:create', { message: createError.message, code: createError.code });
     throw createError;
   }
+  
   logAuth('fetchOrCreateProfile:created', {
     userId: user.id,
     role: (created as UserProfile).role,
@@ -172,6 +205,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Для новых регистраций (SIGNED_IN после OAuth) даем время триггеру создать профиль
+      const isNewRegistration = event === 'SIGNED_IN' && !lastProfileUserIdRef.current;
+      if (isNewRegistration) {
+        logAuth('authStateChange:new-registration', { userId });
+        // Небольшая задержка для триггера базы данных
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
       // Загружаем профиль только если userId изменился
       try {
         const profileData = await loadProfile(newSession.user);
@@ -181,41 +222,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           userId,
           role: profileData?.role,
           isActive: profileData?.is_active,
+          event,
         });
       } catch (profileError: any) {
         console.error('Profile load error', profileError);
-        logAuth('authStateChange:profile-error', { message: profileError?.message });
+        logAuth('authStateChange:profile-error', { message: profileError?.message, event });
         
         // Retry механизм с проверкой актуальности пользователя
+        // Для новых регистраций делаем больше попыток
         if (!profileRetryTimerRef.current) {
           const currentUserId = newSession.user.id;
-          profileRetryTimerRef.current = setTimeout(async () => {
+          const maxRetries = isNewRegistration ? 3 : 1;
+          let retryCount = 0;
+          
+          const retryLoad = async () => {
             profileRetryTimerRef.current = null;
             
             // Проверяем, что профиль все еще не загружен для этого пользователя
-            // Если lastProfileUserIdRef.current === currentUserId, значит профиль уже загружен, retry не нужен
-            if (lastProfileUserIdRef.current !== currentUserId) {
+            if (lastProfileUserIdRef.current !== currentUserId && retryCount < maxRetries) {
+              retryCount++;
               try {
+                // Увеличиваем задержку с каждой попыткой
+                await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
                 const retryProfile = await loadProfile(newSession.user);
                 setProfile(retryProfile);
                 lastProfileUserIdRef.current = currentUserId;
-                logAuth('authStateChange:profile-retry-success', { userId: currentUserId });
+                logAuth('authStateChange:profile-retry-success', { userId: currentUserId, retryCount });
               } catch (retryError: any) {
-                logAuth('authStateChange:profile-retry-error', { message: retryError?.message });
+                logAuth('authStateChange:profile-retry-error', { message: retryError?.message, retryCount });
+                // Планируем следующую попытку
+                if (retryCount < maxRetries) {
+                  profileRetryTimerRef.current = setTimeout(retryLoad, 2000 * retryCount);
+                } else {
+                  toast({ 
+                    title: 'Помилка профілю', 
+                    description: 'Не вдалося завантажити профіль. Спробуйте оновити сторінку.', 
+                    variant: 'destructive' 
+                  });
+                }
               }
             } else {
               logAuth('authStateChange:profile-retry-skip', { 
-                reason: 'already-loaded', 
-                userId: currentUserId 
+                reason: lastProfileUserIdRef.current === currentUserId ? 'already-loaded' : 'max-retries',
+                userId: currentUserId,
+                retryCount
               });
             }
-          }, 2000);
+          };
+          
+          profileRetryTimerRef.current = setTimeout(retryLoad, isNewRegistration ? 1000 : 2000);
         }
-        toast({ 
-          title: 'Помилка профілю', 
-          description: 'Профіль завантажується довше. Зачекайте або оновіть сторінку.', 
-          variant: 'destructive' 
-        });
       }
     } else {
       // Пользователь вышел
@@ -241,6 +297,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Обработка OAuth callback URL (очистка параметров после обработки)
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasOAuthCode = urlParams.has('code') || urlParams.has('access_token');
+    
     // Явная загрузка начальной сессии
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
@@ -250,10 +310,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       if (session?.user) {
-        logAuth('initialSession:found', { userId: session.user.id });
+        logAuth('initialSession:found', { userId: session.user.id, hasOAuthCode });
         handleAuthChange('INITIAL_SESSION', session);
+        
+        // Очищаем OAuth параметры из URL после успешной загрузки сессии
+        if (hasOAuthCode) {
+          window.history.replaceState({}, '', window.location.pathname);
+          logAuth('initialSession:oauth-callback-cleaned');
+        }
       } else {
         logAuth('initialSession:none');
+        // Очищаем OAuth параметры даже если сессии нет (на случай ошибки)
+        if (hasOAuthCode) {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
         setIsLoading(false);
       }
     });
