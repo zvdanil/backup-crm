@@ -172,10 +172,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadProfile = useCallback(async (currentUser: User) => {
     if (profilePromiseRef.current) return profilePromiseRef.current;
 
+    // Уменьшаем таймаут до 10 секунд и увеличиваем количество попыток
     const request = withRetry(
-      () => withTimeout(fetchOrCreateProfile(currentUser), 30000, 'Profile load timeout'),
-      1,
-      500
+      () => withTimeout(fetchOrCreateProfile(currentUser), 10000, 'Profile load timeout'),
+      3,
+      1000
     );
 
     profilePromiseRef.current = request;
