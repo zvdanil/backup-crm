@@ -466,8 +466,11 @@ export default function GardenAttendanceJournal() {
       type: 'all', // Перезапрашиваем все, включая неактивные
     });
     
+    // refetchQueries возвращает Promise, который резолвится в массив результатов
+    const results = Array.isArray(refetchResult) ? refetchResult : [];
+    
     console.log('[Garden Attendance] Dashboard refetch result', {
-      refetchedQueries: refetchResult.length,
+      refetchedQueries: results.length,
       timestamp: new Date().toISOString(),
     });
   }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient]);
