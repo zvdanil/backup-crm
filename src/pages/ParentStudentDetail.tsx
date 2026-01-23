@@ -7,12 +7,11 @@ import { useStudent } from '@/hooks/useStudents';
 import { useEnrollments } from '@/hooks/useEnrollments';
 import { useActivities } from '@/hooks/useActivities';
 import { useStudentAccountBalances } from '@/hooks/useFinanceTransactions';
-import { useStudentAttendance } from '@/hooks/useStudentAttendance';
 import { StudentPaymentHistory } from '@/components/students/StudentPaymentHistory';
 import { StudentActivityBalanceRow } from '@/components/students/StudentActivityBalanceRow';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { formatCurrency, formatDate, ATTENDANCE_FULL_LABELS } from '@/lib/attendance';
+import { formatCurrency } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { useAuth } from '@/context/AuthContext';
@@ -60,8 +59,6 @@ export default function ParentStudentDetail() {
     controllerActivityIds,
     Array.from(foodTariffIds)
   );
-
-  const { data: attendanceEntries = [], isLoading: attendanceLoading } = useStudentAttendance(id, month, year);
 
   const activeEnrollments = useMemo(() => (
     enrollments.filter(enrollment => enrollment.is_active)
@@ -201,33 +198,6 @@ export default function ParentStudentDetail() {
           <StudentPaymentHistory studentId={id!} month={month} year={year} />
         </div>
 
-        <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft">
-          <h3 className="text-lg font-semibold mb-4">Відвідування</h3>
-          {attendanceLoading ? (
-            <div className="text-sm text-muted-foreground">Завантаження...</div>
-          ) : attendanceEntries.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Немає записів</div>
-          ) : (
-            <div className="space-y-2">
-              {attendanceEntries.map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between text-sm border rounded-md p-2">
-                  <div>
-                    <div className="font-medium">{entry.enrollments.activities.name}</div>
-                    <div className="text-xs text-muted-foreground">{formatDate(entry.date)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-muted-foreground">
-                      {entry.status ? ATTENDANCE_FULL_LABELS[entry.status as keyof typeof ATTENDANCE_FULL_LABELS] : '—'}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatCurrency(entry.value ?? entry.charged_amount ?? 0)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </>
   );
