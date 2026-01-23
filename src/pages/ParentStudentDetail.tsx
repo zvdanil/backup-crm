@@ -71,6 +71,22 @@ export default function ParentStudentDetail() {
       })
   ), [enrollments, allActivities]);
 
+  const accountNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    accounts.forEach((account) => map.set(account.id, account.name));
+    return map;
+  }, [accounts]);
+
+  const totalBalance = useMemo(() => 
+    accountBalances.reduce((sum, item) => sum + (item.balance || 0), 0),
+    [accountBalances]
+  );
+
+  const hasAccess = useMemo(() => 
+    parentStudents.some((s) => s.id === id),
+    [parentStudents, id]
+  );
+
   if (studentLoading || enrollmentsLoading || parentStudentsLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -79,7 +95,6 @@ export default function ParentStudentDetail() {
     );
   }
 
-  const hasAccess = parentStudents.some((s) => s.id === id);
   if (!hasAccess) {
     return (
       <div className="flex flex-col items-center justify-center h-screen">
@@ -101,13 +116,6 @@ export default function ParentStudentDetail() {
       </div>
     );
   }
-
-  const totalBalance = accountBalances.reduce((sum, item) => sum + (item.balance || 0), 0);
-  const accountNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    accounts.forEach((account) => map.set(account.id, account.name));
-    return map;
-  }, [accounts]);
 
   return (
     <>
