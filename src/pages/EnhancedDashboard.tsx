@@ -236,13 +236,14 @@ export default function EnhancedDashboard() {
   const attendanceMap = useMemo(() => {
     console.log('[Dashboard Debug] attendanceMap useMemo recalculating', {
       hasData: !!data?.attendance,
-      attendanceCount: data?.attendance?.length || 0,
+      isArray: Array.isArray(data?.attendance),
+      attendanceCount: Array.isArray(data?.attendance) ? data.attendance.length : 0,
       dataUpdatedAt: dataUpdatedAt ? new Date(dataUpdatedAt).toISOString() : null,
       timestamp: new Date().toISOString(),
     });
     
-    if (!data?.attendance) {
-      console.log('[Dashboard Debug] attendanceMap: no attendance data, returning empty map');
+    if (!data?.attendance || !Array.isArray(data.attendance)) {
+      console.log('[Dashboard Debug] attendanceMap: no attendance data or not an array, returning empty map');
       return {};
     }
     

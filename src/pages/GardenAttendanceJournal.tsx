@@ -442,18 +442,34 @@ export default function GardenAttendanceJournal() {
         }
       } catch (error) {
         console.error('Error setting attendance:', error);
+        throw error; // Пробрасываем ошибку, чтобы не продолжать выполнение
       }
     }
 
-    // Invalidate queries and force refetch
+    // Invalidate queries and force refetch AFTER all mutations complete
+    // Ждем немного, чтобы убедиться, что все мутации завершились
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    console.log('[Garden Attendance] Invalidating queries after status change...');
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['attendance'] }),
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
     ]);
+    
     // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
-    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+    console.log('[Garden Attendance] Refetching dashboard queries...');
+    const refetchResult = await queryClient.refetchQueries({ 
+      queryKey: ['dashboard'], 
+      exact: false,
+      type: 'all', // Перезапрашиваем все, включая неактивные
+    });
+    
+    console.log('[Garden Attendance] Dashboard refetch result', {
+      refetchedQueries: refetchResult.length,
+      timestamp: new Date().toISOString(),
+    });
   }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient]);
 
 
