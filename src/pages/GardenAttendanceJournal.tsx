@@ -450,8 +450,8 @@ export default function GardenAttendanceJournal() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
     ]);
-    // Принудительно перезапрашиваем активные запросы дашборда
-    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
+    // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
+    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
   }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient]);
 
 

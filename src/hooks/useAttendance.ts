@@ -123,8 +123,8 @@ export function useSetAttendance() {
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
       ]);
-      // Принудительно перезапрашиваем активные запросы дашборда
-      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
+      // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
+      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
@@ -154,8 +154,8 @@ export function useDeleteAttendance() {
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
         queryClient.invalidateQueries({ queryKey: ['student_total_balance'] }),
       ]);
-      // Принудительно перезапрашиваем активные запросы дашборда
-      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
+      // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
+      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });

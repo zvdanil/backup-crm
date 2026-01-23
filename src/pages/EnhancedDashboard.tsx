@@ -213,8 +213,9 @@ export default function EnhancedDashboard() {
 
   // Map attendance by enrollment_id + date (for regular journals)
   const attendanceMap = useMemo(() => {
+    if (!data?.attendance) return {};
     const map: Record<string, Record<string, number>> = {};
-    data?.attendance?.forEach((att) => {
+    data.attendance.forEach((att) => {
       if (!map[att.enrollment_id]) map[att.enrollment_id] = {};
       // Використовуємо value (якщо є) або charged_amount
       const amount = att.value !== null && att.value !== undefined && att.value > 0 
@@ -223,7 +224,7 @@ export default function EnhancedDashboard() {
       map[att.enrollment_id][att.date] = amount;
     });
     return map;
-  }, [data?.attendance, dataUpdatedAt, data?.attendance?.length]);
+  }, [data?.attendance, dataUpdatedAt]);
 
   const salaryAccrualsDaily = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -524,11 +525,11 @@ export default function EnhancedDashboard() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['attendance'] }),
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
-      refetchDashboard(),
-      refetchSummary(),
     ]);
-    // Принудительно перезапрашиваем активные запросы дашборда
-    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false, type: 'active' });
+    // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
+    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+    // Также вызываем refetch напрямую для гарантии
+    await Promise.all([refetchDashboard(), refetchSummary()]);
   };
 
   const totalIncome = summaryByCategory.income + summaryByCategory.additional_income;
