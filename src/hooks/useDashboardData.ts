@@ -71,14 +71,19 @@ export function useDashboardData(year: number, month: number) {
     refetchOnMount: true, // Всегда обновлять при монтировании
     staleTime: 0, // Данные считаются устаревшими сразу
     queryFn: async () => {
-      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      // Используем локальное время для расчета дат, чтобы избежать проблем с часовыми поясами
+      const startDateLocal = new Date(year, month, 1);
+      const endDateLocal = new Date(year, month + 1, 0);
+      const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const endDate = `${endDateLocal.getFullYear()}-${String(endDateLocal.getMonth() + 1).padStart(2, '0')}-${String(endDateLocal.getDate()).padStart(2, '0')}`;
       
       console.log('[Dashboard Debug] useDashboardData.queryFn called', {
         year,
         month,
         startDate,
         endDate,
+        startDateLocal: startDateLocal.toISOString(),
+        endDateLocal: endDateLocal.toISOString(),
         timestamp: new Date().toISOString(),
       });
 
@@ -135,11 +140,22 @@ export function useDashboardData(year: number, month: number) {
         financeTransactions: (financeTransactionsResult.data || []) as DashboardFinanceTransaction[],
       };
 
+      // Проверяем диапазон дат в attendance
+      const attendanceDates = result.attendance?.map(a => a.date).sort() || [];
+      const minDate = attendanceDates[0] || null;
+      const maxDate = attendanceDates[attendanceDates.length - 1] || null;
+      
       console.log('[Dashboard Debug] useDashboardData.queryFn completed', {
         enrollmentsCount: result.enrollments?.length || 0,
         attendanceCount: result.attendance?.length || 0,
         staffExpensesCount: result.staffExpenses?.length || 0,
         financeTransactionsCount: result.financeTransactions?.length || 0,
+        dateRange: {
+          startDate,
+          endDate,
+          minDateInData: minDate,
+          maxDateInData: maxDate,
+        },
         attendanceSample: result.attendance?.slice(0, 3).map(a => ({
           id: a.id,
           enrollment_id: a.enrollment_id,
@@ -177,8 +193,10 @@ export function useCategorySummary(year: number, month: number) {
     refetchOnMount: true, // Всегда обновлять при монтировании
     staleTime: 0, // Данные считаются устаревшими сразу
     queryFn: async () => {
-      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      // Используем локальное время для расчета дат, чтобы избежать проблем с часовыми поясами
+      const endDateLocal = new Date(year, month + 1, 0);
+      const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const endDate = `${endDateLocal.getFullYear()}-${String(endDateLocal.getMonth() + 1).padStart(2, '0')}-${String(endDateLocal.getDate()).padStart(2, '0')}`;
 
       const [attendanceResult, financeTransactionsResult, staffExpensesResult] = await Promise.all([
         supabase

@@ -92,6 +92,15 @@ export function useSetAttendance() {
 
   return useMutation({
     mutationFn: async (attendance: AttendanceInsert) => {
+      console.log('[Dashboard Debug] useSetAttendance.mutationFn called', {
+        enrollment_id: attendance.enrollment_id,
+        date: attendance.date,
+        status: attendance.status,
+        charged_amount: attendance.charged_amount,
+        value: attendance.value,
+        timestamp: new Date().toISOString(),
+      });
+      
       // Upsert: insert or update if exists
       const { data, error } = await supabase
         .from('attendance')
@@ -113,7 +122,23 @@ export function useSetAttendance() {
         .select('id, enrollment_id, date, status, charged_amount, value, notes, manual_value_edit, created_at, updated_at')
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Dashboard Debug] useSetAttendance.mutationFn error', {
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          timestamp: new Date().toISOString(),
+        });
+        throw error;
+      }
+      
+      console.log('[Dashboard Debug] useSetAttendance.mutationFn success', {
+        id: data?.id,
+        enrollment_id: data?.enrollment_id,
+        date: data?.date,
+        timestamp: new Date().toISOString(),
+      });
+      
       return data;
     },
     onSuccess: async (data) => {
