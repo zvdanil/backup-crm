@@ -14,6 +14,7 @@ import {
   formatCurrency,
   calculateValueFromBillingRules,
   getWorkingDaysInMonth,
+  WEEKEND_BG_COLOR,
   type AttendanceStatus 
 } from '@/lib/attendance';
 import { X } from 'lucide-react';
@@ -334,7 +335,7 @@ export function EnhancedAttendanceCell({
           readOnly={false}
             className={cn(
             'h-9 w-9 text-center text-xs font-semibold px-1',
-            isWeekend && !status && (value === null || value === undefined || value === 0) && 'bg-muted/50',
+            isWeekend && !status && (value === null || value === undefined || value === 0) && WEEKEND_BG_COLOR,
             !status && (value === null || value === undefined || value === 0) && !isWeekend && 'bg-muted hover:bg-muted/80',
               status && ATTENDANCE_COLORS[status],
             status && 'text-white shadow-sm cursor-pointer',

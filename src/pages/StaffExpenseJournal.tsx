@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,12 +17,20 @@ import {
   formatShortDate, 
   getWeekdayShort, 
   isWeekend,
+  WEEKEND_BG_COLOR,
   formatCurrency,
   formatDateString,
 } from '@/lib/attendance';
 import { calculateStaffSalary } from '@/lib/staffSalary';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -35,6 +43,9 @@ export default function StaffExpenseJournal() {
   const [month, setMonth] = useState(now.getMonth());
   const [editingCell, setEditingCell] = useState<{ staffId: string; activityId: string | null; date: string } | null>(null);
   const [manualValue, setManualValue] = useState('');
+  const [selectedStaffId, setSelectedStaffId] = useState<string>('all');
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
 
   // All hooks must be at the top level - no hooks inside loops or conditionals
   const { data: staff = [] } = useStaff();
@@ -148,7 +159,37 @@ export default function StaffExpenseJournal() {
     () => staff.filter(s => s.is_active && eligibleStaffIds.has(s.id)),
     [staff, eligibleStaffIds]
   );
+
+  // Filter staff by selected filter
+  const filteredStaff = useMemo(() => {
+    if (selectedStaffId === 'all') {
+      return activeStaff;
+    }
+    return activeStaff.filter(s => s.id === selectedStaffId);
+  }, [activeStaff, selectedStaffId]);
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+
+  // Sync scroll between header and body
+  useEffect(() => {
+    const header = headerScrollRef.current;
+    if (!header) return;
+    const sync = () => {
+      const left = header.scrollLeft;
+      if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = left;
+    };
+    header.addEventListener('scroll', sync, { passive: true });
+    sync();
+    return () => header.removeEventListener('scroll', sync);
+  }, [days.length, filteredStaff.length]);
+
+  const tableColGroup = useMemo(() => (
+    <colgroup>
+      <col style={{ width: '200px', minWidth: '200px' }} />
+      {days.map((day) => (
+        <col key={formatDateString(day)} style={{ width: '60px', minWidth: '60px' }} />
+      ))}
+    </colgroup>
+  ), [days]);
   
   // Create a map of manual rate history by staff_id
   const manualRateHistoryMap = useMemo(() => {
@@ -497,7 +538,7 @@ export default function StaffExpenseJournal() {
         key={dateStr}
         className={cn(
           "p-0.5 text-center",
-          isWeekendDay && "bg-amber-50/70 dark:bg-amber-900/20"
+          isWeekendDay && WEEKEND_BG_COLOR
         )}
       >
         <Popover open={isEditing} onOpenChange={(open) => !open && setEditingCell(null)}>
@@ -693,32 +734,57 @@ export default function StaffExpenseJournal() {
           </Button>
         </div>
 
+        {/* Staff filter */}
+        <div className="mb-4">
+          <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+            <SelectTrigger className="w-full md:w-[250px]">
+              <SelectValue placeholder="Фільтр по персоналу" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Всі співробітники</SelectItem>
+              {activeStaff.map((staffMember) => (
+                <SelectItem key={staffMember.id} value={staffMember.id}>
+                  {staffMember.full_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Grid */}
-        <div className="overflow-x-auto border rounded-xl">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-muted/50">
-                <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground min-w-[200px]">
-                  Персонал
-                </th>
-                {days.map((day) => (
-                  <th
-                    key={formatDateString(day)}
-                    className={cn(
-                      "px-1 py-2 text-center text-xs font-medium min-w-[60px]",
-                      isWeekend(day)
-                        ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
-                        : 'text-muted-foreground'
-                    )}
-                  >
-                    <div>{getWeekdayShort(day)}</div>
-                    <div className="font-semibold">{formatShortDate(day)}</div>
+        <div className="sticky top-16 z-30 bg-card">
+          <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
+            <table className="w-full border-collapse">
+              {tableColGroup}
+              <thead>
+                <tr className="bg-muted/50">
+                  <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                    Персонал
                   </th>
-                ))}
-              </tr>
-            </thead>
+                  {days.map((day) => (
+                    <th
+                      key={formatDateString(day)}
+                      className={cn(
+                        "px-1 py-2 text-center text-xs font-medium",
+                        isWeekend(day)
+                          ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
+                          : 'text-muted-foreground'
+                      )}
+                    >
+                      <div>{getWeekdayShort(day)}</div>
+                      <div className="font-semibold">{formatShortDate(day)}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            </table>
+          </div>
+        </div>
+        <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
+          <table className="w-full border-collapse">
+            {tableColGroup}
             <tbody>
-              {activeStaff.map((staffMember) => {
+              {filteredStaff.map((staffMember) => {
                 // Get activities from pre-computed map (no hooks here!)
                 const staffActivities = staffActivitiesMap.get(staffMember.id) || [];
 
@@ -746,7 +812,7 @@ export default function StaffExpenseJournal() {
                             key={dateStr}
                             className={cn(
                               "p-0.5 text-center",
-                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                              isWeekend(day) && WEEKEND_BG_COLOR
                             )}
                           >
                             <div className={cn(
@@ -786,7 +852,7 @@ export default function StaffExpenseJournal() {
                             key={dateStr}
                             className={cn(
                               "p-0.5 text-center text-red-600 font-medium",
-                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                              isWeekend(day) && WEEKEND_BG_COLOR
                             )}
                           >
                             {amount > 0 ? formatCurrency(amount) : '—'}

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StaffForm } from '@/components/staff/StaffForm';
 import { useStaffMember, useUpdateStaff } from '@/hooks/useStaff';
-import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString } from '@/lib/attendance';
+import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { StaffBillingEditorNew } from '@/components/staff/StaffBillingEditorNew';
 import { StaffManualRateHistoryEditor } from '@/components/staff/StaffManualRateHistoryEditor';
 import { DeductionsEditor } from '@/components/staff/DeductionsEditor';
@@ -906,7 +906,7 @@ function FinancialCalendarTable({
                   key={dateStr} 
                   className={cn(
                     "text-center min-w-[60px]",
-                    isWeekendDay && "bg-muted/50"
+                    isWeekendDay && WEEKEND_BG_COLOR
                   )}
                 >
                   <div className="flex flex-col">
@@ -936,7 +936,7 @@ function FinancialCalendarTable({
                         key={dateStr} 
                         className={cn(
                           "text-center",
-                          isWeekend(date) && "bg-muted/30"
+                          isWeekend(date) && WEEKEND_BG_COLOR
                         )}
                       >
                         {amount > 0 ? (
@@ -1038,7 +1038,7 @@ function FinancialCalendarTable({
                   key={dateStr} 
                   className={cn(
                     "text-center cursor-pointer hover:bg-primary/10",
-                    isWeekend(date) && "bg-muted/30"
+                    isWeekend(date) && WEEKEND_BG_COLOR
                   )}
                   onClick={() => onPayoutCellClick(dateStr)}
                 >

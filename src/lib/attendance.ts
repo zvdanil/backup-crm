@@ -34,6 +34,12 @@ export const ATTENDANCE_COLORS: Record<AttendanceStatus, string> = {
 };
 
 /**
+ * Weekend background color (Tailwind CSS classes)
+ * Used for highlighting weekend days in all journals
+ */
+export const WEEKEND_BG_COLOR = 'bg-yellow-200/70 dark:bg-yellow-700/20';
+
+/**
  * Format currency in Ukrainian hryvnia
  */
 export function formatCurrency(amount: number): string {

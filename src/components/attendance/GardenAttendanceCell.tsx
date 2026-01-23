@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { formatCurrency } from '@/lib/attendance';
+import { formatCurrency, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
 
 interface GardenAttendanceCellProps {
@@ -43,7 +43,7 @@ export function GardenAttendanceCell({
             'h-6 w-6 p-0 text-[10px] font-semibold',
             status === 'present' && 'bg-green-500 hover:bg-green-600 text-white',
             !status && 'hover:bg-green-100',
-            isWeekend && !status && 'bg-muted/50',
+            isWeekend && !status && WEEKEND_BG_COLOR,
             isReadOnly && 'opacity-50 cursor-not-allowed'
           )}
           onClick={() => handleStatusClick(status === 'present' ? null : 'present')}
@@ -59,7 +59,7 @@ export function GardenAttendanceCell({
             'h-6 w-6 p-0 text-[10px] font-semibold',
             status === 'absent' && 'bg-red-500 hover:bg-red-600 text-white',
             !status && 'hover:bg-red-100',
-            isWeekend && !status && 'bg-muted/50',
+            isWeekend && !status && WEEKEND_BG_COLOR,
             isReadOnly && 'opacity-50 cursor-not-allowed'
           )}
           onClick={() => handleStatusClick(status === 'absent' ? null : 'absent')}

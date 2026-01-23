@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { useDashboardData, useCategorySummary } from '@/hooks/useDashboardData';
 import { useActivities } from '@/hooks/useActivities';
 import { ACTIVITY_CATEGORY_LABELS, type ActivityCategory } from '@/hooks/useActivities';
-import { formatCurrency, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString } from '@/lib/attendance';
+import { formatCurrency, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { useQueryClient } from '@tanstack/react-query';
@@ -46,6 +46,7 @@ export default function EnhancedDashboard() {
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
+  const tableScrollRefs = useRef<Set<HTMLDivElement>>(new Set());
 
   const { data, isLoading, refetch: refetchDashboard, dataUpdatedAt } = useDashboardData(year, month);
   const { data: summary, refetch: refetchSummary } = useCategorySummary(year, month);
@@ -721,6 +722,7 @@ export default function EnhancedDashboard() {
                 days={days}
                 leftHeader="Дитина / Активність"
                 rightHeader="Разом"
+                tableScrollRefs={tableScrollRefs}
               >
                     {categoryStudents.map((student, studentIndex) => 
                       student.activities.map((activity, activityIndex) => {
@@ -764,7 +766,7 @@ export default function EnhancedDashboard() {
                               !enrollment.is_active && "bg-muted/40 text-muted-foreground"
                             )}
                           >
-                            <td className={cn("py-2 px-4 sticky left-0", rowBgClass)}>
+                            <td className={cn("py-2 px-3 sticky left-0 z-10", rowBgClass)}>
                               <div className="flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activity.activityColor }} />
                                 <div className="min-w-0">
@@ -796,17 +798,17 @@ export default function EnhancedDashboard() {
                               return (
                                 <td
                                   key={formatDateString(day)}
-                                  className={cn("py-2 px-1 text-center", rowBgClass, isWeekend(day) && "bg-muted/30")}
+                                  className={cn("py-1.5 px-0.5 text-center", rowBgClass, isWeekend(day) && WEEKEND_BG_COLOR)}
                                 >
                                   {amount !== undefined && amount !== 0 && (
-                                    <span className={cn("text-xs font-medium", amount > 0 ? "text-success" : "text-destructive")}>
+                                    <span className={cn("text-xs font-medium leading-tight", amount > 0 ? "text-success" : "text-destructive")}>
                                       {formatCurrency(amount)}
                                     </span>
                                   )}
                                 </td>
                               );
                             })}
-                            <td className={cn("py-2 px-4 text-right font-semibold sticky right-0", rowBgClass, rowTotal > 0 ? "text-success" : rowTotal < 0 ? "text-destructive" : "")}>
+                            <td className={cn("py-2 px-3 text-right font-semibold sticky right-0 z-10", rowBgClass, rowTotal > 0 ? "text-success" : rowTotal < 0 ? "text-destructive" : "")}>
                               {rowTotal !== 0 ? formatCurrency(rowTotal) : '—'}
                             </td>
                           </tr>
@@ -815,7 +817,7 @@ export default function EnhancedDashboard() {
                     )}
                     {category === 'salary' && categoryStudents.length === 0 && Object.values(salaryAccrualsDaily).some((value) => value !== 0) && (
                       <tr className="border-b hover:bg-muted/20">
-                        <td className="py-2 px-4 sticky left-0 bg-card">
+                        <td className="py-2 px-3 sticky left-0 z-10 bg-card">
                           <div className="flex items-center gap-2">
                             <div className="min-w-0">
                               <p className="font-medium truncate">Нарахування зарплати</p>
@@ -827,16 +829,16 @@ export default function EnhancedDashboard() {
                           const dateStr = formatDateString(day);
                           const dayTotal = salaryAccrualsDaily[dateStr] || 0;
                           return (
-                            <td key={formatDateString(day)} className={cn("py-2 px-1 text-center", isWeekend(day) && "bg-muted/30")}>
+                            <td key={formatDateString(day)} className={cn("py-1.5 px-0.5 text-center", isWeekend(day) && WEEKEND_BG_COLOR)}>
                               {dayTotal !== 0 && (
-                                <span className="text-xs font-medium text-destructive">
+                                <span className="text-xs font-medium leading-tight text-destructive">
                                   {formatCurrency(Math.abs(dayTotal))}
                                 </span>
                               )}
                             </td>
                           );
                         })}
-                        <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-destructive">
+                        <td className="py-2 px-3 text-right font-semibold sticky right-0 z-10 bg-card text-destructive">
                           {formatCurrency(Math.abs(Object.values(salaryAccrualsDaily).reduce((sum, val) => sum + (val || 0), 0)))}
                         </td>
                       </tr>
@@ -844,7 +846,7 @@ export default function EnhancedDashboard() {
                     {/* Для категорій витрат без записів по дітях показуємо суму по транзакціях */}
                     {category !== 'salary' && categoryStudents.length === 0 && hasDailyTotals && (
                       <tr className="border-b hover:bg-muted/20">
-                        <td className="py-2 px-4 sticky left-0 bg-card">
+                        <td className="py-2 px-3 sticky left-0 z-10 bg-card">
                           <div className="flex items-center gap-2">
                             <div className="min-w-0">
                               <p className="font-medium truncate">Витрати за активностями</p>
@@ -856,22 +858,22 @@ export default function EnhancedDashboard() {
                           const dateStr = formatDateString(day);
                           const dayTotal = dailyTotals[category][dateStr] || 0;
                           return (
-                            <td key={formatDateString(day)} className={cn("py-2 px-1 text-center", isWeekend(day) && "bg-muted/30")}>
+                            <td key={formatDateString(day)} className={cn("py-1.5 px-0.5 text-center", isWeekend(day) && WEEKEND_BG_COLOR)}>
                               {dayTotal !== 0 && (
-                                <span className="text-xs font-medium text-destructive">
+                                <span className="text-xs font-medium leading-tight text-destructive">
                                   {formatCurrency(Math.abs(dayTotal))}
                                 </span>
                               )}
                             </td>
                           );
                         })}
-                        <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-destructive">
+                        <td className="py-2 px-3 text-right font-semibold sticky right-0 z-10 bg-card text-destructive">
                           {formatCurrency(Math.abs(summaryByCategory[category] || 0))}
                         </td>
                       </tr>
                     )}
                     <tr className="border-t-2 bg-muted/20 font-semibold">
-                      <td className="py-2 px-4 sticky left-0 bg-muted/20">Разом за день</td>
+                      <td className="py-2 px-3 sticky left-0 z-10 bg-muted/20">Разом за день</td>
                       {days.map((day) => {
                         const dateStr = formatDateString(day);
                         // Используем только данные из dashboardDataTable (через dailyTotalsByCategory)
@@ -879,12 +881,12 @@ export default function EnhancedDashboard() {
                         const dayTotal = dailyTotalsByCategory[category][dateStr] || 0;
                         const isIncome = category === 'income' || category === 'additional_income';
                         return (
-                          <td key={formatDateString(day)} className={cn("py-2 px-1 text-center text-xs", isWeekend(day) && "bg-muted/30", isIncome ? "text-success" : "text-destructive")}>
+                          <td key={formatDateString(day)} className={cn("py-1.5 px-0.5 text-center text-xs leading-tight", isWeekend(day) && WEEKEND_BG_COLOR, isIncome ? "text-success" : "text-destructive")}>
                             {dayTotal > 0 ? formatCurrency(dayTotal) : ''}
                           </td>
                         );
                       })}
-                      <td className={cn("py-2 px-4 text-right sticky right-0 bg-muted/20", (category === 'income' || category === 'additional_income') ? "text-success" : "text-destructive")}>
+                      <td className={cn("py-2 px-3 text-right sticky right-0 z-10 bg-muted/20", (category === 'income' || category === 'additional_income') ? "text-success" : "text-destructive")}>
                         {formatCurrency(summaryByCategory[category] || 0)}
                       </td>
                     </tr>
@@ -902,36 +904,37 @@ export default function EnhancedDashboard() {
             days={days}
             leftHeader="Розрахунок"
             rightHeader="Разом"
+            tableScrollRefs={tableScrollRefs}
           >
                 {/* Рядок "Доходи" */}
                 <tr className="border-b hover:bg-muted/20">
-                  <td className="py-2 px-4 sticky left-0 bg-card font-medium text-success">Доходи</td>
+                  <td className="py-2 px-3 sticky left-0 z-10 bg-card font-medium text-success">Доходи</td>
                   {days.map((day) => {
                     const dateStr = formatDateString(day);
                     const income = dailyDisplayTotals.income[dateStr] || 0;
                     return (
-                      <td key={formatDateString(day)} className={cn("py-2 px-1 text-center text-xs text-success", isWeekend(day) && "bg-muted/30")}>
+                      <td key={formatDateString(day)} className={cn("py-1.5 px-0.5 text-center text-xs leading-tight text-success", isWeekend(day) && WEEKEND_BG_COLOR)}>
                         {income > 0 ? formatCurrency(income) : ''}
                       </td>
                     );
                   })}
-                  <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-success">
+                  <td className="py-2 px-3 text-right font-semibold sticky right-0 z-10 bg-card text-success">
                     {formatCurrency(Object.values(dailyDisplayTotals.income).reduce((sum, val) => sum + val, 0))}
                   </td>
                 </tr>
                 {/* Рядок "Витрати" */}
                 <tr className="border-b hover:bg-muted/20">
-                  <td className="py-2 px-4 sticky left-0 bg-card font-medium text-destructive">Витрати</td>
+                  <td className="py-2 px-3 sticky left-0 z-10 bg-card font-medium text-destructive">Витрати</td>
                   {days.map((day) => {
                     const dateStr = formatDateString(day);
                     const expenses = (dailyDisplayTotals.expense[dateStr] || 0) + (dailyDisplayTotals.salary[dateStr] || 0);
                     return (
-                      <td key={formatDateString(day)} className={cn("py-2 px-1 text-center text-xs text-destructive", isWeekend(day) && "bg-muted/30")}>
+                      <td key={formatDateString(day)} className={cn("py-1.5 px-0.5 text-center text-xs leading-tight text-destructive", isWeekend(day) && WEEKEND_BG_COLOR)}>
                         {expenses > 0 ? formatCurrency(expenses) : ''}
                       </td>
                     );
                   })}
-                  <td className="py-2 px-4 text-right font-semibold sticky right-0 bg-card text-destructive">
+                  <td className="py-2 px-3 text-right font-semibold sticky right-0 z-10 bg-card text-destructive">
                     {formatCurrency(
                       Object.values(dailyDisplayTotals.expense).reduce((sum, val) => sum + val, 0) +
                       Object.values(dailyDisplayTotals.salary).reduce((sum, val) => sum + val, 0)
@@ -946,8 +949,8 @@ export default function EnhancedDashboard() {
                     const netTotal = dailyDisplayTotals.net[dateStr] || 0;
                     return (
                       <td key={formatDateString(day)} className={cn(
-                        "py-2 px-1 text-center text-xs font-semibold",
-                        isWeekend(day) && "bg-muted/30",
+                        "py-1.5 px-0.5 text-center text-xs font-semibold leading-tight",
+                        isWeekend(day) && WEEKEND_BG_COLOR,
                         netTotal >= 0 ? "text-success" : "text-destructive"
                       )}>
                         {netTotal !== 0 ? formatCurrency(netTotal) : ''}
@@ -955,7 +958,7 @@ export default function EnhancedDashboard() {
                     );
                   })}
                   <td className={cn(
-                    "py-2 px-4 text-right sticky right-0 bg-muted/20 font-semibold",
+                    "py-2 px-3 text-right sticky right-0 z-10 bg-muted/20 font-semibold",
                     Object.values(dailyDisplayTotals.net).reduce((sum, val) => sum + val, 0) >= 0 ? "text-success" : "text-destructive"
                   )}>
                     {formatCurrency(Object.values(dailyDisplayTotals.net).reduce((sum, val) => sum + val, 0))}
@@ -981,7 +984,8 @@ function StickyDateTable({
   rightHeader,
   children,
   topOffsetClass = 'top-16',
-  colWidths = { left: 200, day: 40, right: 100 },
+  colWidths = { left: 180, day: 36, right: 80 },
+  tableScrollRefs,
 }: {
   days: Date[];
   leftHeader: React.ReactNode;
@@ -989,6 +993,7 @@ function StickyDateTable({
   children: React.ReactNode;
   topOffsetClass?: string;
   colWidths?: { left: number; day: number; right: number };
+  tableScrollRefs?: React.MutableRefObject<Set<HTMLDivElement>>;
 }) {
   const headerRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -997,35 +1002,80 @@ function StickyDateTable({
     const body = bodyRef.current;
     if (!body) return;
 
-    const sync = () => {
+    // Добавляем этот body в набор для синхронизации
+    if (tableScrollRefs) {
+      tableScrollRefs.current.add(body);
+    }
+
+    // Синхронизация header с body
+    const syncHeader = () => {
       if (headerRef.current) {
         headerRef.current.scrollLeft = body.scrollLeft;
       }
     };
 
-    body.addEventListener('scroll', sync, { passive: true });
-    sync();
-    return () => body.removeEventListener('scroll', sync);
-  }, [days.length]);
+    // Синхронизация всех таблиц
+    const syncAll = (sourceBody: HTMLDivElement) => {
+      const scrollLeft = sourceBody.scrollLeft;
+      
+      // Синхронизируем все таблицы с источником
+      tableScrollRefs?.current.forEach((tableBody) => {
+        if (tableBody !== sourceBody && tableBody.scrollLeft !== scrollLeft) {
+          tableBody.scrollLeft = scrollLeft;
+        }
+      });
+      
+      // Обновляем header этой таблицы
+      if (headerRef.current) {
+        headerRef.current.scrollLeft = scrollLeft;
+      }
+    };
+
+    // Синхронизация при скролле этой таблицы
+    const syncOnScroll = () => {
+      syncAll(body);
+    };
+
+    body.addEventListener('scroll', syncOnScroll, { passive: true });
+    body.addEventListener('scroll', syncHeader, { passive: true });
+    
+
+    syncHeader();
+    
+    return () => {
+      body.removeEventListener('scroll', syncOnScroll);
+      body.removeEventListener('scroll', syncHeader);
+      if (tableScrollRefs) {
+        tableScrollRefs.current.delete(body);
+      }
+    };
+  }, [days.length, tableScrollRefs]);
+
+  const tableColGroup = (
+    <colgroup>
+      <col style={{ width: `${colWidths.left}px`, minWidth: `${colWidths.left}px` }} />
+      {days.map((day) => (
+        <col key={formatDateString(day)} style={{ width: `${colWidths.day}px`, minWidth: `${colWidths.day}px` }} />
+      ))}
+      <col style={{ width: `${colWidths.right}px`, minWidth: `${colWidths.right}px` }} />
+    </colgroup>
+  );
+
+  // Вычисляем общую ширину таблицы
+  const totalWidth = colWidths.left + (days.length * colWidths.day) + colWidths.right;
 
   return (
     <div className="space-y-0">
       <div className={cn("sticky z-20 bg-card", topOffsetClass)}>
-        <div ref={headerRef} className="overflow-x-hidden">
-          <div className="min-w-max">
-            <table className="w-full text-sm border-collapse">
-              <colgroup>
-                <col style={{ width: `${colWidths.left}px` }} />
-                {days.map((day) => (
-                  <col key={formatDateString(day)} style={{ width: `${colWidths.day}px` }} />
-                ))}
-                <col style={{ width: `${colWidths.right}px` }} />
-              </colgroup>
+        <div ref={headerRef} className="overflow-x-auto">
+          <div style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }}>
+            <table className="text-sm border-collapse table-fixed" style={{ width: `${totalWidth}px` }}>
+              {tableColGroup}
               <thead>
                 <tr className="border-b bg-muted/30">
                   <th
-                    className="text-left py-2 px-4 font-medium sticky left-0 bg-muted/30"
-                    style={{ width: colWidths.left }}
+                    className="text-left py-2 px-3 font-medium sticky left-0 z-30 bg-muted/30"
+                    style={{ width: `${colWidths.left}px` }}
                   >
                     {leftHeader}
                   </th>
@@ -1033,18 +1083,18 @@ function StickyDateTable({
                     <th
                       key={formatDateString(day)}
                       className={cn(
-                        "py-2 px-1 text-center font-medium bg-muted/30",
-                        isWeekend(day) && "bg-muted/50"
+                        "py-1.5 px-0.5 text-center font-medium bg-muted/30",
+                        isWeekend(day) && WEEKEND_BG_COLOR
                       )}
-                      style={{ width: colWidths.day }}
+                      style={{ width: `${colWidths.day}px` }}
                     >
-                      <div className="text-xs text-muted-foreground">{getWeekdayShort(day)}</div>
-                      <div>{formatShortDate(day)}</div>
+                      <div className="text-[11px] text-muted-foreground leading-tight">{getWeekdayShort(day)}</div>
+                      <div className="text-xs leading-tight">{formatShortDate(day)}</div>
                     </th>
                   ))}
                   <th
-                    className="py-2 px-4 text-right font-semibold sticky right-0 bg-muted/30"
-                    style={{ width: colWidths.right }}
+                    className="py-2 px-3 text-right font-semibold sticky right-0 z-30 bg-muted/30"
+                    style={{ width: `${colWidths.right}px` }}
                   >
                     {rightHeader}
                   </th>
@@ -1055,15 +1105,9 @@ function StickyDateTable({
         </div>
       </div>
       <div ref={bodyRef} className="overflow-x-auto">
-        <div className="min-w-max">
-          <table className="w-full text-sm border-collapse">
-            <colgroup>
-              <col style={{ width: `${colWidths.left}px` }} />
-              {days.map((day) => (
-                <col key={formatDateString(day)} style={{ width: `${colWidths.day}px` }} />
-              ))}
-              <col style={{ width: `${colWidths.right}px` }} />
-            </colgroup>
+        <div style={{ width: `${totalWidth}px`, minWidth: `${totalWidth}px` }}>
+          <table className="text-sm border-collapse table-fixed" style={{ width: `${totalWidth}px` }}>
+            {tableColGroup}
             <tbody>{children}</tbody>
           </table>
         </div>

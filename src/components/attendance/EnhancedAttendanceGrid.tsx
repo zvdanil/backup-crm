@@ -32,7 +32,8 @@ import {
   getDaysInMonth, 
   formatShortDate, 
   getWeekdayShort, 
-  isWeekend, 
+  isWeekend,
+  WEEKEND_BG_COLOR,
   calculateChargedAmount, 
   formatCurrency,
   calculateValueFromBillingRules,
@@ -1229,7 +1230,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                         key={dateStr}
                         className={cn(
                           "px-1 py-1 text-center text-xs font-medium",
-                          isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                          isWeekend(day) && WEEKEND_BG_COLOR
                         )}
                       >
                     {totals.present}
@@ -1259,7 +1260,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                           key={dateStr}
                           className={cn(
                             "px-1 py-1 text-center text-xs font-medium",
-                            isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                            isWeekend(day) && WEEKEND_BG_COLOR
                           )}
                         >
                           {value}
@@ -1283,7 +1284,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                         key={dateStr}
                         className={cn(
                           "px-1 py-1 text-center text-xs font-medium",
-                          isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                          isWeekend(day) && WEEKEND_BG_COLOR
                         )}
                       >
                     {payment > 0 ? formatCurrency(payment) : ''}
@@ -1314,7 +1315,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                         className={cn(
                           "px-1 py-2 text-center text-xs font-medium",
                           isWeekend(day)
-                            ? "text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20"
+                            ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
                             : "text-muted-foreground"
                         )}
                 >
@@ -1396,7 +1397,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                               key={dateStr}
                               className={cn(
                                 "p-0.5 text-center",
-                                isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                                isWeekend(day) && WEEKEND_BG_COLOR
                               )}
                             >
                               <EnhancedAttendanceCell
@@ -1490,7 +1491,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                             key={dateStr}
                             className={cn(
                               "p-0.5 text-center",
-                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                              isWeekend(day) && WEEKEND_BG_COLOR
                             )}
                           >
                             <EnhancedAttendanceCell

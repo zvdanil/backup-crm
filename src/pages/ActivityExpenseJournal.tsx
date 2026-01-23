@@ -14,7 +14,7 @@ import { useExpenseCategories, useCreateExpenseCategory } from '@/hooks/useExpen
 import { useExpenseArticles, useCreateExpenseArticle, useUpdateExpenseArticle, useDeleteExpenseArticle } from '@/hooks/useExpenseArticles';
 import { useExpenseJournalEntries, useUpsertExpenseJournalEntry, useDeleteExpenseJournalEntry } from '@/hooks/useExpenseJournalEntries';
 import { useStaff } from '@/hooks/useStaff';
-import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend } from '@/lib/attendance';
+import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 
@@ -409,7 +409,7 @@ export default function ActivityExpenseJournal() {
                         className={cn(
                           'px-1 py-2 text-center text-xs font-medium min-w-[56px]',
                           isWeekend(day)
-                            ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
+                            ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
                             : 'text-muted-foreground'
                         )}
                       >
@@ -440,7 +440,7 @@ export default function ActivityExpenseJournal() {
                             key={dateStr}
                             className={cn(
                               'px-1 py-1 text-center',
-                              isWeekend(day) && 'bg-amber-50/70 dark:bg-amber-900/20'
+                              isWeekend(day) && WEEKEND_BG_COLOR
                             )}
                           >
                             <Input

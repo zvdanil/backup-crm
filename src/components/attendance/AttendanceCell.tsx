@@ -13,6 +13,7 @@ import {
   ATTENDANCE_COEFFICIENTS,
   calculateChargedAmount,
   formatCurrency,
+  WEEKEND_BG_COLOR,
   type AttendanceStatus 
 } from '@/lib/attendance';
 import { X } from 'lucide-react';
@@ -54,7 +55,7 @@ export function AttendanceCell({
         <button
           className={cn(
             'w-9 h-9 rounded-md text-xs font-semibold transition-all hover:scale-105',
-            isWeekend && !status && 'bg-muted/50',
+            isWeekend && !status && WEEKEND_BG_COLOR,
             !status && !isWeekend && 'bg-muted hover:bg-muted/80',
             status && ATTENDANCE_COLORS[status],
             status && 'text-white shadow-sm'

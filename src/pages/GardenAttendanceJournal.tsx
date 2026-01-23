@@ -18,6 +18,7 @@ import {
   formatShortDate, 
   getWeekdayShort, 
   isWeekend,
+  WEEKEND_BG_COLOR,
   formatDateString
 } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
@@ -854,7 +855,7 @@ export default function GardenAttendanceJournal() {
                           key={dateStr}
                           className={cn(
                             "px-1 py-1 text-center text-xs font-medium border-l-2 border-border/60",
-                            isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                            isWeekend(day) && WEEKEND_BG_COLOR
                           )}
                         >
                           {dailyTotals[dateStr] || 0}
@@ -881,7 +882,7 @@ export default function GardenAttendanceJournal() {
                             key={dateStr}
                             className={cn(
                             "px-1 py-1 text-center text-xs font-medium border-l-2 border-border/60",
-                              isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                              isWeekend(day) && WEEKEND_BG_COLOR
                             )}
                           >
                             {value}
@@ -911,7 +912,7 @@ export default function GardenAttendanceJournal() {
                         className={cn(
                             "px-1 py-2 text-center text-xs font-medium bg-muted/50 border-l-2 border-border/60",
                             isWeekend(day)
-                              ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
+                              ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
                               : 'text-muted-foreground'
                           )}
                         >
@@ -932,7 +933,7 @@ export default function GardenAttendanceJournal() {
                             className={cn(
                               "px-1 py-1 text-center text-xs font-medium bg-muted/50 border-l-2 border-border/60",
                               isWeekend(day)
-                                ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
+                                ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
                                 : 'text-muted-foreground'
                             )}
                           >
@@ -1012,7 +1013,7 @@ export default function GardenAttendanceJournal() {
                                   key={dateStr}
                                   className={cn(
                                     "p-1 text-center border-l-2 border-border/50",
-                                    isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                                    isWeekend(day) && WEEKEND_BG_COLOR
                                   )}
                                 >
                                   <GardenAttendanceCell
@@ -1079,7 +1080,7 @@ export default function GardenAttendanceJournal() {
                                 key={dateStr}
                                 className={cn(
                                 "p-1 text-center border-l-2 border-border/50",
-                                  isWeekend(day) && "bg-amber-50/70 dark:bg-amber-900/20"
+                                  isWeekend(day) && WEEKEND_BG_COLOR
                                 )}
                               >
                                 <GardenAttendanceCell

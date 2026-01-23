@@ -17,7 +17,7 @@ import { useGroupLessonSessions, useUpsertGroupLessonSession, useDeleteGroupLess
 import { useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate, useDeleteStaffJournalEntry, useUpsertStaffJournalEntry } from '@/hooks/useStaffBilling';
 import { useStaff } from '@/hooks/useStaff';
 import { applyDeductionsToAmount } from '@/lib/staffSalary';
-import { formatCurrency, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend } from '@/lib/attendance';
+import { formatCurrency, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 
 const MONTHS = [
@@ -220,66 +220,75 @@ export default function GroupLessonsJournal() {
             <p>Немає групових занять для обраної активності</p>
           </div>
         ) : (
-          <div className="overflow-x-auto border rounded-xl">
-            <table className="w-full border-collapse">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground min-w-[220px]">
-                    Групове заняття
-                  </th>
+          <div className="border rounded-xl">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse table-fixed" style={{ minWidth: '100%' }}>
+                <colgroup>
+                  <col style={{ width: '180px', minWidth: '180px' }} />
                   {days.map((day) => (
-                    <th
-                      key={formatDateString(day)}
-                      className={cn(
-                        'px-1 py-2 text-center text-xs font-medium min-w-[52px]',
-                        isWeekend(day)
-                          ? 'text-muted-foreground/50 bg-amber-50/70 dark:bg-amber-900/20'
-                          : 'text-muted-foreground'
-                      )}
-                    >
-                      <div>{getWeekdayShort(day)}</div>
-                      <div className="font-semibold">{day.getDate()}</div>
-                    </th>
+                    <col key={formatDateString(day)} style={{ width: '36px', minWidth: '36px' }} />
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {groupLessons.map((lesson) => (
-                  <tr key={lesson.id} className="border-t">
-                    <td className="sticky left-0 z-10 bg-card px-4 py-3 text-sm font-medium">
-                      <div>{lesson.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {(lesson.staff || []).map((member) => member.full_name).join(', ') || 'Без викладачів'}
-                      </div>
-                    </td>
-                    {days.map((day) => {
-                      const dateStr = formatDateString(day);
-                      const key = `${lesson.id}-${dateStr}`;
-                      const value = localValues[key] ?? '';
-                      return (
-                        <td
-                          key={dateStr}
-                          className={cn(
-                            'px-1 py-1 text-center',
-                            isWeekend(day) && 'bg-amber-50/70 dark:bg-amber-900/20'
-                          )}
-                        >
-                          <Input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={value}
-                            onChange={(event) => handleValueChange(lesson.id, dateStr, event.target.value)}
-                            onBlur={() => handleValueBlur(lesson.id, dateStr)}
-                            className="h-8 w-14 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                          />
-                        </td>
-                      );
-                    })}
+                </colgroup>
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+                      Групове заняття
+                    </th>
+                    {days.map((day) => (
+                      <th
+                        key={formatDateString(day)}
+                        className={cn(
+                          'px-0.5 py-1.5 text-center text-[10px] font-medium',
+                          isWeekend(day)
+                            ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
+                            : 'text-muted-foreground'
+                        )}
+                        title={`${getWeekdayShort(day)} ${day.getDate()}`}
+                      >
+                        <div className="font-semibold leading-tight">{day.getDate()}</div>
+                        <div className="text-[9px] opacity-70">{getWeekdayShort(day).slice(0, 2)}</div>
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {groupLessons.map((lesson) => (
+                    <tr key={lesson.id} className="border-t">
+                      <td className="sticky left-0 z-10 bg-card px-3 py-2 text-xs font-medium">
+                        <div className="truncate">{lesson.name}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {(lesson.staff || []).map((member) => member.full_name).join(', ') || 'Без викладачів'}
+                        </div>
+                      </td>
+                      {days.map((day) => {
+                        const dateStr = formatDateString(day);
+                        const key = `${lesson.id}-${dateStr}`;
+                        const value = localValues[key] ?? '';
+                        return (
+                          <td
+                            key={dateStr}
+                            className={cn(
+                              'px-0.5 py-1 text-center',
+                              isWeekend(day) && WEEKEND_BG_COLOR
+                            )}
+                          >
+                            <Input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={value}
+                              onChange={(event) => handleValueChange(lesson.id, dateStr, event.target.value)}
+                              onBlur={() => handleValueBlur(lesson.id, dateStr)}
+                              className="h-7 w-9 text-xs text-center p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
