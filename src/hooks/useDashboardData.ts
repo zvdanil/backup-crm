@@ -107,14 +107,14 @@ export function useDashboardData(year: number, month: number) {
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
-          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
+          .range(0, 99999), // Получаем все записи за месяц
         supabase
           .from('staff_journal_entries' as any)
           .select('id, staff_id, activity_id, date, amount, base_amount, is_manual_override')
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
-          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
+          .range(0, 99999), // Получаем все записи за месяц
         supabase
           .from('finance_transactions' as any)
           .select(`
@@ -131,7 +131,7 @@ export function useDashboardData(year: number, month: number) {
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
-          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
+          .range(0, 99999), // Получаем все записи за месяц
       ]);
 
       // Логирование ошибок
@@ -152,11 +152,11 @@ export function useDashboardData(year: number, month: number) {
         throw financeTransactionsResult.error;
       }
       
-      // Проверяем, не обрезан ли результат (Supabase может вернуть count)
+      // Логируем результаты запросов
       console.log('[Dashboard Debug] Raw query results', {
         attendanceDataLength: attendanceResult.data?.length || 0,
-        attendanceHasMore: (attendanceResult as any).count !== undefined,
-        attendanceCount: (attendanceResult as any).count,
+        financeTransactionsLength: financeTransactionsResult.data?.length || 0,
+        staffExpensesLength: staffExpensesResult.data?.length || 0,
         timestamp: new Date().toISOString(),
       });
 
@@ -257,7 +257,7 @@ export function useCategorySummary(year: number, month: number) {
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
-          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
+          .range(0, 99999), // Получаем все записи за месяц
         supabase
           .from('finance_transactions' as any)
           .select(`
@@ -270,7 +270,7 @@ export function useCategorySummary(year: number, month: number) {
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
-          .range(0, 99999), // Получаем все записи (Supabase по умолчанию лимит 1000)
+          .range(0, 99999), // Получаем все записи за месяц
         supabase
           .from('staff_journal_entries' as any)
           .select('amount, date')
