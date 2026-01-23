@@ -324,7 +324,7 @@ export default function EnhancedDashboard() {
       totals.salary[expense.date] = (totals.salary[expense.date] || 0) + (expense.amount || 0);
     });
     return totals;
-  }, [data, allActivities, baseTariffIds, foodTariffIds]);
+  }, [data?.attendance, data?.enrollments, data?.financeTransactions, data?.staffExpenses, allActivities, baseTariffIds, foodTariffIds, dataUpdatedAt]);
 
   // Создаём промежуточную таблицу данных из отображаемых значений в дашборде
   // Эта таблица содержит те же значения, что выводятся в ячейках таблицы
@@ -1049,7 +1049,7 @@ function StickyDateTable({
         tableScrollRefs.current.delete(body);
       }
     };
-  }, [days.length, tableScrollRefs]);
+  }, [days.length]); // tableScrollRefs is a ref, doesn't need to be in dependencies
 
   const tableColGroup = (
     <colgroup>
