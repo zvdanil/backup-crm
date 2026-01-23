@@ -105,12 +105,16 @@ export function useDashboardData(year: number, month: number) {
           .from('attendance')
           .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit')
           .gte('date', startDate)
-          .lte('date', endDate),
+          .lte('date', endDate)
+          .order('date', { ascending: true })
+          .limit(10000), // Увеличиваем лимит, чтобы новые записи попадали в результат
         supabase
           .from('staff_journal_entries' as any)
           .select('id, staff_id, activity_id, date, amount, base_amount, is_manual_override')
           .gte('date', startDate)
-          .lte('date', endDate),
+          .lte('date', endDate)
+          .order('date', { ascending: true })
+          .limit(10000),
         supabase
           .from('finance_transactions')
           .select(`
@@ -125,7 +129,9 @@ export function useDashboardData(year: number, month: number) {
           `)
           .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
-          .lte('date', endDate),
+          .lte('date', endDate)
+          .order('date', { ascending: true })
+          .limit(10000),
       ]);
 
       if (enrollmentsResult.error) throw enrollmentsResult.error;
@@ -209,7 +215,9 @@ export function useCategorySummary(year: number, month: number) {
             )
           `)
           .gte('date', startDate)
-          .lte('date', endDate),
+          .lte('date', endDate)
+          .order('date', { ascending: true })
+          .limit(10000),
         supabase
           .from('finance_transactions')
           .select(`

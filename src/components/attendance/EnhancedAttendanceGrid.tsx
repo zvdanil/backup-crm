@@ -824,8 +824,18 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       const isManualEdit = existing?.manual_value_edit || false;
       const wasPresent = existing?.status === 'present';
       
+      console.log('[Dashboard Debug] EnhancedAttendanceGrid.handleStatusChange calling mutateAsync', {
+        enrollmentId,
+        date,
+        status,
+        chargedAmount,
+        finalValue,
+        isManualEdit,
+        timestamp: new Date().toISOString(),
+      });
+      
       try {
-        await setAttendance.mutateAsync({
+        const result = await setAttendance.mutateAsync({
           enrollment_id: enrollmentId,
           date,
           status,
@@ -833,6 +843,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           value: finalValue, // Використовуємо передане або розраховане value
           notes: null,
           manual_value_edit: isManualEdit,
+        });
+        
+        console.log('[Dashboard Debug] EnhancedAttendanceGrid.handleStatusChange mutateAsync success', {
+          result,
+          timestamp: new Date().toISOString(),
         });
         
         const updatedMap = new Map(attendanceMap);
