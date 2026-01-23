@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { ActivityCategory } from './useActivities';
 
@@ -64,7 +65,7 @@ export interface DashboardFinanceTransaction {
 
 
 export function useDashboardData(year: number, month: number) {
-  return useQuery({
+  const query = useQuery({
     queryKey: ['dashboard', 'full', year, month],
     refetchOnWindowFocus: true, // Обновлять при фокусе окна
     refetchOnMount: true, // Всегда обновлять при монтировании
@@ -152,6 +153,21 @@ export function useDashboardData(year: number, month: number) {
       return result;
     },
   });
+
+  // Логирование состояния запроса
+  useEffect(() => {
+    console.log('[Dashboard Debug] useDashboardData query state changed', {
+      year,
+      month,
+      isLoading: query.isLoading,
+      isFetching: query.isFetching,
+      isStale: query.isStale,
+      dataUpdatedAt: query.dataUpdatedAt ? new Date(query.dataUpdatedAt).toISOString() : null,
+      timestamp: new Date().toISOString(),
+    });
+  }, [query.isLoading, query.isFetching, query.isStale, query.dataUpdatedAt, year, month]);
+
+  return query;
 }
 
 export function useCategorySummary(year: number, month: number) {

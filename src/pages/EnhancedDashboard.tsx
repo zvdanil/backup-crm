@@ -52,6 +52,17 @@ export default function EnhancedDashboard() {
   const { data: summary, refetch: refetchSummary } = useCategorySummary(year, month);
   const { data: allActivities = [] } = useActivities();
 
+  // Логирование при монтировании компонента
+  useEffect(() => {
+    console.log('[Dashboard Debug] EnhancedDashboard mounted', {
+      year,
+      month,
+      isLoading,
+      hasData: !!data,
+      timestamp: new Date().toISOString(),
+    });
+  }, []);
+
   // Логирование изменений данных
   useEffect(() => {
     console.log('[Dashboard Debug] EnhancedDashboard data updated', {
