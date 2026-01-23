@@ -52,6 +52,16 @@ export default function EnhancedDashboard() {
   const { data: summary, refetch: refetchSummary } = useCategorySummary(year, month);
   const { data: allActivities = [] } = useActivities();
 
+  // Логирование изменений данных
+  useEffect(() => {
+    console.log('[Dashboard Debug] EnhancedDashboard data updated', {
+      dataUpdatedAt: dataUpdatedAt ? new Date(dataUpdatedAt).toISOString() : null,
+      attendanceCount: data?.attendance?.length || 0,
+      enrollmentsCount: data?.enrollments?.length || 0,
+      timestamp: new Date().toISOString(),
+    });
+  }, [data, dataUpdatedAt]);
+
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const selectedDay = days[selectedDayIndex] || days[0];
   const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
@@ -213,7 +223,18 @@ export default function EnhancedDashboard() {
 
   // Map attendance by enrollment_id + date (for regular journals)
   const attendanceMap = useMemo(() => {
-    if (!data?.attendance) return {};
+    console.log('[Dashboard Debug] attendanceMap useMemo recalculating', {
+      hasData: !!data?.attendance,
+      attendanceCount: data?.attendance?.length || 0,
+      dataUpdatedAt: dataUpdatedAt ? new Date(dataUpdatedAt).toISOString() : null,
+      timestamp: new Date().toISOString(),
+    });
+    
+    if (!data?.attendance) {
+      console.log('[Dashboard Debug] attendanceMap: no attendance data, returning empty map');
+      return {};
+    }
+    
     const map: Record<string, Record<string, number>> = {};
     data.attendance.forEach((att) => {
       if (!map[att.enrollment_id]) map[att.enrollment_id] = {};
@@ -223,6 +244,18 @@ export default function EnhancedDashboard() {
         : (att.charged_amount || 0);
       map[att.enrollment_id][att.date] = amount;
     });
+    
+    console.log('[Dashboard Debug] attendanceMap calculated', {
+      enrollmentIds: Object.keys(map).length,
+      totalEntries: Object.values(map).reduce((sum, dates) => sum + Object.keys(dates).length, 0),
+      sampleEntries: Object.entries(map).slice(0, 3).map(([enrollmentId, dates]) => ({
+        enrollmentId,
+        dates: Object.keys(dates).length,
+        sampleDate: Object.keys(dates)[0],
+      })),
+      timestamp: new Date().toISOString(),
+    });
+    
     return map;
   }, [data?.attendance, dataUpdatedAt]);
 
@@ -520,16 +553,31 @@ export default function EnhancedDashboard() {
   };
 
   const handleRefresh = async () => {
+    console.log('[Dashboard Debug] handleRefresh called', {
+      timestamp: new Date().toISOString(),
+    });
+    
     // Принудительно обновляем все данные дашборда
+    console.log('[Dashboard Debug] Invalidating queries in handleRefresh...');
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['attendance'] }),
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
     ]);
+    
     // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
-    await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+    console.log('[Dashboard Debug] Refetching queries in handleRefresh...');
+    const refetchResult = await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+    console.log('[Dashboard Debug] Refetch result in handleRefresh', {
+      refetchedQueries: refetchResult.length,
+    });
+    
     // Также вызываем refetch напрямую для гарантии
+    console.log('[Dashboard Debug] Calling direct refetch...');
     await Promise.all([refetchDashboard(), refetchSummary()]);
+    console.log('[Dashboard Debug] handleRefresh completed', {
+      timestamp: new Date().toISOString(),
+    });
   };
 
   const totalIncome = summaryByCategory.income + summaryByCategory.additional_income;

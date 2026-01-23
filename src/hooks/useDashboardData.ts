@@ -72,6 +72,14 @@ export function useDashboardData(year: number, month: number) {
     queryFn: async () => {
       const startDate = new Date(year, month, 1).toISOString().split('T')[0];
       const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      
+      console.log('[Dashboard Debug] useDashboardData.queryFn called', {
+        year,
+        month,
+        startDate,
+        endDate,
+        timestamp: new Date().toISOString(),
+      });
 
       const [enrollmentsResult, attendanceResult, staffExpensesResult, financeTransactionsResult] = await Promise.all([
         supabase
@@ -119,12 +127,29 @@ export function useDashboardData(year: number, month: number) {
       if (staffExpensesResult.error) throw staffExpensesResult.error;
       if (financeTransactionsResult.error) throw financeTransactionsResult.error;
 
-      return {
+      const result = {
         enrollments: enrollmentsResult.data as unknown as DashboardEnrollment[],
         attendance: attendanceResult.data as DashboardAttendance[],
         staffExpenses: (staffExpensesResult.data || []) as DashboardStaffExpense[],
         financeTransactions: (financeTransactionsResult.data || []) as DashboardFinanceTransaction[],
       };
+
+      console.log('[Dashboard Debug] useDashboardData.queryFn completed', {
+        enrollmentsCount: result.enrollments?.length || 0,
+        attendanceCount: result.attendance?.length || 0,
+        staffExpensesCount: result.staffExpenses?.length || 0,
+        financeTransactionsCount: result.financeTransactions?.length || 0,
+        attendanceSample: result.attendance?.slice(0, 3).map(a => ({
+          id: a.id,
+          enrollment_id: a.enrollment_id,
+          date: a.date,
+          value: a.value,
+          charged_amount: a.charged_amount,
+        })),
+        timestamp: new Date().toISOString(),
+      });
+
+      return result;
     },
   });
 }

@@ -116,15 +116,29 @@ export function useSetAttendance() {
       if (error) throw error;
       return data;
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
+      console.log('[Dashboard Debug] useSetAttendance.onSuccess called', {
+        attendanceId: data?.id,
+        enrollmentId: data?.enrollment_id,
+        date: data?.date,
+        timestamp: new Date().toISOString(),
+      });
+      
       // Invalidate all related queries
+      console.log('[Dashboard Debug] Invalidating queries...');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['attendance'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
       ]);
+      
       // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
-      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+      console.log('[Dashboard Debug] Refetching dashboard queries...');
+      const refetchResult = await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+      console.log('[Dashboard Debug] Refetch result', {
+        refetchedQueries: refetchResult.length,
+        timestamp: new Date().toISOString(),
+      });
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
