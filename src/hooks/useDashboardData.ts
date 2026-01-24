@@ -101,13 +101,54 @@ export function useDashboardData(year: number, month: number) {
             students (id, full_name),
             activities (id, name, default_price, color, category)
           `),
-        supabase
-          .from('attendance')
-          .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit', { count: 'exact' })
-          .gte('date', startDate)
-          .lte('date', endDate)
-          .order('date', { ascending: true })
-          .range(0, 99999), // Получаем все записи за месяц
+        (async () => {
+          // Используем пагинацию для получения всех записей (Supabase ограничивает до 1000 записей за раз)
+          let allAttendanceData: any[] = [];
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          let totalCount: number | null = null;
+          
+          while (hasMore) {
+            const { data, error, count } = await supabase
+              .from('attendance')
+              .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit', { count: 'exact' })
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .order('date', { ascending: true })
+              .range(from, from + pageSize - 1);
+            
+            if (error) throw error;
+            
+            // Сохраняем count из первого запроса
+            if (totalCount === null && count !== null) {
+              totalCount = count;
+            }
+            
+            if (data) {
+              allAttendanceData = [...allAttendanceData, ...data];
+            }
+            
+            // Проверяем, есть ли еще записи
+            hasMore = data && data.length === pageSize && (totalCount === null || allAttendanceData.length < totalCount);
+            from += pageSize;
+            
+            // Защита от бесконечного цикла
+            if (from > 100000) {
+              console.warn('[Dashboard Debug] Attendance pagination stopped at 100000 records');
+              break;
+            }
+          }
+          
+          console.log('[Dashboard Debug] Attendance pagination completed', {
+            totalRecords: allAttendanceData.length,
+            totalCount: totalCount,
+            pages: Math.ceil(from / pageSize),
+            timestamp: new Date().toISOString(),
+          });
+          
+          return { data: allAttendanceData, error: null, count: totalCount };
+        })(),
         supabase
           .from('staff_journal_entries' as any)
           .select('id, staff_id, activity_id, date, amount, base_amount, is_manual_override')
