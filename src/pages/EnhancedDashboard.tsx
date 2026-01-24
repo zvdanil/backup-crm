@@ -39,6 +39,72 @@ interface StudentGroup {
   }>;
 }
 
+// Хук для адаптивных ширин колонок
+function useAdaptiveColWidths(daysCount: number, isMobile: boolean) {
+  const [colWidths, setColWidths] = useState({ left: 180, day: 36, right: 80 });
+
+  useEffect(() => {
+    // На мобильных устройствах используем фиксированные значения
+    if (isMobile) {
+      setColWidths({ left: 180, day: 36, right: 80 });
+      return;
+    }
+
+    const calculateWidths = () => {
+      // Получаем ширину окна
+      const windowWidth = window.innerWidth;
+      
+      // Минимальные значения для читаемости
+      const minLeft = 150;
+      const minDay = 32;
+      const minRight = 70;
+      
+      // Фиксированные ширины для левой и правой колонок
+      const fixedLeft = 180;
+      const fixedRight = 80;
+      
+      // Вычисляем доступную ширину (учитываем padding контейнера p-8 = 64px)
+      // И небольшой запас для скроллбара и границ
+      const containerPadding = 80;
+      const availableWidth = windowWidth - containerPadding;
+      
+      // Вычисляем доступную ширину для колонок дней
+      const availableForDays = availableWidth - fixedLeft - fixedRight;
+      
+      // Вычисляем оптимальную ширину колонки дня
+      const optimalDayWidth = Math.floor(availableForDays / daysCount);
+      
+      // Используем оптимальную ширину, но не меньше минимума
+      const dayWidth = Math.max(minDay, optimalDayWidth);
+      
+      setColWidths({
+        left: fixedLeft,
+        day: dayWidth,
+        right: fixedRight,
+      });
+    };
+
+    // Вычисляем при монтировании и изменении размера окна
+    calculateWidths();
+    
+    // Используем debounce для оптимизации при изменении размера
+    let resizeTimeout: ReturnType<typeof setTimeout>;
+    const handleResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(calculateWidths, 150);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(resizeTimeout);
+    };
+  }, [daysCount, isMobile]);
+
+  return colWidths;
+}
+
 export default function EnhancedDashboard() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -76,6 +142,9 @@ export default function EnhancedDashboard() {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const selectedDay = days[selectedDayIndex] || days[0];
   const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
+  
+  // Адаптивные ширины колонок на основе ширины экрана
+  const adaptiveColWidths = useAdaptiveColWidths(days.length, isMobile);
 
   useEffect(() => {
     const today = new Date();
@@ -788,6 +857,7 @@ export default function EnhancedDashboard() {
                 leftHeader="Дитина / Активність"
                 rightHeader="Разом"
                 tableScrollRefs={tableScrollRefs}
+                colWidths={adaptiveColWidths}
               >
                     {categoryStudents.map((student, studentIndex) => 
                       student.activities.map((activity, activityIndex) => {
@@ -970,6 +1040,7 @@ export default function EnhancedDashboard() {
             leftHeader="Розрахунок"
             rightHeader="Разом"
             tableScrollRefs={tableScrollRefs}
+            colWidths={adaptiveColWidths}
           >
                 {/* Рядок "Доходи" */}
                 <tr className="border-b hover:bg-muted/20">
