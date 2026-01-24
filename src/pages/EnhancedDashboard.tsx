@@ -188,12 +188,54 @@ export default function EnhancedDashboard() {
 
   const enrollmentsWithAttendanceCharges = useMemo(() => {
     const set = new Set<string>();
-    data?.attendance?.forEach((att) => {
+    if (!data?.attendance || !Array.isArray(data.attendance)) {
+      console.log('[Dashboard Debug] enrollmentsWithAttendanceCharges: no attendance data');
+      return set;
+    }
+    
+    data.attendance.forEach((att) => {
       const amount = att.value !== null && att.value !== undefined ? att.value : (att.charged_amount || 0);
       if (amount !== 0) {
         set.add(att.enrollment_id);
       }
     });
+    
+    // Проверяем конкретную запись от 29.01.2026
+    const targetEnrollmentId = '18a9fb16-25cc-4b39-8ed8-ddf711af4e90';
+    const targetDate = '2026-01-29';
+    const targetAttendance = data.attendance.find(
+      (att) => att.enrollment_id === targetEnrollmentId && att.date === targetDate
+    );
+    
+    if (targetAttendance) {
+      const targetAmount = targetAttendance.value !== null && targetAttendance.value !== undefined 
+        ? targetAttendance.value 
+        : (targetAttendance.charged_amount || 0);
+      console.log('[Dashboard Debug] enrollmentsWithAttendanceCharges: target entry found', {
+        enrollmentId: targetEnrollmentId,
+        date: targetDate,
+        value: targetAttendance.value,
+        charged_amount: targetAttendance.charged_amount,
+        calculatedAmount: targetAmount,
+        willBeAdded: targetAmount !== 0,
+        isInSet: set.has(targetEnrollmentId),
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      console.log('[Dashboard Debug] enrollmentsWithAttendanceCharges: target entry NOT found', {
+        enrollmentId: targetEnrollmentId,
+        date: targetDate,
+        totalAttendanceRecords: data.attendance.length,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    
+    console.log('[Dashboard Debug] enrollmentsWithAttendanceCharges calculated', {
+      totalEnrollments: set.size,
+      targetEnrollmentInSet: set.has(targetEnrollmentId),
+      timestamp: new Date().toISOString(),
+    });
+    
     return set;
   }, [data?.attendance, dataUpdatedAt]);
 
@@ -209,10 +251,29 @@ export default function EnhancedDashboard() {
   }, [data?.financeTransactions, dataUpdatedAt]);
 
   const shouldShowEnrollment = useMemo(
-    () => (enrollment: { id: string; is_active: boolean; student_id: string; activity_id: string }) =>
-      enrollment.is_active ||
-      enrollmentsWithAttendanceCharges.has(enrollment.id) ||
-      enrollmentsWithTransactions.has(`${enrollment.student_id}:${enrollment.activity_id}`),
+    () => {
+      const targetEnrollmentId = '18a9fb16-25cc-4b39-8ed8-ddf711af4e90';
+      
+      return (enrollment: { id: string; is_active: boolean; student_id: string; activity_id: string }) => {
+        const result = enrollment.is_active ||
+          enrollmentsWithAttendanceCharges.has(enrollment.id) ||
+          enrollmentsWithTransactions.has(`${enrollment.student_id}:${enrollment.activity_id}`);
+        
+        // Логируем для целевого enrollment
+        if (enrollment.id === targetEnrollmentId) {
+          console.log('[Dashboard Debug] shouldShowEnrollment for target enrollment', {
+            enrollmentId: enrollment.id,
+            is_active: enrollment.is_active,
+            inAttendanceCharges: enrollmentsWithAttendanceCharges.has(enrollment.id),
+            inTransactions: enrollmentsWithTransactions.has(`${enrollment.student_id}:${enrollment.activity_id}`),
+            willShow: result,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        
+        return result;
+      };
+    },
     [enrollmentsWithAttendanceCharges, enrollmentsWithTransactions]
   );
 
@@ -353,6 +414,32 @@ export default function EnhancedDashboard() {
         : (att.charged_amount || 0);
       map[att.enrollment_id][att.date] = amount;
     });
+    
+    // Проверяем конкретную запись от 29.01.2026
+    const targetEnrollmentId = '18a9fb16-25cc-4b39-8ed8-ddf711af4e90';
+    const targetDate = '2026-01-29';
+    const targetEntry = data.attendance.find(
+      (att) => att.enrollment_id === targetEnrollmentId && att.date === targetDate
+    );
+    
+    if (targetEntry) {
+      console.log('[Dashboard Debug] Found target attendance entry in raw data', {
+        enrollmentId: targetEnrollmentId,
+        date: targetDate,
+        entry: targetEntry,
+        willBeInMap: map[targetEnrollmentId]?.[targetDate] !== undefined,
+        calculatedAmount: map[targetEnrollmentId]?.[targetDate],
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      console.log('[Dashboard Debug] Target attendance entry NOT found in raw data', {
+        enrollmentId: targetEnrollmentId,
+        date: targetDate,
+        totalAttendanceRecords: data.attendance.length,
+        sampleDates: data.attendance.slice(0, 5).map(a => ({ enrollmentId: a.enrollment_id, date: a.date })),
+        timestamp: new Date().toISOString(),
+      });
+    }
     
     console.log('[Dashboard Debug] attendanceMap calculated', {
       enrollmentIds: Object.keys(map).length,
