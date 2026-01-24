@@ -153,12 +153,14 @@ export default function GardenAttendanceJournal() {
     if (periodFilter !== 'month') return;
 
     // Wait for data to be loaded and DOM to be ready
+    let cleanup: (() => void) | null = null;
+
     const setupSync = () => {
       const header = headerScrollRef.current;
       const totals = totalsScrollRef.current;
       const body = bodyScrollRef.current;
       
-      if (!header || !body || !totals) return false;
+      if (!header || !body || !totals) return;
 
       const syncFromHeader = () => {
         const left = header.scrollLeft;
@@ -186,7 +188,7 @@ export default function GardenAttendanceJournal() {
       body.addEventListener('scroll', syncFromBody, { passive: true });
       totals.addEventListener('scroll', syncFromTotals, { passive: true });
       
-      return () => {
+      cleanup = () => {
         header.removeEventListener('scroll', syncFromHeader);
         body.removeEventListener('scroll', syncFromBody);
         totals.removeEventListener('scroll', syncFromTotals);
@@ -194,10 +196,9 @@ export default function GardenAttendanceJournal() {
     };
 
     // Use double requestAnimationFrame to ensure DOM is fully ready
-    let cleanup: (() => void) | false;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        cleanup = setupSync();
+        setupSync();
       });
     });
 
