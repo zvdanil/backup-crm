@@ -512,52 +512,6 @@ export default function GardenAttendanceJournal() {
     }
   }, []);
 
-  const handleFillPresentForMonth = useCallback(async () => {
-    setIsBulkUpdating(true);
-    const existingKeys = new Set((attendanceData || []).map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
-
-    try {
-      const tasks: Array<() => Promise<void>> = [];
-      for (const enrollment of filteredEnrollments) {
-        for (const day of days) {
-          const dateStr = formatDateString(day);
-          const key = `${enrollment.id}-${dateStr}`;
-          if (existingKeys.has(key)) continue;
-          tasks.push(async () => {
-            await handleStatusChange(enrollment.id, enrollment.student_id, dateStr, 'present');
-            existingKeys.add(key);
-          });
-        }
-      }
-      await runBatched(tasks, 10);
-    } finally {
-      setIsBulkUpdating(false);
-    }
-  }, [attendanceData, filteredEnrollments, days, handleStatusChange, runBatched]);
-
-  const handleClearMonth = useCallback(async () => {
-    setIsBulkUpdating(true);
-    const existingKeys = new Set((attendanceData || []).map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
-
-    try {
-      const tasks: Array<() => Promise<void>> = [];
-      for (const enrollment of filteredEnrollments) {
-        for (const day of days) {
-          const dateStr = formatDateString(day);
-          const key = `${enrollment.id}-${dateStr}`;
-          if (!existingKeys.has(key)) continue;
-          tasks.push(async () => {
-            await handleStatusChange(enrollment.id, enrollment.student_id, dateStr, null);
-            existingKeys.delete(key);
-          });
-        }
-      }
-      await runBatched(tasks, 10);
-    } finally {
-      setIsBulkUpdating(false);
-    }
-  }, [attendanceData, filteredEnrollments, days, handleStatusChange, runBatched]);
-
   const handleFillPresentForDate = useCallback(async (dateStr: string) => {
     setIsBulkUpdating(true);
     const existingKeys = new Set((attendanceData || []).map((entry: any) => `${entry.enrollment_id}-${entry.date}`));
@@ -721,24 +675,6 @@ export default function GardenAttendanceJournal() {
                 </Label>
               </div>
             )}
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleFillPresentForMonth}
-              disabled={isBulkUpdating}
-            >
-              Заповнити «П» за місяць
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClearMonth}
-              disabled={isBulkUpdating}
-            >
-              Очистити місяць
-            </Button>
           </div>
         </div>
 
