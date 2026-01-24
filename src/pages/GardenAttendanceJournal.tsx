@@ -152,37 +152,59 @@ export default function GardenAttendanceJournal() {
     // Skip sync for day/week filters as they don't need scrolling
     if (periodFilter !== 'month') return;
 
-    const header = headerScrollRef.current;
-    const totals = totalsScrollRef.current;
-    const body = bodyScrollRef.current;
-    
-    if (!header || !body) return;
+    // Wait for data to be loaded and DOM to be ready
+    const setupSync = () => {
+      const header = headerScrollRef.current;
+      const totals = totalsScrollRef.current;
+      const body = bodyScrollRef.current;
+      
+      if (!header || !body || !totals) return false;
 
-    const syncFromHeader = () => {
-      const left = header.scrollLeft;
-      if (totals) totals.scrollLeft = left;
-      if (body) body.scrollLeft = left;
-    };
+      const syncFromHeader = () => {
+        const left = header.scrollLeft;
+        if (totals && totals.scrollLeft !== left) totals.scrollLeft = left;
+        if (body && body.scrollLeft !== left) body.scrollLeft = left;
+      };
 
-    const syncFromBody = () => {
-      const left = body.scrollLeft;
-      if (header) header.scrollLeft = left;
-      if (totals) totals.scrollLeft = left;
-    };
+      const syncFromBody = () => {
+        const left = body.scrollLeft;
+        if (header && header.scrollLeft !== left) header.scrollLeft = left;
+        if (totals && totals.scrollLeft !== left) totals.scrollLeft = left;
+      };
 
-    // Use requestAnimationFrame to ensure DOM is ready
-    requestAnimationFrame(() => {
+      const syncFromTotals = () => {
+        const left = totals.scrollLeft;
+        if (header && header.scrollLeft !== left) header.scrollLeft = left;
+        if (body && body.scrollLeft !== left) body.scrollLeft = left;
+      };
+
+      // Initial sync
       syncFromHeader();
+
+      // Add event listeners
+      header.addEventListener('scroll', syncFromHeader, { passive: true });
+      body.addEventListener('scroll', syncFromBody, { passive: true });
+      totals.addEventListener('scroll', syncFromTotals, { passive: true });
+      
+      return () => {
+        header.removeEventListener('scroll', syncFromHeader);
+        body.removeEventListener('scroll', syncFromBody);
+        totals.removeEventListener('scroll', syncFromTotals);
+      };
+    };
+
+    // Use double requestAnimationFrame to ensure DOM is fully ready
+    let cleanup: (() => void) | false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        cleanup = setupSync();
+      });
     });
 
-    header.addEventListener('scroll', syncFromHeader, { passive: true });
-    body.addEventListener('scroll', syncFromBody, { passive: true });
-    
     return () => {
-      header.removeEventListener('scroll', syncFromHeader);
-      body.removeEventListener('scroll', syncFromBody);
+      if (cleanup) cleanup();
     };
-  }, [days.length, filteredEnrollments.length, periodFilter]);
+  }, [days.length, filteredEnrollments.length, periodFilter, attendanceData, attendanceLoading]);
 
   // Group and sort enrollments
   const groupedEnrollments = useMemo(() => {
