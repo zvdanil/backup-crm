@@ -4,6 +4,13 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { GardenAttendanceCell } from '@/components/attendance/GardenAttendanceCell';
 import { useEnrollments } from '@/hooks/useEnrollments';
@@ -19,7 +26,9 @@ import {
   getWeekdayShort, 
   isWeekend,
   WEEKEND_BG_COLOR,
-  formatDateString
+  formatDateString,
+  filterDaysByPeriod,
+  type PeriodFilter
 } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
@@ -35,6 +44,7 @@ export default function GardenAttendanceJournal() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
   const [controllerActivityId, setControllerActivityId] = useState<string>('');
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
@@ -92,8 +102,9 @@ export default function GardenAttendanceJournal() {
   const upsertTransaction = useUpsertFinanceTransaction();
   const deleteTransaction = useDeleteFinanceTransaction();
 
-  const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const selectedDay = days[selectedDayIndex] || days[0];
+  const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
+  const selectedDay = allDays[selectedDayIndex] || allDays[0];
   const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
 
   useEffect(() => {
@@ -644,13 +655,25 @@ export default function GardenAttendanceJournal() {
       
       <div className="p-4 sm:p-8">
         {/* Month navigation */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 gap-4">
           <Button variant="outline" size="icon" onClick={handlePrevMonth}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-lg font-semibold">
+          <h2 className="text-lg font-semibold flex-1 text-center">
             {MONTHS[month]} {year}
           </h2>
+          <div className="w-[140px]">
+            <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">День</SelectItem>
+                <SelectItem value="week">Тиждень</SelectItem>
+                <SelectItem value="month">Місяць</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button variant="outline" size="icon" onClick={handleNextMonth}>
             <ChevronRight className="h-4 w-4" />
           </Button>

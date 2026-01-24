@@ -38,7 +38,9 @@ import {
   formatCurrency,
   calculateValueFromBillingRules,
   calculateHourlyValueFromRule,
-  formatDateString
+  formatDateString,
+  filterDaysByPeriod,
+  type PeriodFilter
 } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
 import { useActivityPriceHistory, getBillingRulesForDate } from '@/hooks/useActivities';
@@ -58,6 +60,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
   const isMobile = useIsMobile();
@@ -89,8 +92,9 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const deleteStaffJournalEntry = useDeleteStaffJournalEntry();
   const createEnrollment = useCreateEnrollment();
 
-  const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const selectedDay = days[selectedDayIndex] || days[0];
+  const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
+  const selectedDay = allDays[selectedDayIndex] || allDays[0];
   const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
 
   useEffect(() => {
@@ -918,13 +922,25 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return (
       <div className="animate-fade-in">
         {/* Month navigation */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 gap-4">
           <Button variant="outline" size="icon" onClick={handlePrevMonth}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-lg font-semibold">
+          <h2 className="text-lg font-semibold flex-1 text-center">
             {MONTHS[month]} {year}
           </h2>
+          <div className="w-[140px]">
+            <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">День</SelectItem>
+                <SelectItem value="week">Тиждень</SelectItem>
+                <SelectItem value="month">Місяць</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <Button variant="outline" size="icon" onClick={handleNextMonth}>
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -991,13 +1007,25 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   return (
     <div className="animate-fade-in">
       {/* Month navigation */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-4">
         <Button variant="outline" size="icon" onClick={handlePrevMonth}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <h2 className="text-lg font-semibold">
+        <h2 className="text-lg font-semibold flex-1 text-center">
           {MONTHS[month]} {year}
         </h2>
+        <div className="w-[140px]">
+          <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="day">День</SelectItem>
+              <SelectItem value="week">Тиждень</SelectItem>
+              <SelectItem value="month">Місяць</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         <Button variant="outline" size="icon" onClick={handleNextMonth}>
           <ChevronRight className="h-4 w-4" />
         </Button>

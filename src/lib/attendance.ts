@@ -40,6 +40,53 @@ export const ATTENDANCE_COLORS: Record<AttendanceStatus, string> = {
 export const WEEKEND_BG_COLOR = 'bg-yellow-200/70 dark:bg-yellow-700/20';
 
 /**
+ * Period filter types for journal views
+ */
+export type PeriodFilter = 'day' | 'week' | 'month';
+
+/**
+ * Filter days array based on selected period
+ * @param days - Array of all days in the month
+ * @param period - Selected period: 'day' (today), 'week' (current week), 'month' (all days)
+ * @param currentDate - Optional current date (defaults to today)
+ * @returns Filtered array of days
+ */
+export function filterDaysByPeriod(
+  days: Date[],
+  period: PeriodFilter,
+  currentDate: Date = new Date()
+): Date[] {
+  if (period === 'month') {
+    return days;
+  }
+
+  if (period === 'day') {
+    const todayStr = formatDateString(currentDate);
+    return days.filter(day => formatDateString(day) === todayStr);
+  }
+
+  if (period === 'week') {
+    // Get current week: Monday to Sunday
+    const currentDay = currentDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // Adjust to get Monday
+    const monday = new Date(currentDate);
+    monday.setDate(currentDate.getDate() + mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+    
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return days.filter(day => {
+      const dayTime = day.getTime();
+      return dayTime >= monday.getTime() && dayTime <= sunday.getTime();
+    });
+  }
+
+  return days;
+}
+
+/**
  * Format currency in Ukrainian hryvnia
  */
 export function formatCurrency(amount: number): string {

@@ -17,7 +17,7 @@ import { useGroupLessonSessions, useUpsertGroupLessonSession, useDeleteGroupLess
 import { useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate, useDeleteStaffJournalEntry, useUpsertStaffJournalEntry } from '@/hooks/useStaffBilling';
 import { useStaff } from '@/hooks/useStaff';
 import { applyDeductionsToAmount } from '@/lib/staffSalary';
-import { formatCurrency, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
+import { formatCurrency, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR, filterDaysByPeriod, type PeriodFilter } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 
 const MONTHS = [
@@ -29,6 +29,7 @@ export default function GroupLessonsJournal() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [activityId, setActivityId] = useState<string>('');
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
 
@@ -44,7 +45,8 @@ export default function GroupLessonsJournal() {
   const upsertStaffEntry = useUpsertStaffJournalEntry();
   const deleteStaffEntry = useDeleteStaffJournalEntry();
 
-  const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
+  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
 
   const activityOptions = useMemo(() => {
     const allowed = activities.filter(
@@ -192,6 +194,18 @@ export default function GroupLessonsJournal() {
             <Button variant="outline" size="icon" onClick={handleNextMonth}>
               <ChevronRight className="h-4 w-4" />
             </Button>
+          </div>
+          <div className="w-[140px]">
+            <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">День</SelectItem>
+                <SelectItem value="week">Тиждень</SelectItem>
+                <SelectItem value="month">Місяць</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex items-center gap-3">
