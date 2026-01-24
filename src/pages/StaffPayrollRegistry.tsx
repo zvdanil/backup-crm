@@ -200,6 +200,32 @@ export default function StaffPayrollRegistry() {
 
   const activeStaff = useMemo(() => staff.filter(s => s.is_active), [staff]);
 
+  // Calculate totals for all columns
+  const totals = useMemo(() => {
+    let totalAccruedMonth = 0;
+    let totalAccruedAll = 0;
+    let totalPaidMonth = 0;
+    let totalPaidAll = 0;
+    let totalBalance = 0;
+
+    activeStaff.forEach(staffMember => {
+      const balance = staffBalances.get(staffMember.id) || { accrued: 0, paid: 0, balance: 0, accruedMonth: 0, paidMonth: 0 };
+      totalAccruedMonth += balance.accruedMonth;
+      totalAccruedAll += balance.accrued;
+      totalPaidMonth += balance.paidMonth;
+      totalPaidAll += balance.paid;
+      totalBalance += balance.balance;
+    });
+
+    return {
+      accruedMonth: totalAccruedMonth,
+      accruedAll: totalAccruedAll,
+      paidMonth: totalPaidMonth,
+      paidAll: totalPaidAll,
+      balance: totalBalance,
+    };
+  }, [activeStaff, staffBalances]);
+
   return (
     <div className="space-y-6">
       <PageHeader 
@@ -348,6 +374,30 @@ export default function StaffPayrollRegistry() {
                   </TableRow>
                 );
               })
+            )}
+            {/* Totals row */}
+            {activeStaff.length > 0 && (
+              <TableRow className="bg-muted/50 font-semibold border-t-2">
+                <TableCell className="font-semibold">
+                  Всього
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex flex-col items-end">
+                    <span>{formatCurrency(totals.accruedMonth)}</span>
+                    <span className="text-xs text-muted-foreground">всього: {formatCurrency(totals.accruedAll)}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex flex-col items-end">
+                    <span>{formatCurrency(totals.paidMonth)}</span>
+                    <span className="text-xs text-muted-foreground">всього: {formatCurrency(totals.paidAll)}</span>
+                  </div>
+                </TableCell>
+                <TableCell className={`text-right font-semibold ${totals.balance > 0 ? 'text-primary' : totals.balance < 0 ? 'text-red-500' : ''}`}>
+                  {formatCurrency(totals.balance)}
+                </TableCell>
+                <TableCell></TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>
