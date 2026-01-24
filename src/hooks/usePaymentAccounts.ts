@@ -6,6 +6,7 @@ export interface PaymentAccount {
   id: string;
   name: string;
   description: string | null;
+  details: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

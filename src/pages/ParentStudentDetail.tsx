@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useStudent } from '@/hooks/useStudents';
@@ -74,6 +74,14 @@ export default function ParentStudentDetail() {
     return map;
   }, [accounts]);
 
+  const accountDetailsMap = useMemo(() => {
+    const map = new Map<string, string | null>();
+    accounts.forEach((account) => map.set(account.id, account.details));
+    return map;
+  }, [accounts]);
+
+  const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
+
   const totalBalance = useMemo(() => 
     accountBalances.reduce((sum, item) => sum + (item.balance || 0), 0),
     [accountBalances]
@@ -141,16 +149,54 @@ export default function ParentStudentDetail() {
                 </span>
               </div>
               <div className="space-y-2 text-sm">
-                {accountBalances.map((account) => (
-                  <div key={account.account_id || 'none'} className="flex items-center justify-between">
-                    <span className="text-muted-foreground">
-                      {account.account_id ? (accountNameMap.get(account.account_id) || 'Без рахунку') : 'Без рахунку'}
-                    </span>
-                    <span className={cn(account.balance >= 0 ? 'text-success' : 'text-destructive')}>
-                      {account.balance >= 0 ? '+' : ''}{formatCurrency(account.balance)}
-                    </span>
-                  </div>
-                ))}
+                {accountBalances.map((account) => {
+                  const accountId = account.account_id || 'none';
+                  const accountName = accountId !== 'none' ? (accountNameMap.get(accountId) || 'Без рахунку') : 'Без рахунку';
+                  const accountDetails = accountId !== 'none' ? accountDetailsMap.get(accountId) : null;
+                  const balance = account.balance || 0;
+                  const isExpanded = expandedAccountId === accountId;
+                  const hasDetails = accountDetails && accountDetails.trim().length > 0;
+
+                  return (
+                    <div key={accountId} className="border rounded-lg overflow-hidden">
+                      <div 
+                        className={cn(
+                          "flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors",
+                          hasDetails && "cursor-pointer"
+                        )}
+                        onClick={() => hasDetails && setExpandedAccountId(isExpanded ? null : accountId)}
+                      >
+                        <div className="flex items-center gap-2 flex-1">
+                          <span className="text-muted-foreground">
+                            {accountName}
+                          </span>
+                          {hasDetails && (
+                            isExpanded ? (
+                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            )
+                          )}
+                        </div>
+                        <span className={cn(balance >= 0 ? 'text-success' : 'text-destructive', 'font-medium')}>
+                          {balance >= 0 ? '+' : ''}{formatCurrency(balance)}
+                        </span>
+                      </div>
+                      {isExpanded && hasDetails && (
+                        <div className="px-3 pb-3 pt-2 border-t bg-muted/30">
+                          <div className="text-xs font-medium text-muted-foreground mb-1">
+                            Сума до оплати: <span className={cn(balance < 0 ? 'text-destructive font-semibold' : 'text-foreground')}>
+                              {formatCurrency(Math.abs(balance))}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                            {accountDetails}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

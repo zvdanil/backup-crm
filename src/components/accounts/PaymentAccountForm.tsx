@@ -18,6 +18,7 @@ import type { PaymentAccount, PaymentAccountInsert } from '@/hooks/usePaymentAcc
 const accountSchema = z.object({
   name: z.string().min(2, 'Мінімум 2 символи').max(100),
   description: z.string().max(500).optional(),
+  details: z.string().max(2000).optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -43,6 +44,7 @@ export function PaymentAccountForm({
     defaultValues: {
       name: '',
       description: '',
+      details: '',
       is_active: true,
     },
   });
@@ -52,6 +54,7 @@ export function PaymentAccountForm({
       reset({
         name: initialData?.name || '',
         description: initialData?.description || '',
+        details: initialData?.details || '',
         is_active: initialData?.is_active ?? true,
       });
     }
@@ -63,6 +66,7 @@ export function PaymentAccountForm({
     onSubmit({
       name: data.name,
       description: data.description || null,
+      details: data.details || null,
       is_active: data.is_active ?? true,
     });
     reset();
@@ -97,6 +101,19 @@ export function PaymentAccountForm({
               placeholder="Додаткова інформація..."
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="details">Реквізити</Label>
+            <Textarea
+              id="details"
+              {...register('details')}
+              placeholder="IBAN, отримувач, призначення платежу..."
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">
+              Реквізити для оплати, які будуть відображатися в кабінеті батьків
+            </p>
           </div>
 
           <div className="flex items-center justify-between rounded-md border border-border p-3">
