@@ -156,23 +156,64 @@ export function useDashboardData(year: number, month: number) {
           .lte('date', endDate)
           .order('date', { ascending: true })
           .range(0, 99999), // Получаем все записи за месяц
-        supabase
-          .from('finance_transactions' as any)
-          .select(`
-            id,
-            student_id,
-            activity_id,
-            date,
-            amount,
-            type,
-            students (id, full_name),
-            activities (id, name, color, category)
-          `, { count: 'exact' })
-          .in('type', ['income', 'expense', 'salary', 'household'])
-          .gte('date', startDate)
-          .lte('date', endDate)
-          .order('date', { ascending: true })
-          .range(0, 99999), // Получаем все записи за месяц
+        (async () => {
+          // Используем пагинацию для получения всех записей finance_transactions (Supabase ограничивает до 1000 записей за раз)
+          let allFinanceTransactionsData: any[] = [];
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          let totalCount: number | null = null;
+          
+          while (hasMore) {
+            const { data, error, count } = await supabase
+              .from('finance_transactions' as any)
+              .select(`
+                id,
+                student_id,
+                activity_id,
+                date,
+                amount,
+                type,
+                students (id, full_name),
+                activities (id, name, color, category)
+              `, { count: 'exact' })
+              .in('type', ['income', 'expense', 'salary', 'household'])
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .order('date', { ascending: true })
+              .range(from, from + pageSize - 1);
+            
+            if (error) throw error;
+            
+            // Сохраняем count из первого запроса
+            if (totalCount === null && count !== null) {
+              totalCount = count;
+            }
+            
+            if (data) {
+              allFinanceTransactionsData = [...allFinanceTransactionsData, ...data];
+            }
+            
+            // Проверяем, есть ли еще записи
+            hasMore = data && data.length === pageSize && (totalCount === null || allFinanceTransactionsData.length < totalCount);
+            from += pageSize;
+            
+            // Защита от бесконечного цикла
+            if (from > 100000) {
+              console.warn('[Dashboard Debug] Finance transactions pagination stopped at 100000 records');
+              break;
+            }
+          }
+          
+          console.log('[Dashboard Debug] Finance transactions pagination completed', {
+            totalRecords: allFinanceTransactionsData.length,
+            totalCount: totalCount,
+            pages: Math.ceil(from / pageSize),
+            timestamp: new Date().toISOString(),
+          });
+          
+          return { data: allFinanceTransactionsData, error: null, count: totalCount };
+        })(),
       ]);
 
       // Логирование ошибок
@@ -251,6 +292,23 @@ export function useDashboardData(year: number, month: number) {
           total: (financeTransactionsResult as any).count,
         });
       }
+      
+      // Проверяем записи из Garden Attendance Journal (finance_transactions с type='income' для базовых тарифов и питания)
+      const gardenAttendanceTransactions = financeTransactionsResult.data?.filter(
+        (trans: any) => trans.type === 'income' && trans.student_id && trans.activity_id
+      ) || [];
+      
+      console.log('[Dashboard Debug] Garden Attendance Journal transactions', {
+        totalGardenTransactions: gardenAttendanceTransactions.length,
+        sampleTransactions: gardenAttendanceTransactions.slice(0, 5).map((t: any) => ({
+          student_id: t.student_id,
+          activity_id: t.activity_id,
+          date: t.date,
+          amount: t.amount,
+          activity_name: t.activities?.name,
+        })),
+        timestamp: new Date().toISOString(),
+      });
 
       const result = {
         enrollments: (enrollmentsResult.data || []) as unknown as DashboardEnrollment[],

@@ -476,7 +476,12 @@ export default function EnhancedDashboard() {
   // income = positive, expense = negative (for dashboard perspective)
   const financeTransactionsMap = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
-    data?.financeTransactions?.forEach((trans) => {
+    if (!data?.financeTransactions || !Array.isArray(data.financeTransactions)) {
+      console.log('[Dashboard Debug] financeTransactionsMap: no finance transactions data');
+      return map;
+    }
+    
+    data.financeTransactions.forEach((trans) => {
       if (!trans.student_id || !trans.activity_id) return;
       const key = `${trans.student_id}-${trans.activity_id}`;
       if (!map[key]) map[key] = {};
@@ -484,8 +489,30 @@ export default function EnhancedDashboard() {
       const amount = trans.type === 'income' ? (trans.amount || 0) : -(trans.amount || 0);
       map[key][trans.date] = (map[key][trans.date] || 0) + amount;
     });
+    
+    // Проверяем записи из Garden Attendance Journal (базовые тарифы и питание)
+    const gardenTransactions = data.financeTransactions.filter(
+      (trans) => trans.type === 'income' && 
+                 trans.student_id && 
+                 trans.activity_id &&
+                 (baseTariffIds.has(trans.activity_id) || foodTariffIds.has(trans.activity_id))
+    );
+    
+    console.log('[Dashboard Debug] financeTransactionsMap calculated', {
+      totalKeys: Object.keys(map).length,
+      totalGardenTransactions: gardenTransactions.length,
+      sampleGardenTransactions: gardenTransactions.slice(0, 3).map((t) => ({
+        key: `${t.student_id}-${t.activity_id}`,
+        date: t.date,
+        amount: t.amount,
+        activity_name: t.activities?.name,
+        inMap: map[`${t.student_id}-${t.activity_id}`]?.[t.date] !== undefined,
+      })),
+      timestamp: new Date().toISOString(),
+    });
+    
     return map;
-  }, [data?.financeTransactions, dataUpdatedAt]);
+  }, [data?.financeTransactions, dataUpdatedAt, baseTariffIds, foodTariffIds]);
 
   // Виправлення: сума лише за конкретний день, а не накопичувальний підсумок
   const dailyTotals = useMemo(() => {
@@ -590,6 +617,29 @@ export default function EnhancedDashboard() {
           // For Garden Attendance Journal base/food tariffs: use finance_transactions
           const transactionKey = `${student.studentId}-${activity.activityId}`;
           activityData = financeTransactionsMap[transactionKey] || {};
+          
+          // Логируем для диагностики Garden Attendance Journal
+          if (Object.keys(activityData).length === 0) {
+            console.log('[Dashboard Debug] Garden Attendance Journal: no data in financeTransactionsMap', {
+              studentId: student.studentId,
+              activityId: activity.activityId,
+              activityName: activity.activityName,
+              transactionKey,
+              availableKeys: Object.keys(financeTransactionsMap).slice(0, 10),
+              totalFinanceTransactions: data?.financeTransactions?.length || 0,
+              timestamp: new Date().toISOString(),
+            });
+          } else {
+            console.log('[Dashboard Debug] Garden Attendance Journal: data found in financeTransactionsMap', {
+              studentId: student.studentId,
+              activityId: activity.activityId,
+              activityName: activity.activityName,
+              transactionKey,
+              datesWithData: Object.keys(activityData).slice(0, 5),
+              totalDates: Object.keys(activityData).length,
+              timestamp: new Date().toISOString(),
+            });
+          }
         } else {
           // For regular journals: use attendance
           activityData = attendanceMap[enrollment.id] || {};
