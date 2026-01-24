@@ -103,7 +103,7 @@ export function useDashboardData(year: number, month: number) {
           `),
         supabase
           .from('attendance')
-          .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit')
+          .select('id, enrollment_id, date, status, charged_amount, value, manual_value_edit', { count: 'exact' })
           .gte('date', startDate)
           .lte('date', endDate)
           .order('date', { ascending: true })
@@ -126,7 +126,7 @@ export function useDashboardData(year: number, month: number) {
             type,
             students (id, full_name),
             activities (id, name, color, category)
-          `)
+          `, { count: 'exact' })
           .in('type', ['income', 'expense', 'salary', 'household'])
           .gte('date', startDate)
           .lte('date', endDate)
@@ -155,10 +155,27 @@ export function useDashboardData(year: number, month: number) {
       // Логируем результаты запросов
       console.log('[Dashboard Debug] Raw query results', {
         attendanceDataLength: attendanceResult.data?.length || 0,
+        attendanceCount: (attendanceResult as any).count,
         financeTransactionsLength: financeTransactionsResult.data?.length || 0,
+        financeTransactionsCount: (financeTransactionsResult as any).count,
         staffExpensesLength: staffExpensesResult.data?.length || 0,
+        staffExpensesCount: (staffExpensesResult as any).count,
         timestamp: new Date().toISOString(),
       });
+      
+      // Проверяем, не обрезан ли результат
+      if ((attendanceResult as any).count && (attendanceResult as any).count > (attendanceResult.data?.length || 0)) {
+        console.warn('[Dashboard Debug] Attendance data truncated!', {
+          returned: attendanceResult.data?.length || 0,
+          total: (attendanceResult as any).count,
+        });
+      }
+      if ((financeTransactionsResult as any).count && (financeTransactionsResult as any).count > (financeTransactionsResult.data?.length || 0)) {
+        console.warn('[Dashboard Debug] Finance transactions data truncated!', {
+          returned: financeTransactionsResult.data?.length || 0,
+          total: (financeTransactionsResult as any).count,
+        });
+      }
 
       const result = {
         enrollments: (enrollmentsResult.data || []) as unknown as DashboardEnrollment[],
