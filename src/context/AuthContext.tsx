@@ -41,6 +41,75 @@ const logAuth = (...args: any[]) => {
   }
 };
 
+// Кэширование профиля в localStorage
+const PROFILE_CACHE_KEY = 'auth_profile_cache';
+const PROFILE_CACHE_TTL = 30 * 60 * 1000; // 30 минут
+
+interface ProfileCache {
+  profile: UserProfile;
+  timestamp: number;
+  userId: string;
+}
+
+function getCachedProfile(userId: string): UserProfile | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const cached = window.localStorage.getItem(PROFILE_CACHE_KEY);
+    if (!cached) return null;
+    
+    const cache: ProfileCache = JSON.parse(cached);
+    const now = Date.now();
+    
+    // Проверяем валидность кэша
+    if (cache.userId !== userId) {
+      logAuth('cache:invalid-user', { cachedUserId: cache.userId, currentUserId: userId });
+      clearCachedProfile();
+      return null;
+    }
+    
+    if (now - cache.timestamp > PROFILE_CACHE_TTL) {
+      logAuth('cache:expired', { ageMs: now - cache.timestamp });
+      clearCachedProfile();
+      return null;
+    }
+    
+    logAuth('cache:hit', { userId, ageMs: now - cache.timestamp });
+    return cache.profile;
+  } catch (error) {
+    logAuth('cache:error', { error });
+    clearCachedProfile();
+    return null;
+  }
+}
+
+function setCachedProfile(profile: UserProfile): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const cache: ProfileCache = {
+      profile,
+      timestamp: Date.now(),
+      userId: profile.id,
+    };
+    window.localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(cache));
+    logAuth('cache:set', { userId: profile.id });
+    
+    // Уведомляем другие вкладки об обновлении кэша
+    window.localStorage.setItem(`${PROFILE_CACHE_KEY}_updated`, Date.now().toString());
+  } catch (error) {
+    logAuth('cache:set-error', { error });
+  }
+}
+
+function clearCachedProfile(): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem(PROFILE_CACHE_KEY);
+    logAuth('cache:cleared');
+  } catch (error) {
+    logAuth('cache:clear-error', { error });
+  }
+}
+
 async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
   const startedAt = performance.now();
   logAuth('fetchOrCreateProfile:start', { userId: user.id, email: user.email });
@@ -64,24 +133,15 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
       isActive: (existing as UserProfile).is_active,
       durationMs: Math.round(performance.now() - startedAt),
     });
+    // Сохраняем в кэш
+    setCachedProfile(existing as UserProfile);
     return existing as UserProfile;
   }
 
-  // Профиль не найден - проверяем, сколько всего профилей (для определения роли)
-  const { data: existingProfiles, error: countError } = await supabase
-    .from('user_profiles')
-    .select('id')
-    .limit(1);
-
-  if (countError) {
-    logAuth('fetchOrCreateProfile:error:count', { message: countError.message, code: countError.code });
-    throw countError;
-  }
-
-  const isFirstUser = !existingProfiles || existingProfiles.length === 0;
-  const role: UserRole = isFirstUser ? 'owner' : 'newregistration';
+  // Профиль не найден - создаем новый с ролью 'newregistration'
+  const role: UserRole = 'newregistration';
   const fullName = user.user_metadata?.full_name || user.user_metadata?.name || null;
-  logAuth('fetchOrCreateProfile:create', { userId: user.id, role, isFirstUser, fullName });
+  logAuth('fetchOrCreateProfile:create', { userId: user.id, role, fullName });
 
   // Пытаемся создать профиль
   // Используем ON CONFLICT для обработки race condition (если триггер уже создал профиль)
@@ -91,7 +151,7 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
       id: user.id,
       full_name: fullName,
       role,
-      is_active: isFirstUser,
+      is_active: false, // Новые пользователи неактивны по умолчанию
     })
     .select('*')
     .single();
@@ -100,8 +160,7 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
     // Если ошибка из-за конфликта (профиль уже существует), пытаемся получить его
     if (createError.code === '23505' || createError.message.includes('duplicate') || createError.message.includes('unique')) {
       logAuth('fetchOrCreateProfile:conflict-retry', { userId: user.id });
-      // Небольшая задержка и повторная попытка получить профиль
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Сразу повторная попытка получить профиль (без задержки)
       const { data: retryProfile, error: retryError } = await supabase
         .from('user_profiles')
         .select('*')
@@ -119,6 +178,8 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
           role: (retryProfile as UserProfile).role,
           durationMs: Math.round(performance.now() - startedAt),
         });
+        // Сохраняем в кэш
+        setCachedProfile(retryProfile as UserProfile);
         return retryProfile as UserProfile;
       }
     }
@@ -133,6 +194,8 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
     isActive: (created as UserProfile).is_active,
     durationMs: Math.round(performance.now() - startedAt),
   });
+  // Сохраняем в кэш
+  setCachedProfile(created as UserProfile);
   return created as UserProfile;
 }
 
@@ -172,16 +235,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadProfile = useCallback(async (currentUser: User) => {
     if (profilePromiseRef.current) return profilePromiseRef.current;
 
-    // Уменьшаем таймаут до 10 секунд и увеличиваем количество попыток
+    // Проверяем кэш перед запросом к БД
+    const cached = getCachedProfile(currentUser.id);
+    if (cached) {
+      logAuth('loadProfile:from-cache', { userId: currentUser.id });
+      return cached;
+    }
+
+    // Оптимизированные таймауты: 5 секунд, 2 попытки, задержка 500ms
     const request = withRetry(
-      () => withTimeout(fetchOrCreateProfile(currentUser), 10000, 'Profile load timeout'),
-      3,
-      1000
+      () => withTimeout(fetchOrCreateProfile(currentUser), 5000, 'Profile load timeout'),
+      2,
+      500
     );
 
     profilePromiseRef.current = request;
     try {
-      return await request;
+      const profile = await request;
+      // Профиль уже сохранен в кэш внутри fetchOrCreateProfile
+      return profile;
     } finally {
       profilePromiseRef.current = null;
     }
@@ -210,15 +282,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Для новых регистраций (SIGNED_IN после OAuth) даем время триггеру создать профиль
+      // Проверяем кэш перед загрузкой из БД
+      const cached = getCachedProfile(userId);
+      if (cached) {
+        logAuth('authStateChange:profile-from-cache', { userId, event });
+        setProfile(cached);
+        lastProfileUserIdRef.current = userId;
+        setIsLoading(false);
+        return;
+      }
+
+      // Для новых регистраций (SIGNED_IN после OAuth) логируем, но не ждем
       const isNewRegistration = event === 'SIGNED_IN' && !lastProfileUserIdRef.current;
       if (isNewRegistration) {
         logAuth('authStateChange:new-registration', { userId });
-        // Небольшая задержка для триггера базы данных
-        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Загружаем профиль только если userId изменился
+      // Загружаем профиль только если userId изменился и кэша нет
       try {
         const profileData = await loadProfile(newSession.user);
         setProfile(profileData);
@@ -282,6 +362,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Пользователь вышел
       setProfile(null);
       lastProfileUserIdRef.current = null;
+      clearCachedProfile();
     }
     
     setIsLoading(false);
@@ -371,7 +452,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (session?.user) {
         logAuth('initialSession:found', { userId: session.user.id, hasOAuthCode });
-        handleAuthChange('INITIAL_SESSION', session);
+        
+        // Проверяем кэш перед вызовом handleAuthChange
+        const cached = getCachedProfile(session.user.id);
+        if (cached) {
+          logAuth('initialSession:from-cache', { userId: session.user.id });
+          setProfile(cached);
+          setSession(session);
+          setUser(session.user);
+          lastProfileUserIdRef.current = session.user.id;
+          setIsLoading(false);
+        } else {
+          handleAuthChange('INITIAL_SESSION', session);
+        }
         
         // Очищаем OAuth параметры из URL после успешной загрузки сессии
         if (hasOAuthCode) {
@@ -403,16 +496,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await handleAuthChange(event, newSession);
     });
 
+    // Синхронизация кэша профиля между вкладками
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === `${PROFILE_CACHE_KEY}_updated` && e.newValue) {
+        logAuth('cache:sync-from-storage', { timestamp: e.newValue });
+        // Обновляем профиль из кэша, если текущий пользователь совпадает
+        if (user?.id) {
+          const cached = getCachedProfile(user.id);
+          if (cached) {
+            setProfile(cached);
+            lastProfileUserIdRef.current = user.id;
+            logAuth('cache:synced', { userId: user.id });
+          }
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
     // Очистка при размонтировании
     return () => {
       subscription.subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
       // Очищаем retry таймер при размонтировании
       if (profileRetryTimerRef.current) {
         clearTimeout(profileRetryTimerRef.current);
         profileRetryTimerRef.current = null;
       }
     };
-  }, [handleAuthChange]);
+  }, [handleAuthChange, user]);
 
   const signInWithProvider = useCallback(async (provider: 'google' | 'apple') => {
     console.log('[Auth] signInWithProvider called', { provider, url: window.location.origin });
@@ -462,6 +574,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signOut();
     if (error) {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+    } else {
+      // Очищаем кэш при выходе
+      clearCachedProfile();
     }
   }, []);
 
