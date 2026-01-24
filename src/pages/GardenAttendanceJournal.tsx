@@ -843,7 +843,7 @@ export default function GardenAttendanceJournal() {
         </div>
       ) : (
         <div className="space-y-3">
-          <div ref={totalsScrollRef} className="overflow-hidden border rounded-xl bg-card">
+          <div ref={totalsScrollRef} className={periodFilter === 'month' ? 'overflow-x-auto border rounded-xl bg-card' : 'overflow-hidden border rounded-xl bg-card'}>
             <div className="min-w-max">
               <table className="w-full border-collapse">
                 {tableColGroup}
