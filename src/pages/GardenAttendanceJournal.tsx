@@ -147,20 +147,42 @@ export default function GardenAttendanceJournal() {
     });
   }, [selectedGroups, visibleEnrollments]);
 
+  // Sync scroll between header, totals, and body (only for month view)
   useEffect(() => {
-    const header = headerScrollRef.current;
-    if (!header) return;
+    // Skip sync for day/week filters as they don't need scrolling
+    if (periodFilter !== 'month') return;
 
-    const sync = () => {
+    const header = headerScrollRef.current;
+    const totals = totalsScrollRef.current;
+    const body = bodyScrollRef.current;
+    
+    if (!header || !body) return;
+
+    const syncFromHeader = () => {
       const left = header.scrollLeft;
-      if (totalsScrollRef.current) totalsScrollRef.current.scrollLeft = left;
-      if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = left;
+      if (totals) totals.scrollLeft = left;
+      if (body) body.scrollLeft = left;
     };
 
-    header.addEventListener('scroll', sync, { passive: true });
-    sync();
-    return () => header.removeEventListener('scroll', sync);
-  }, [days.length, filteredEnrollments.length]);
+    const syncFromBody = () => {
+      const left = body.scrollLeft;
+      if (header) header.scrollLeft = left;
+      if (totals) totals.scrollLeft = left;
+    };
+
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      syncFromHeader();
+    });
+
+    header.addEventListener('scroll', syncFromHeader, { passive: true });
+    body.addEventListener('scroll', syncFromBody, { passive: true });
+    
+    return () => {
+      header.removeEventListener('scroll', syncFromHeader);
+      body.removeEventListener('scroll', syncFromBody);
+    };
+  }, [days.length, filteredEnrollments.length, periodFilter]);
 
   // Group and sort enrollments
   const groupedEnrollments = useMemo(() => {
@@ -936,7 +958,7 @@ export default function GardenAttendanceJournal() {
             </div>
           </div>
 
-          <div ref={bodyScrollRef} className="overflow-x-hidden border rounded-xl">
+          <div ref={bodyScrollRef} className={periodFilter === 'month' ? 'overflow-x-auto border rounded-xl' : 'overflow-x-hidden border rounded-xl'}>
             <div className={periodFilter === 'month' ? 'min-w-max' : ''}>
               <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
                 {tableColGroup}
