@@ -333,12 +333,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setProfile(retryProfile);
                 lastProfileUserIdRef.current = currentUserId;
                 logAuth('authStateChange:profile-retry-success', { userId: currentUserId, retryCount });
+                setIsLoading(false);
               } catch (retryError: any) {
                 logAuth('authStateChange:profile-retry-error', { message: retryError?.message, retryCount });
                 // Планируем следующую попытку
                 if (retryCount < maxRetries) {
                   profileRetryTimerRef.current = setTimeout(retryLoad, 2000 * retryCount);
                 } else {
+                  // После всех попыток устанавливаем isLoading в false, чтобы не блокировать интерфейс
+                  setIsLoading(false);
                   toast({ 
                     title: 'Помилка профілю', 
                     description: 'Не вдалося завантажити профіль. Спробуйте оновити сторінку.', 
@@ -352,10 +355,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 userId: currentUserId,
                 retryCount
               });
+              // Если пропускаем retry, все равно устанавливаем isLoading в false
+              setIsLoading(false);
             }
           };
           
           profileRetryTimerRef.current = setTimeout(retryLoad, isNewRegistration ? 1000 : 2000);
+        } else {
+          // Если retry уже запущен, все равно устанавливаем isLoading в false после небольшой задержки
+          // чтобы не блокировать интерфейс навсегда
+          setTimeout(() => {
+            if (lastProfileUserIdRef.current !== newSession.user.id) {
+              setIsLoading(false);
+            }
+          }, 5000);
         }
       }
     } else {
@@ -382,6 +395,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
       return;
     }
+
+    // Защита от повторной инициализации
+    if (initialSessionHandledRef.current) {
+      logAuth('initialSession:skip-already-handled');
+      return;
+    }
+
+    // Устанавливаем флаг сразу, чтобы предотвратить повторные вызовы
+    initialSessionHandledRef.current = true;
 
     // Обработка OAuth callback URL (очистка параметров после обработки)
     const urlParams = new URLSearchParams(window.location.search);
@@ -463,7 +485,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           lastProfileUserIdRef.current = session.user.id;
           setIsLoading(false);
         } else {
-          handleAuthChange('INITIAL_SESSION', session);
+          // Вызываем handleAuthChange и ждем завершения, чтобы isLoading был установлен правильно
+          handleAuthChange('INITIAL_SESSION', session).catch((error) => {
+            console.error('[Auth] Error in handleAuthChange during initial session', error);
+            // В случае ошибки все равно устанавливаем isLoading в false, чтобы не блокировать интерфейс
+            setIsLoading(false);
+          });
         }
         
         // Очищаем OAuth параметры из URL после успешной загрузки сессии
@@ -479,6 +506,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setIsLoading(false);
       }
+    }).catch((error) => {
+      console.error('[Auth] Error getting initial session (promise rejection)', error);
+      setIsLoading(false);
     });
 
     // Подписка на изменения состояния авторизации
