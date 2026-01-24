@@ -163,6 +163,40 @@ export function useDashboardData(year: number, month: number) {
         timestamp: new Date().toISOString(),
       });
       
+      // Проверяем конкретную запись от 29.01.2026
+      const targetEnrollmentId = '18a9fb16-25cc-4b39-8ed8-ddf711af4e90';
+      const targetDate = '2026-01-29';
+      const targetAttendance = attendanceResult.data?.find(
+        (att: any) => att.enrollment_id === targetEnrollmentId && att.date === targetDate
+      );
+      
+      if (targetAttendance) {
+        console.log('[Dashboard Debug] Target attendance entry found in query results', {
+          enrollmentId: targetEnrollmentId,
+          date: targetDate,
+          entry: targetAttendance,
+          value: targetAttendance.value,
+          charged_amount: targetAttendance.charged_amount,
+          calculatedAmount: targetAttendance.value !== null && targetAttendance.value !== undefined 
+            ? targetAttendance.value 
+            : (targetAttendance.charged_amount || 0),
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        console.log('[Dashboard Debug] Target attendance entry NOT found in query results', {
+          enrollmentId: targetEnrollmentId,
+          date: targetDate,
+          startDate,
+          endDate,
+          totalAttendanceRecords: attendanceResult.data?.length || 0,
+          sampleDates: attendanceResult.data?.slice(0, 5).map((a: any) => ({ 
+            enrollment_id: a.enrollment_id, 
+            date: a.date 
+          })),
+          timestamp: new Date().toISOString(),
+        });
+      }
+      
       // Проверяем, не обрезан ли результат
       if ((attendanceResult as any).count && (attendanceResult as any).count > (attendanceResult.data?.length || 0)) {
         console.warn('[Dashboard Debug] Attendance data truncated!', {
