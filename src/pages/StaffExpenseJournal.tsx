@@ -317,7 +317,26 @@ export default function StaffExpenseJournal() {
     const key = `${staffId}-${activityId || 'null'}-${date}-manual`;
     const existing = journalMap.get(key);
     setEditingCell({ staffId, activityId, date });
-    setManualValue(existing?.amount.toString() || '');
+    
+    // Для почасовых ставок показываем часы, для остальных - сумму
+    const history = manualRateHistoryMap.get(staffId);
+    const currentRate = getStaffManualRateForDate(history, date, activityId || null);
+    const rateType = currentRate?.manual_rate_type || null;
+    
+    if (rateType === 'hourly' && existing?.hours_worked !== null && existing?.hours_worked !== undefined) {
+      setManualValue(existing.hours_worked.toString());
+    } else if (rateType === 'per_session') {
+      // Для per_session вычисляем количество занятий из суммы и ставки
+      const rateValue = currentRate?.manual_rate_value || 0;
+      if (existing && rateValue > 0) {
+        const sessions = existing.amount / rateValue;
+        setManualValue(sessions.toString());
+      } else {
+        setManualValue(existing?.amount.toString() || '');
+      }
+    } else {
+      setManualValue(existing?.amount.toString() || '');
+    }
   };
 
   const handleSaveManualEntry = () => {
@@ -383,6 +402,7 @@ export default function StaffExpenseJournal() {
         date: editingCell.date,
         amount,
         base_amount: rateValue,
+        hours_worked: hours,
         deductions_applied: [],
         is_manual_override: true,
         notes: `${hours} год. × ${rateValue} ₴`,
@@ -468,14 +488,39 @@ export default function StaffExpenseJournal() {
     }
   };
 
-  const getAutoCellValue = (staffId: string, date: string): number | null => {
+  const getAutoCellValue = (staffId: string, date: string): { amount: number; hours: number | null } | null => {
     const entriesForDate = journalEntries.filter(
       entry => entry.staff_id === staffId && entry.date === date && !entry.is_manual_override
     );
 
     const journalTotal = entriesForDate.reduce((sum, entry) => sum + (entry.amount || 0), 0);
     if (journalTotal > 0) {
-      return journalTotal;
+      // Суммируем часы из записей, если они есть
+      const totalHours = entriesForDate.reduce((sum, entry) => {
+        if (entry.hours_worked !== null && entry.hours_worked !== undefined) {
+          return sum + entry.hours_worked;
+        }
+        return sum;
+      }, 0);
+      
+      // Если часы не сохранены, пытаемся вычислить из суммы и ставки
+      let calculatedHours: number | null = null;
+      if (totalHours === 0) {
+        const staffMember = activeStaff.find(s => s.id === staffId);
+        if (staffMember) {
+          // Пытаемся найти ставку для вычисления часов
+          const history = manualRateHistoryMap.get(staffId);
+          const currentRate = getStaffManualRateForDate(history, date, null);
+          if (currentRate?.manual_rate_type === 'hourly' && currentRate.manual_rate_value > 0) {
+            calculatedHours = journalTotal / currentRate.manual_rate_value;
+          }
+        }
+      }
+      
+      return {
+        amount: journalTotal,
+        hours: totalHours > 0 ? totalHours : calculatedHours
+      };
     }
 
     // If no journal entries, try to calculate from attendance
@@ -516,14 +561,33 @@ export default function StaffExpenseJournal() {
       }
     });
 
-    return hasCalculations ? calculatedTotal : null;
+    if (hasCalculations) {
+      // Для автоматических записей вычисляем часы из суммы и ставки
+      const staffMember = activeStaff.find(s => s.id === staffId);
+      let calculatedHours: number | null = null;
+      if (staffMember) {
+        const history = manualRateHistoryMap.get(staffId);
+        const currentRate = getStaffManualRateForDate(history, date, null);
+        if (currentRate?.manual_rate_type === 'hourly' && currentRate.manual_rate_value > 0) {
+          calculatedHours = calculatedTotal / currentRate.manual_rate_value;
+        }
+      }
+      return {
+        amount: calculatedTotal,
+        hours: calculatedHours
+      };
+    }
+    return null;
   };
 
-  const getManualCellValue = (staffId: string, activityId: string | null, date: string): number | null => {
+  const getManualCellValue = (staffId: string, activityId: string | null, date: string): { amount: number; hours: number | null } | null => {
     const key = `${staffId}-${activityId || 'null'}-${date}-manual`;
     const journalEntry = journalMap.get(key);
     if (journalEntry && journalEntry.is_manual_override) {
-      return journalEntry.amount;
+      return {
+        amount: journalEntry.amount,
+        hours: journalEntry.hours_worked ?? null
+      };
     }
     return null;
   };
@@ -547,11 +611,20 @@ export default function StaffExpenseJournal() {
             <button
               onClick={() => handleCellClick(staffId, activityId, dateStr)}
               className={cn(
-                "w-full h-8 text-xs rounded hover:bg-muted transition-colors",
+                "w-full h-8 text-xs rounded hover:bg-muted transition-colors flex flex-col items-center justify-center",
                 cellValue !== null ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground"
               )}
             >
-              {cellValue !== null ? formatCurrency(cellValue) : '—'}
+              {cellValue !== null ? (
+                <>
+                  <div>{formatCurrency(cellValue.amount)}</div>
+                  {cellValue.hours !== null && (
+                    <div className="text-[10px] text-muted-foreground/80">
+                      {cellValue.hours.toFixed(1)} год.
+                    </div>
+                  )}
+                </>
+              ) : '—'}
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-64">
@@ -807,6 +880,11 @@ export default function StaffExpenseJournal() {
                       {days.map((day) => {
                         const dateStr = formatDateString(day);
                         const cellValue = getAutoCellValue(staffMember.id, dateStr);
+                        
+                        // Проверяем, является ли ставка почасовой
+                        const history = manualRateHistoryMap.get(staffMember.id);
+                        const currentRate = getStaffManualRateForDate(history, dateStr, null);
+                        const isHourly = currentRate?.manual_rate_type === 'hourly';
 
                         return (
                           <td
@@ -817,10 +895,19 @@ export default function StaffExpenseJournal() {
                             )}
                           >
                             <div className={cn(
-                              "w-full h-8 text-xs rounded flex items-center justify-center",
+                              "w-full h-8 text-xs rounded flex flex-col items-center justify-center",
                               cellValue !== null ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground"
                             )}>
-                              {cellValue !== null ? formatCurrency(cellValue) : '—'}
+                              {cellValue !== null ? (
+                                <>
+                                  <div>{formatCurrency(cellValue.amount)}</div>
+                                  {isHourly && cellValue.hours !== null && (
+                                    <div className="text-[10px] text-muted-foreground/80">
+                                      {cellValue.hours.toFixed(1)} год.
+                                    </div>
+                                  )}
+                                </>
+                              ) : '—'}
                             </div>
                           </td>
                         );

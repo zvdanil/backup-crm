@@ -28,6 +28,7 @@ export interface StaffJournalEntry {
   date: string;
   amount: number;
   base_amount: number | null;
+  hours_worked: number | null;
   deductions_applied: DeductionApplied[];
   is_manual_override: boolean;
   notes: string | null;
@@ -411,6 +412,7 @@ export function useUpsertStaffJournalEntry() {
           .update({
             amount: entry.amount,
             base_amount: entry.base_amount,
+            hours_worked: entry.hours_worked ?? null,
             deductions_applied: entry.deductions_applied || [],
             is_manual_override: entry.is_manual_override,
             notes: entry.notes,
@@ -432,6 +434,7 @@ export function useUpsertStaffJournalEntry() {
               date: entry.date,
               amount: entry.amount,
               base_amount: entry.base_amount,
+              hours_worked: entry.hours_worked ?? null,
               deductions_applied: entry.deductions_applied || [],
               is_manual_override: entry.is_manual_override,
               notes: entry.notes,
@@ -455,6 +458,7 @@ export function useUpsertStaffJournalEntry() {
             date: entry.date,
             amount: entry.amount,
             base_amount: entry.base_amount,
+            hours_worked: entry.hours_worked ?? null,
             deductions_applied: entry.deductions_applied || [],
             is_manual_override: entry.is_manual_override,
             notes: entry.notes,
