@@ -1138,7 +1138,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             <div>Σ: {dailyTotals[selectedDateStr]?.values || 0}</div>
           </div>
           <div className="mt-2 text-sm font-medium">
-            Оплата педагогу: {teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}
+            {teachersForActivity.length > 0 
+              ? `Оплата педагогу (${teachersForActivity.join(', ')}): ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}`
+              : `Оплата педагогу: ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}`
+            }
           </div>
         </div>
       )}
