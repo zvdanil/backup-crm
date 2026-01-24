@@ -859,7 +859,7 @@ export default function StaffExpenseJournal() {
         {/* Grid */}
         <div className="sticky top-16 z-30 bg-card">
           <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-            <table className="w-full border-collapse">
+            <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
               {tableColGroup}
               <thead>
                 <tr className="bg-muted/50">
@@ -886,7 +886,7 @@ export default function StaffExpenseJournal() {
           </div>
         </div>
         <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
-          <table className="w-full border-collapse">
+          <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
             {tableColGroup}
             <tbody>
               {filteredStaff.map((staffMember) => {

@@ -236,7 +236,7 @@ export default function GroupLessonsJournal() {
         ) : (
           <div className="border rounded-xl">
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse table-fixed" style={{ minWidth: '100%' }}>
+              <table className={periodFilter === 'month' ? 'w-full border-collapse table-fixed' : 'border-collapse table-fixed'} style={periodFilter === 'month' ? { minWidth: '100%' } : { width: 'auto' }}>
                 <colgroup>
                   <col style={{ width: '180px', minWidth: '180px' }} />
                   {days.map((day) => (

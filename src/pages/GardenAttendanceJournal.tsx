@@ -942,8 +942,8 @@ export default function GardenAttendanceJournal() {
 
           <div className="sticky top-16 z-30 bg-card">
             <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-              <div className="min-w-max">
-                <table className="w-full border-collapse">
+              <div className={periodFilter === 'month' ? 'min-w-max' : ''}>
+                <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
                   {tableColGroup}
                   <thead>
                     <tr className="bg-muted/50">
@@ -1001,8 +1001,8 @@ export default function GardenAttendanceJournal() {
           </div>
 
           <div ref={bodyScrollRef} className="overflow-x-hidden border rounded-xl">
-            <div className="min-w-max">
-              <table className="w-full border-collapse">
+            <div className={periodFilter === 'month' ? 'min-w-max' : ''}>
+              <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
                 {tableColGroup}
                 <tbody>
                   {/* Grouped enrollments */}

@@ -1346,7 +1346,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
           <div className="sticky top-16 z-30 bg-card">
             <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-              <table className="w-full border-collapse">
+              <table className="border-collapse" style={{ width: periodFilter === 'month' ? '100%' : 'auto' }}>
                 {tableColGroup}
                 <thead>
             {/* Основний заголовок таблиці */}
@@ -1377,7 +1377,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             </div>
           </div>
           <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
-            <table className="w-full border-collapse">
+            <table className="border-collapse" style={{ width: periodFilter === 'month' ? '100%' : 'auto' }}>
               {tableColGroup}
           <tbody>
             {/* Рядки учнів з групуванням */}
