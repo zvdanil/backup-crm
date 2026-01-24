@@ -20,6 +20,7 @@ import {
   WEEKEND_BG_COLOR,
   formatCurrency,
   formatDateString,
+  formatDate,
 } from '@/lib/attendance';
 import { calculateStaffSalary } from '@/lib/staffSalary';
 import { cn } from '@/lib/utils';
@@ -629,6 +630,20 @@ export default function StaffExpenseJournal() {
           </PopoverTrigger>
           <PopoverContent className="w-64">
             <div className="space-y-3">
+              {/* Заголовок с ФИО и датой */}
+              {(() => {
+                const staffMember = activeStaff.find(s => s.id === staffId);
+                const staffName = staffMember?.full_name || 'Невідомий співробітник';
+                const formattedDate = formatDate(dateStr);
+                
+                return (
+                  <div className="pb-2 border-b">
+                    <h3 className="text-sm font-semibold">Нарахування для {staffName}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">на {formattedDate}</p>
+                  </div>
+                );
+              })()}
+              
               {(() => {
                 const history = manualRateHistoryMap.get(staffId);
                 const currentRate = editingCell
