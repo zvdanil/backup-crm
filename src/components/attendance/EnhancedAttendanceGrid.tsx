@@ -1139,7 +1139,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           </div>
           <div className="mt-2 text-sm font-medium">
             {teachersForActivity.length > 0 
-              ? `Оплата педагогу (${teachersForActivity.join(', ')}): ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}`
+              ? (
+                <>
+                  Оплата педагогу{' '}
+                  <span className="text-xs font-normal">
+                    ({teachersForActivity.join(', ')})
+                  </span>
+                  : {teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}
+                </>
+              )
               : `Оплата педагогу: ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}`
             }
           </div>
@@ -1349,7 +1357,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
                   <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">
                     {teachersForActivity.length > 0 
-                      ? `Оплата педагогу: ${teachersForActivity.join(', ')}`
+                      ? (
+                        <>
+                          Оплата педагогу:{' '}
+                          <span className="text-xs font-normal">
+                            {teachersForActivity.join(', ')}
+                          </span>
+                        </>
+                      )
                       : 'Оплата педагогу'
                     }
                   </th>
