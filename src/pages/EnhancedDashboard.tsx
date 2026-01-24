@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useDashboardData, useCategorySummary } from '@/hooks/useDashboardData';
 import { useActivities } from '@/hooks/useActivities';
@@ -110,6 +111,7 @@ export default function EnhancedDashboard() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
+  const [searchQuery, setSearchQuery] = useState('');
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const tableScrollRefs = useRef<Set<HTMLDivElement>>(new Set());
@@ -298,8 +300,34 @@ export default function EnhancedDashboard() {
       }
     });
 
-    return Array.from(studentMap.values());
+    // Сортируем студентов в алфавитном порядке
+    const sorted = Array.from(studentMap.values()).sort((a, b) => 
+      a.studentName.localeCompare(b.studentName, 'uk-UA')
+    );
+    
+    return sorted;
   }, [data?.enrollments, allActivities, dataUpdatedAt, visibleEnrollments, shouldShowEnrollment]);
+
+  // Фильтрация студентов по поисковому запросу
+  const filteredStudentsGrouped = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return studentsGrouped;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    
+    return studentsGrouped.filter(student => {
+      // Поиск по имени студента
+      if (student.studentName.toLowerCase().includes(query)) {
+        return true;
+      }
+      
+      // Поиск по названию активности
+      return student.activities.some(activity => 
+        activity.activityName.toLowerCase().includes(query)
+      );
+    });
+  }, [studentsGrouped, searchQuery]);
 
   // Map attendance by enrollment_id + date (for regular journals)
   const attendanceMap = useMemo(() => {
@@ -678,8 +706,18 @@ export default function EnhancedDashboard() {
       <PageHeader title="Дашборд" description="Зведена таблиця за категоріями та відвідуваністю" />
       
       <div className="p-8 space-y-6">
-        {/* Кнопка обновления данных */}
-        <div className="flex justify-end">
+        {/* Поиск и кнопка обновления данных */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Пошук по імені або активності..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
           <Button 
             onClick={handleRefresh} 
             variant="outline" 
@@ -743,7 +781,7 @@ export default function EnhancedDashboard() {
 
         {/* Групування по дітях */}
         {CATEGORY_ORDER.map((category) => {
-          const categoryStudents = studentsGrouped.filter(student =>
+          const categoryStudents = filteredStudentsGrouped.filter(student =>
             student.activities.some(act => act.category === category)
           );
 
