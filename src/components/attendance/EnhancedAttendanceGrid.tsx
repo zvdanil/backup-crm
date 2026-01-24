@@ -707,6 +707,30 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return payments;
   }, [days, monthlyAccruals, staffMap]);
 
+  // Собираем уникальных педагогов для активности за месяц
+  const teachersForActivity = useMemo(() => {
+    const teacherIds = new Set<string>();
+    
+    days.forEach((day) => {
+      const dateStr = formatDateString(day);
+      const teacherId = getTeacherIdForActivity(activityId, dateStr);
+      if (teacherId) {
+        teacherIds.add(teacherId);
+      }
+    });
+
+    // Получаем ФИО педагогов
+    const teacherNames = Array.from(teacherIds)
+      .map(id => {
+        const teacher = staff.find(s => s.id === id);
+        return teacher?.full_name || null;
+      })
+      .filter((name): name is string => name !== null)
+      .sort(); // Сортируем по алфавиту для консистентности
+
+    return teacherNames;
+  }, [days, activityId, getTeacherIdForActivity, staff]);
+
   const handlePrevMonth = () => {
     if (month === 0) {
       setMonth(11);
@@ -1320,7 +1344,12 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             
             {/* Рядок оплати педагогу */}
             <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
-                  <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">Оплата педагогу</th>
+                  <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">
+                    {teachersForActivity.length > 0 
+                      ? `Оплата педагогу: ${teachersForActivity.join(', ')}`
+                      : 'Оплата педагогу'
+                    }
+                  </th>
               {days.map((day) => {
                 const dateStr = formatDateString(day);
                 const payment = teacherPayments[dateStr] || 0;
