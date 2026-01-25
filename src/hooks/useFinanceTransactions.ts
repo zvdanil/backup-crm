@@ -563,7 +563,7 @@ export function useStudentAccountBalances(
 
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select('id, activity_id, custom_price, discount_percent')
+        .select('id, activity_id, custom_price, discount_percent, account_id')
         .eq('student_id', studentId);
 
       if (enrollmentsError) throw enrollmentsError;
@@ -574,14 +574,17 @@ export function useStudentAccountBalances(
       ));
       const enrollmentIds = filteredEnrollments.map((e: any) => e.id);
       const enrollmentActivityMap = new Map<string, string>();
-      const enrollmentDataMap = new Map<string, { activity_id: string; custom_price: number | null; discount_percent: number | null }>();
+      const enrollmentAccountMap = new Map<string, string | null>(); // enrollment_id -> account_id
+      const enrollmentDataMap = new Map<string, { activity_id: string; custom_price: number | null; discount_percent: number | null; account_id: string | null }>();
       const activityIds = new Set<string>();
       filteredEnrollments.forEach((enrollment: any) => {
         enrollmentActivityMap.set(enrollment.id, enrollment.activity_id);
+        enrollmentAccountMap.set(enrollment.id, enrollment.account_id);
         enrollmentDataMap.set(enrollment.id, {
           activity_id: enrollment.activity_id,
           custom_price: enrollment.custom_price ?? null,
           discount_percent: enrollment.discount_percent ?? null,
+          account_id: enrollment.account_id ?? null,
         });
         activityIds.add(enrollment.activity_id);
       });
@@ -694,14 +697,31 @@ export function useStudentAccountBalances(
           (monthlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
       });
 
+      // Группируем по enrollments, чтобы использовать приоритет enrollment.account_id ?? activity.account_id
       const balancesByAccount = new Map<string | null, StudentAccountBalance>();
+      
+      // Создаем мапу enrollment_id -> activity_id для быстрого доступа
+      const enrollmentToActivityMap = new Map<string, string>();
+      filteredEnrollments.forEach((enrollment: any) => {
+        enrollmentToActivityMap.set(enrollment.id, enrollment.activity_id);
+      });
+      
+      // Группируем attendance по enrollment_id, затем по activity_id для распределения
+      const attendanceByEnrollment = new Map<string, number>();
+      attendanceData.forEach((att) => {
+        const current = attendanceByEnrollment.get(att.enrollment_id) || 0;
+        attendanceByEnrollment.set(att.enrollment_id, current + (att.charged_amount || 0));
+      });
+      
+      // Для каждой активности распределяем баланс по enrollments с учетом их account_id
       activityIdList.forEach((activityId) => {
         const payments = paymentsByActivity[activityId] || 0;
         const income = incomeByActivity[activityId] || 0;
         const expense = expenseByActivity[activityId] || 0;
         const hasFinanceTransactions = income !== 0 || expense !== 0;
         const monthlyCharges = monthlyChargesByActivity[activityId] || 0;
-        const recalculationCharges = hasFinanceTransactions ? income : (attendanceByActivity[activityId] || 0);
+        const attendanceTotal = attendanceByActivity[activityId] || 0;
+        const recalculationCharges = hasFinanceTransactions ? income : attendanceTotal;
         const displayMode = displayModeByActivity[activityId]
           || (monthlyCharges > 0 ? 'subscription' : 'recalculation');
 
@@ -713,23 +733,58 @@ export function useStudentAccountBalances(
         }
         const refunds = expense;
         const balance = payments - charges + refunds;
-        const accountId = activityAccountMap[activityId] ?? null;
-
-        const existing = balancesByAccount.get(accountId) || {
-          account_id: accountId,
-          balance: 0,
-          payments: 0,
-          charges: 0,
-          refunds: 0,
-        };
-
-        balancesByAccount.set(accountId, {
-          account_id: accountId,
-          balance: existing.balance + balance,
-          payments: existing.payments + payments,
-          charges: existing.charges + charges,
-          refunds: existing.refunds + refunds,
-        });
+        
+        // Находим все enrollments для этой активности
+        const enrollmentsForActivity = Array.from(enrollmentDataMap.entries())
+          .filter(([_, data]) => data.activity_id === activityId);
+        
+        if (enrollmentsForActivity.length === 0) {
+          // Если нет enrollments, используем account_id из активности
+          const accountId = activityAccountMap[activityId] ?? null;
+          const existing = balancesByAccount.get(accountId) || {
+            account_id: accountId,
+            balance: 0,
+            payments: 0,
+            charges: 0,
+            refunds: 0,
+          };
+          balancesByAccount.set(accountId, {
+            account_id: accountId,
+            balance: existing.balance + balance,
+            payments: existing.payments + payments,
+            charges: existing.charges + charges,
+            refunds: existing.refunds + refunds,
+          });
+        } else {
+          // Распределяем баланс пропорционально между enrollments
+          // Для простоты распределяем равномерно (можно улучшить логику)
+          const perEnrollment = enrollmentsForActivity.length;
+          const perEnrollmentBalance = balance / perEnrollment;
+          const perEnrollmentPayments = payments / perEnrollment;
+          const perEnrollmentCharges = charges / perEnrollment;
+          const perEnrollmentRefunds = refunds / perEnrollment;
+          
+          enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
+            // Приоритет: enrollment.account_id ?? activity.account_id
+            const accountId = enrollmentData.account_id ?? activityAccountMap[enrollmentData.activity_id] ?? null;
+            
+            const existing = balancesByAccount.get(accountId) || {
+              account_id: accountId,
+              balance: 0,
+              payments: 0,
+              charges: 0,
+              refunds: 0,
+            };
+            
+            balancesByAccount.set(accountId, {
+              account_id: accountId,
+              balance: existing.balance + perEnrollmentBalance,
+              payments: existing.payments + perEnrollmentPayments,
+              charges: existing.charges + perEnrollmentCharges,
+              refunds: existing.refunds + perEnrollmentRefunds,
+            });
+          });
+        }
       });
 
       if (unassignedPayments !== 0) {

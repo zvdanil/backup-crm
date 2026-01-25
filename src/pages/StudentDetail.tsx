@@ -155,7 +155,8 @@ export default function StudentDetail() {
   const accountGroups = useMemo(() => {
     const groups = new Map<string, { id: string; label: string; enrollments: EnrollmentWithRelations[] }>();
     balanceEnrollments.forEach((enrollment) => {
-      const accountId = enrollment.activities.account_id || 'none';
+      // Приоритет: enrollment.account_id ?? activity.account_id
+      const accountId = enrollment.account_id || enrollment.activities.account_id || 'none';
       const label = accountId === 'none'
         ? 'Без рахунку'
         : (accountLabelMap.get(accountId) || 'Без рахунку');
