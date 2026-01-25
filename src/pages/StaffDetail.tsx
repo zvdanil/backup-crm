@@ -220,6 +220,57 @@ export default function StaffDetail() {
     return { accrued, paid, balance: accrued - paid };
   }, [journalEntries, payouts, calendarMonth, calendarYear]);
 
+  // Группировка записей по статьям выплат для детализации
+  const paymentItemsSummary = useMemo(() => {
+    const itemsMap = new Map<string, { 
+      name: string; 
+      totalAmount: number; 
+      totalHours: number | null; 
+      entriesCount: number;
+      hasHours: boolean;
+    }>();
+
+    journalEntries.forEach((entry) => {
+      const activityId = entry.activity_id || 'none';
+      const mode = entry.is_manual_override ? 'manual' : 'auto';
+      const rowKey = `${activityId}:${mode}`;
+      
+      const activity = activities.find(a => a.id === activityId);
+      const baseName = activity ? activity.name : 'Без активності';
+      const name = activityId === 'none'
+        ? (mode === 'manual' ? 'Ручні записи (без активності)' : 'Авто нарахування (без активності)')
+        : `${baseName}${mode === 'manual' ? ' — ручні' : ''}`;
+
+      if (!itemsMap.has(rowKey)) {
+        itemsMap.set(rowKey, {
+          name,
+          totalAmount: 0,
+          totalHours: null,
+          entriesCount: 0,
+          hasHours: false,
+        });
+      }
+
+      const item = itemsMap.get(rowKey)!;
+      item.totalAmount += Number(entry.amount) || 0;
+      item.entriesCount += 1;
+      
+      // Если есть hours_worked, суммируем часы
+      if (entry.hours_worked !== null && entry.hours_worked !== undefined) {
+        if (item.totalHours === null) {
+          item.totalHours = 0;
+        }
+        item.totalHours += Number(entry.hours_worked) || 0;
+        item.hasHours = true;
+      }
+    });
+
+    // Преобразуем в массив и сортируем
+    return Array.from(itemsMap.values())
+      .filter(item => item.totalAmount > 0) // Показываем только статьи с начислениями
+      .sort((a, b) => a.name.localeCompare(b.name, 'uk-UA'));
+  }, [journalEntries, activities]);
+
   const totalSummary = useMemo(() => {
     const accrued = allJournalEntries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
     const paid = payouts.reduce((sum, payout) => sum + (Number(payout.amount) || 0), 0);
@@ -454,6 +505,32 @@ export default function StaffDetail() {
                             <div className="mt-2 text-sm text-muted-foreground">
                               Нараховано: {formatCurrency(monthSummary.accrued)} · Виплачено: {formatCurrency(monthSummary.paid)}
                             </div>
+                            
+                            {/* Детализация по статьям выплат */}
+                            {paymentItemsSummary.length > 0 && (
+                              <div className="mt-4 pt-4 border-t">
+                                <p className="text-xs font-medium text-muted-foreground mb-2">Деталізація по статтях:</p>
+                                <div className="space-y-1.5">
+                                  {paymentItemsSummary.map((item, index) => (
+                                    <div key={index} className="flex items-center justify-between text-xs">
+                                      <span className="text-muted-foreground">{item.name}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium">{formatCurrency(item.totalAmount)}</span>
+                                        {item.hasHours && item.totalHours !== null && item.totalHours > 0 ? (
+                                          <span className="text-muted-foreground">
+                                            ({item.totalHours.toFixed(1)} {item.totalHours === 1 ? 'година' : item.totalHours < 5 ? 'години' : 'годин'})
+                                          </span>
+                                        ) : (
+                                          <span className="text-muted-foreground">
+                                            ({item.entriesCount} {item.entriesCount === 1 ? 'заняття' : item.entriesCount < 5 ? 'заняття' : 'занять'})
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                         <Card>
