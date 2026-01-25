@@ -134,11 +134,36 @@ export function useActivity(id: string) {
       });
       
       // Ensure config field exists (default to null if column doesn't exist yet)
-      // Ensure billing_rules is properly typed
+      // Ensure billing_rules is properly typed with explicit custom_statuses preservation
+      let billingRules: BillingRules | null = null;
+      
+      if (data.billing_rules) {
+        // Если billing_rules - строка (JSON), парсим её
+        if (typeof data.billing_rules === 'string') {
+          try {
+            billingRules = JSON.parse(data.billing_rules) as BillingRules;
+          } catch (e) {
+            console.error('[useActivity] Failed to parse billing_rules string:', e);
+            billingRules = null;
+          }
+        } 
+        // Если billing_rules - объект, используем как есть, но явно сохраняем custom_statuses
+        else if (typeof data.billing_rules === 'object') {
+          const rawRules = data.billing_rules as any;
+          billingRules = {
+            ...rawRules,
+            // Явно сохраняем custom_statuses, если они есть
+            custom_statuses: Array.isArray(rawRules.custom_statuses) 
+              ? rawRules.custom_statuses 
+              : (rawRules.custom_statuses ? [rawRules.custom_statuses] : undefined),
+          } as BillingRules;
+        }
+      }
+      
       const activity = {
         ...data,
         config: data.config || null,
-        billing_rules: (data.billing_rules as BillingRules | null) || null,
+        billing_rules: billingRules,
       } as Activity;
       
       console.log('[useActivity] Processed activity:', {
@@ -348,8 +373,14 @@ export function getBillingRulesForDate(
       return dateObj >= fromDate && (!toDate || dateObj < toDate);
     });
     
-    if (applicableHistory) {
-      return applicableHistory.billing_rules;
+    if (applicableHistory && applicableHistory.billing_rules) {
+      // ВАЖНО: Сохраняем custom_statuses из исходной активности, 
+      // так как они не должны меняться в истории цен
+      const historyRules = applicableHistory.billing_rules;
+      return {
+        ...historyRules,
+        custom_statuses: activity.billing_rules?.custom_statuses || historyRules.custom_statuses,
+      };
     }
   }
 
