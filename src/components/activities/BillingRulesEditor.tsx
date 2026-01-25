@@ -61,28 +61,47 @@ export function BillingRulesEditor({
   };
 
   const addCustomStatus = () => {
-    const currentCustomStatuses = localRules.custom_statuses || [];
-    if (currentCustomStatuses.length >= 2) {
-      return; // Максимум 2 кастомных статуса
+    console.log('[BillingRulesEditor] addCustomStatus CALLED');
+    console.log('[BillingRulesEditor] addCustomStatus - localRules:', localRules);
+    
+    try {
+      const currentCustomStatuses = localRules.custom_statuses || [];
+      console.log('[BillingRulesEditor] addCustomStatus - currentCustomStatuses:', currentCustomStatuses);
+      console.log('[BillingRulesEditor] addCustomStatus - currentCustomStatuses.length:', currentCustomStatuses.length);
+      
+      if (currentCustomStatuses.length >= 2) {
+        console.warn('[BillingRulesEditor] addCustomStatus - MAXIMUM REACHED, returning early');
+        return; // Максимум 2 кастомных статуса
+      }
+
+      const newCustomStatus: CustomAttendanceStatus = {
+        id: crypto.randomUUID(),
+        name: '',
+        rate: 0,
+        type: 'fixed',
+        color: '#3B82F6',
+        is_active: true,
+      };
+
+      console.log('[BillingRulesEditor] addCustomStatus - newCustomStatus:', newCustomStatus);
+
+      const newRules = {
+        ...localRules,
+        custom_statuses: [...currentCustomStatuses, newCustomStatus],
+      };
+
+      console.log('[BillingRulesEditor] addCustomStatus - newRules:', newRules);
+      console.log('[BillingRulesEditor] addCustomStatus - newRules.custom_statuses:', newRules.custom_statuses);
+      
+      setLocalRules(newRules);
+      console.log('[BillingRulesEditor] addCustomStatus - setLocalRules called');
+      
+      onChange(newRules);
+      console.log('[BillingRulesEditor] addCustomStatus - onChange called');
+    } catch (error) {
+      console.error('[BillingRulesEditor] addCustomStatus - ERROR:', error);
+      throw error;
     }
-
-    const newCustomStatus: CustomAttendanceStatus = {
-      id: crypto.randomUUID(),
-      name: '',
-      rate: 0,
-      type: 'fixed',
-      color: '#3B82F6',
-      is_active: true,
-    };
-
-    const newRules = {
-      ...localRules,
-      custom_statuses: [...currentCustomStatuses, newCustomStatus],
-    };
-
-    console.log('[BillingRulesEditor] addCustomStatus - newRules:', newRules);
-    setLocalRules(newRules);
-    onChange(newRules);
   };
 
   const updateCustomStatus = (id: string, updates: Partial<CustomAttendanceStatus>) => {
@@ -250,7 +269,11 @@ export function BillingRulesEditor({
               type="button"
               variant="outline"
               size="sm"
-              onClick={addCustomStatus}
+              onClick={(e) => {
+                console.log('[BillingRulesEditor] Button onClick triggered', e);
+                console.log('[BillingRulesEditor] Button onClick - localRules:', localRules);
+                addCustomStatus();
+              }}
               disabled={(localRules.custom_statuses || []).length >= 2}
             >
               Додати статус
