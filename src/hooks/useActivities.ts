@@ -122,9 +122,15 @@ export function useActivity(id: string) {
         name: data.name,
         billing_rules: data.billing_rules,
         billing_rules_type: typeof data.billing_rules,
+        billing_rules_is_null: data.billing_rules === null,
+        billing_rules_is_undefined: data.billing_rules === undefined,
+        billing_rules_stringified: JSON.stringify(data.billing_rules),
         billing_rules_keys: data.billing_rules ? Object.keys(data.billing_rules) : [],
         has_custom_statuses: data.billing_rules && 'custom_statuses' in data.billing_rules,
         custom_statuses: (data.billing_rules as any)?.custom_statuses,
+        custom_statuses_type: typeof (data.billing_rules as any)?.custom_statuses,
+        custom_statuses_is_array: Array.isArray((data.billing_rules as any)?.custom_statuses),
+        custom_statuses_length: Array.isArray((data.billing_rules as any)?.custom_statuses) ? (data.billing_rules as any).custom_statuses.length : 'not array',
       });
       
       // Ensure config field exists (default to null if column doesn't exist yet)
@@ -139,7 +145,12 @@ export function useActivity(id: string) {
         id: activity.id,
         name: activity.name,
         billing_rules: activity.billing_rules,
+        billing_rules_type: typeof activity.billing_rules,
+        billing_rules_stringified: JSON.stringify(activity.billing_rules),
         custom_statuses: activity.billing_rules?.custom_statuses,
+        custom_statuses_type: typeof activity.billing_rules?.custom_statuses,
+        custom_statuses_is_array: Array.isArray(activity.billing_rules?.custom_statuses),
+        custom_statuses_length: Array.isArray(activity.billing_rules?.custom_statuses) ? activity.billing_rules.custom_statuses.length : 'not array',
       });
       
       return activity;

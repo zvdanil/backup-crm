@@ -258,13 +258,27 @@ export function EnhancedAttendanceCell({
         name: activity.name,
         billing_rules: activity.billing_rules,
         billing_rules_type: typeof activity.billing_rules,
+        billing_rules_stringified: JSON.stringify(activity.billing_rules),
         billing_rules_keys: activity.billing_rules ? Object.keys(activity.billing_rules) : [],
+        has_custom_statuses_key: activity.billing_rules && 'custom_statuses' in activity.billing_rules,
+        custom_statuses_from_activity: activity.billing_rules?.custom_statuses,
+        custom_statuses_from_activity_type: typeof activity.billing_rules?.custom_statuses,
+        custom_statuses_from_activity_is_array: Array.isArray(activity.billing_rules?.custom_statuses),
       });
       console.log('[EnhancedAttendanceCell] billingRulesForDate:', billingRulesForDate);
+      console.log('[EnhancedAttendanceCell] billingRulesForDate stringified:', JSON.stringify(billingRulesForDate));
+      console.log('[EnhancedAttendanceCell] billingRulesForDate keys:', billingRulesForDate ? Object.keys(billingRulesForDate) : []);
+      console.log('[EnhancedAttendanceCell] billingRulesForDate has custom_statuses:', billingRulesForDate && 'custom_statuses' in billingRulesForDate);
       console.log('[EnhancedAttendanceCell] customStatuses:', customStatuses);
+      console.log('[EnhancedAttendanceCell] customStatuses type:', typeof customStatuses);
+      console.log('[EnhancedAttendanceCell] customStatuses is array:', Array.isArray(customStatuses));
       console.log('[EnhancedAttendanceCell] customStatuses length:', customStatuses.length);
       if (billingRulesForDate?.custom_statuses) {
         console.log('[EnhancedAttendanceCell] custom_statuses from billingRulesForDate:', billingRulesForDate.custom_statuses);
+        console.log('[EnhancedAttendanceCell] custom_statuses from billingRulesForDate type:', typeof billingRulesForDate.custom_statuses);
+        console.log('[EnhancedAttendanceCell] custom_statuses from billingRulesForDate is array:', Array.isArray(billingRulesForDate.custom_statuses));
+      } else {
+        console.warn('[EnhancedAttendanceCell] billingRulesForDate.custom_statuses is MISSING or undefined');
       }
     }
   }, [activity, billingRulesForDate, customStatuses]);
