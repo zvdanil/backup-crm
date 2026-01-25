@@ -183,6 +183,15 @@ export function useUpdateActivity() {
       // Видаляємо effective_from та effective_to, якщо вони присутні (не повинні бути в таблиці activities)
       const { effective_from, effective_to, ...activityData } = activity as any;
       
+      // Debug logging для проверки billing_rules
+      console.log('[useUpdateActivity] Updating activity:', {
+        id,
+        billing_rules: activityData.billing_rules,
+        billing_rules_type: typeof activityData.billing_rules,
+        has_custom_statuses: activityData.billing_rules && 'custom_statuses' in activityData.billing_rules,
+        custom_statuses: activityData.billing_rules?.custom_statuses,
+      });
+      
       const { data, error } = await supabase
         .from('activities')
         .update(activityData)
@@ -191,6 +200,13 @@ export function useUpdateActivity() {
         .single();
       
       if (error) throw error;
+      
+      console.log('[useUpdateActivity] Updated activity from DB:', {
+        id: data.id,
+        billing_rules: data.billing_rules,
+        custom_statuses: (data.billing_rules as any)?.custom_statuses,
+      });
+      
       return data;
     },
     onSuccess: () => {
