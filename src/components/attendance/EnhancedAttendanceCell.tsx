@@ -249,6 +249,25 @@ export function EnhancedAttendanceCell({
     ? getBillingRulesForDate(activity, priceHistory, date)
     : activity?.billing_rules;
   const customStatuses = billingRulesForDate?.custom_statuses || [];
+  
+  // Debug logging для отладки кастомных статусов
+  useEffect(() => {
+    if (activity) {
+      console.log('[EnhancedAttendanceCell] Activity:', {
+        id: activity.id,
+        name: activity.name,
+        billing_rules: activity.billing_rules,
+        billing_rules_type: typeof activity.billing_rules,
+        billing_rules_keys: activity.billing_rules ? Object.keys(activity.billing_rules) : [],
+      });
+      console.log('[EnhancedAttendanceCell] billingRulesForDate:', billingRulesForDate);
+      console.log('[EnhancedAttendanceCell] customStatuses:', customStatuses);
+      console.log('[EnhancedAttendanceCell] customStatuses length:', customStatuses.length);
+      if (billingRulesForDate?.custom_statuses) {
+        console.log('[EnhancedAttendanceCell] custom_statuses from billingRulesForDate:', billingRulesForDate.custom_statuses);
+      }
+    }
+  }, [activity, billingRulesForDate, customStatuses]);
 
   // Визначаємо що показувати в полі
   const displayStatus = status || optimisticStatus;

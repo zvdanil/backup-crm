@@ -40,6 +40,7 @@ export function BillingRulesEditor({
   const [localRules, setLocalRules] = useState<BillingRules>(billingRules || {});
 
   useEffect(() => {
+    console.log('[BillingRulesEditor] billingRules changed:', billingRules);
     setLocalRules(billingRules || {});
   }, [billingRules]);
 
@@ -79,6 +80,7 @@ export function BillingRulesEditor({
       custom_statuses: [...currentCustomStatuses, newCustomStatus],
     };
 
+    console.log('[BillingRulesEditor] addCustomStatus - newRules:', newRules);
     setLocalRules(newRules);
     onChange(newRules);
   };
@@ -94,6 +96,7 @@ export function BillingRulesEditor({
       custom_statuses: updatedStatuses,
     };
 
+    console.log('[BillingRulesEditor] updateCustomStatus - newRules:', newRules);
     setLocalRules(newRules);
     onChange(newRules);
   };

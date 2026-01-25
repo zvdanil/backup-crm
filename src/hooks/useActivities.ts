@@ -115,11 +115,34 @@ export function useActivity(id: string) {
       
       if (error) throw error;
       if (!data) return null;
+      
+      // Debug logging для проверки billing_rules
+      console.log('[useActivity] Raw data from DB:', {
+        id: data.id,
+        name: data.name,
+        billing_rules: data.billing_rules,
+        billing_rules_type: typeof data.billing_rules,
+        billing_rules_keys: data.billing_rules ? Object.keys(data.billing_rules) : [],
+        has_custom_statuses: data.billing_rules && 'custom_statuses' in data.billing_rules,
+        custom_statuses: (data.billing_rules as any)?.custom_statuses,
+      });
+      
       // Ensure config field exists (default to null if column doesn't exist yet)
-      return {
+      // Ensure billing_rules is properly typed
+      const activity = {
         ...data,
         config: data.config || null,
+        billing_rules: (data.billing_rules as BillingRules | null) || null,
       } as Activity;
+      
+      console.log('[useActivity] Processed activity:', {
+        id: activity.id,
+        name: activity.name,
+        billing_rules: activity.billing_rules,
+        custom_statuses: activity.billing_rules?.custom_statuses,
+      });
+      
+      return activity;
     },
     enabled: !!id,
   });
