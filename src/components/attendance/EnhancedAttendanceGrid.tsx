@@ -74,6 +74,21 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const { data: activity } = useActivity(activityId);
   const { data: priceHistory } = useActivityPriceHistory(activityId);
+  
+  // Debug logging для проверки загрузки activity
+  useEffect(() => {
+    if (activity) {
+      console.log('[EnhancedAttendanceGrid] Activity loaded:', {
+        id: activity.id,
+        name: activity.name,
+        billing_rules: activity.billing_rules,
+        custom_statuses: activity.billing_rules?.custom_statuses,
+        custom_statuses_length: activity.billing_rules?.custom_statuses?.length || 0,
+      });
+    } else {
+      console.log('[EnhancedAttendanceGrid] Activity is null/undefined');
+    }
+  }, [activity]);
   const { data: allStaffBillingRules = [] } = useAllStaffBillingRulesForActivity(activityId);
   const { data: groups = [] } = useGroups();
   const { data: students = [] } = useStudents();
