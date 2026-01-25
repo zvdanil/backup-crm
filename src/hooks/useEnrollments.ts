@@ -11,6 +11,7 @@ export interface Enrollment {
   teacher_id: string | null;
   custom_price: number | null;
   discount_percent: number | null;
+  account_id: string | null; // Payment account for charges (рахунок для нарахувань)
   is_active: boolean;
   enrolled_at: string;
   unenrolled_at: string | null;
@@ -24,7 +25,7 @@ export interface EnrollmentWithRelations extends Enrollment {
   activities: Activity;
 }
 
-export type EnrollmentInsert = Pick<Enrollment, 'student_id' | 'activity_id' | 'custom_price' | 'discount_percent'>;
+export type EnrollmentInsert = Pick<Enrollment, 'student_id' | 'activity_id' | 'custom_price' | 'discount_percent' | 'account_id'>;
 export type EnrollmentUpdate = Partial<Omit<Enrollment, 'id' | 'student_id' | 'activity_id' | 'created_at' | 'updated_at'>>;
 
 export function useEnrollments(filters?: { studentId?: string; activityId?: string; activeOnly?: boolean }) {
@@ -116,6 +117,7 @@ export function useCreateEnrollment() {
           .update({
             custom_price: enrollment.custom_price,
             discount_percent: enrollment.discount_percent,
+            account_id: enrollment.account_id ?? null,
             is_active: true,
             enrolled_at: new Date().toISOString(),
             unenrolled_at: null, // Скидаємо unenrolled_at, якщо повторно записуємо
@@ -133,6 +135,7 @@ export function useCreateEnrollment() {
           .from('enrollments')
           .insert({
             ...enrollment,
+            account_id: enrollment.account_id ?? null,
             is_active: true,
             enrolled_at: new Date().toISOString(),
           })

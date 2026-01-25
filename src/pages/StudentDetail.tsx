@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { useParentLinks, useAddParentLink, useRemoveParentLink } from '@/hooks/useParentLinks';
 import { useUserProfiles } from '@/hooks/useUserProfiles';
 
@@ -180,24 +181,57 @@ export default function StudentDetail() {
     });
   }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
-  const handleEnroll = async (data: { activity_id: string; custom_price: number | null; discount_percent: number }) => {
+  const handleEnroll = async (data: { activity_id: string; custom_price: number | null; discount_percent: number; account_id: string | null }) => {
     // Используем mutateAsync для ожидания завершения мутации
     await createEnrollment.mutateAsync({
       student_id: id!,
       activity_id: data.activity_id,
       custom_price: data.custom_price,
       discount_percent: data.discount_percent,
+      account_id: data.account_id,
     });
   };
 
-  const handleUpdateEnrollment = (data: { custom_price: number | null; discount_percent: number; effective_from: string | null }) => {
+  const handleUpdateEnrollment = async (data: { custom_price: number | null; discount_percent: number; effective_from: string | null; account_id: string | null }) => {
     if (editingEnrollment) {
-      updateEnrollment.mutate({
+      const oldAccountId = editingEnrollment.account_id;
+      const newAccountId = data.account_id;
+      
+      // Обновляем enrollment
+      await updateEnrollment.mutateAsync({
         id: editingEnrollment.id,
         custom_price: data.custom_price,
         discount_percent: data.discount_percent,
         effective_from: data.effective_from,
+        account_id: newAccountId,
       });
+      
+      // Если изменился account_id, пересчитываем finance_transactions
+      if (oldAccountId !== newAccountId) {
+        // Находим все finance_transactions, связанные с этим enrollment
+        const { data: transactions, error: transactionsError } = await supabase
+          .from('finance_transactions')
+          .select('id, account_id')
+          .eq('student_id', editingEnrollment.student_id)
+          .eq('activity_id', editingEnrollment.activity_id)
+          .eq('type', 'income'); // Только начисления (income)
+        
+        if (!transactionsError && transactions) {
+          // Определяем правильный account_id для обновления
+          // Используем приоритет: enrollment.account_id ?? activity.account_id
+          const targetAccountId = newAccountId || editingEnrollment.activities.account_id;
+          
+          // Обновляем account_id во всех связанных транзакциях
+          if (transactions.length > 0) {
+            const transactionIds = transactions.map(t => t.id);
+            await supabase
+              .from('finance_transactions')
+              .update({ account_id: targetAccountId })
+              .in('id', transactionIds);
+          }
+        }
+      }
+      
       setEditingEnrollment(null);
     }
   };
@@ -734,6 +768,7 @@ export default function StudentDetail() {
           initialCustomPrice={editingEnrollment.custom_price}
           initialDiscount={editingEnrollment.discount_percent}
           initialEffectiveFrom={editingEnrollment.effective_from}
+          initialAccountId={editingEnrollment.account_id}
           isLoading={updateEnrollment.isPending}
         />
       )}

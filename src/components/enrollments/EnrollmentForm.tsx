@@ -10,8 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useActivities, useActivityPriceHistory } from '@/hooks/useActivities';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { formatCurrency } from '@/lib/attendance';
 import { getActivityDisplayPrice } from '@/lib/activityPrice';
 import { useMemo, useState } from 'react';
@@ -31,6 +39,7 @@ interface SelectedActivity {
   activity_id: string;
   custom_price: string;
   discount_percent: string;
+  account_id: string; // 'none' or account UUID
 }
 
 // Component to display activity with current price from billing_rules/price_history
@@ -62,7 +71,7 @@ function ActivityPriceDisplayItem({ activity }: { activity: any }) {
 interface EnrollmentFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { activity_id: string; custom_price: number | null; discount_percent: number }) => void | Promise<void>;
+  onSubmit: (data: { activity_id: string; custom_price: number | null; discount_percent: number; account_id: string | null }) => void | Promise<void>;
   studentName: string;
   isLoading?: boolean;
   excludeActivityIds?: string[];
@@ -77,6 +86,7 @@ export function EnrollmentForm({
   excludeActivityIds = []
 }: EnrollmentFormProps) {
   const { data: activities = [] } = useActivities();
+  const { data: accounts = [] } = usePaymentAccounts();
   const availableActivities = activities.filter(
     a => a.is_active && a.show_in_children && !excludeActivityIds.includes(a.id)
   );
@@ -96,16 +106,18 @@ export function EnrollmentForm({
       if (exists) {
         return prev.filter(a => a.activity_id !== activityId);
       } else {
+        const activity = activities.find(a => a.id === activityId);
         return [...prev, {
           activity_id: activityId,
           custom_price: '',
           discount_percent: '0',
+          account_id: 'none', // По умолчанию не указано (будет использоваться account_id из активности)
         }];
       }
     });
   };
 
-  const handleActivityUpdate = (activityId: string, field: 'custom_price' | 'discount_percent', value: string) => {
+  const handleActivityUpdate = (activityId: string, field: 'custom_price' | 'discount_percent' | 'account_id', value: string) => {
     setSelectedActivities(prev =>
       prev.map(a =>
         a.activity_id === activityId ? { ...a, [field]: value } : a
@@ -126,6 +138,7 @@ export function EnrollmentForm({
         activity_id: activity.activity_id,
         custom_price: activity.custom_price ? parseFloat(activity.custom_price) : null,
         discount_percent: activity.discount_percent ? parseFloat(activity.discount_percent) : 0,
+        account_id: activity.account_id === 'none' ? null : activity.account_id,
       });
       
       // Если onSubmit возвращает Promise, ждём его завершения
@@ -251,6 +264,31 @@ export function EnrollmentForm({
                           className="h-9"
                         />
                       </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Label htmlFor={`account-${selected.activity_id}`} className="text-xs">
+                        Рахунок для нарахувань
+                      </Label>
+                      <Select
+                        value={selected.account_id}
+                        onValueChange={(value) => handleActivityUpdate(selected.activity_id, 'account_id', value)}
+                      >
+                        <SelectTrigger id={`account-${selected.activity_id}`} className="h-9">
+                          <SelectValue placeholder="Не вибрано" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Не вказано (використовувати з активності)</SelectItem>
+                          {accounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.is_active ? account.name : `${account.name} (неактивний)`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Якщо не вказано, використовується рахунок з налаштувань активності
+                      </p>
                     </div>
                   </div>
                 );
