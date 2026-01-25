@@ -444,6 +444,18 @@ export default function GardenAttendanceJournal() {
           manual_value_edit: false,
         });
 
+        // Helper function to get account_id with priority: enrollment.account_id ?? activity.account_id
+        const getAccountId = (activityId: string): string | null => {
+          // Find enrollment for this activity
+          const enrollment = allEnrollments.find(
+            e => e.student_id === studentId && e.activity_id === activityId && e.is_active
+          );
+          const activity = activitiesMap.get(activityId);
+          
+          // Priority: enrollment.account_id ?? activity.account_id
+          return enrollment?.account_id ?? activity?.account_id ?? null;
+        };
+
         // Create or update finance transactions for base tariff and food tariff separately
         // Base tariff transactions (always M/D, regardless of presence/absence)
         if (baseActivityEntries.length > 0) {
@@ -457,6 +469,7 @@ export default function GardenAttendanceJournal() {
               date,
               description: `Нарахування за відвідування (${status === 'present' ? 'присутність' : status === 'absent' ? 'відсутність' : 'відвідування'})`,
               category: 'Навчання',
+              account_id: getAccountId(entry.activityId),
             });
           }
         }
@@ -475,6 +488,7 @@ export default function GardenAttendanceJournal() {
                 date,
                 description: `Повернення за харчування (відсутність)`,
                 category: 'Навчання',
+                account_id: getAccountId(entry.activityId),
               });
             }
           } else if (status === 'present') {

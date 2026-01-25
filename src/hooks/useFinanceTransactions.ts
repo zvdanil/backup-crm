@@ -11,6 +11,7 @@ export interface FinanceTransaction {
   activity_id: string | null;
   staff_id: string | null;
   expense_category_id?: string | null;
+  account_id: string | null; // Payment account for this transaction
   amount: number;
   date: string;
   description: string | null;
@@ -199,6 +200,7 @@ export function useUpsertFinanceTransaction() {
             amount: transaction.amount,
             description: transaction.description,
             category: transaction.category,
+            account_id: transaction.account_id ?? null, // Update account_id if provided
           })
           .eq('id', existing.id)
           .select()
@@ -211,7 +213,10 @@ export function useUpsertFinanceTransaction() {
         const { id, ...insertData } = transaction;
         const { data, error } = await supabase
           .from('finance_transactions')
-          .insert(insertData)
+          .insert({
+            ...insertData,
+            account_id: insertData.account_id ?? null, // Ensure account_id is set
+          })
           .select()
           .single();
         
