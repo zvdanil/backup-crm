@@ -144,6 +144,9 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
   const selectedColor = watch('color');
 
   const handleFormSubmit = (data: ActivityFormData) => {
+    console.log('[ActivityForm] handleFormSubmit - billingRules:', billingRules);
+    console.log('[ActivityForm] handleFormSubmit - billingRules custom_statuses:', billingRules?.custom_statuses);
+    
     onSubmit({
       name: data.name,
       teacher_payment_percent: parseFloat(data.teacher_payment_percent),
@@ -367,7 +370,11 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
 
           <BillingRulesEditor
             billingRules={billingRules}
-            onChange={setBillingRules}
+            onChange={(newRules) => {
+              console.log('[ActivityForm] BillingRulesEditor onChange called:', newRules);
+              console.log('[ActivityForm] BillingRulesEditor onChange custom_statuses:', newRules?.custom_statuses);
+              setBillingRules(newRules);
+            }}
             effectiveFrom={effectiveFrom}
             onEffectiveFromChange={setEffectiveFrom}
           />

@@ -102,6 +102,7 @@ export function BillingRulesEditor({
   };
 
   const removeCustomStatus = (id: string) => {
+    console.log('[BillingRulesEditor] removeCustomStatus called:', { id });
     const currentCustomStatuses = localRules.custom_statuses || [];
     const updatedStatuses = currentCustomStatuses.filter((cs) => cs.id !== id);
 
@@ -110,15 +111,22 @@ export function BillingRulesEditor({
       custom_statuses: updatedStatuses.length > 0 ? updatedStatuses : undefined,
     };
 
+    console.log('[BillingRulesEditor] removeCustomStatus - newRules:', newRules);
     setLocalRules(newRules);
     onChange(newRules);
   };
 
   const toggleCustomStatusActive = (id: string) => {
+    console.log('[BillingRulesEditor] toggleCustomStatusActive called:', { id, localRules });
     const currentCustomStatuses = localRules.custom_statuses || [];
     const customStatus = currentCustomStatuses.find((cs) => cs.id === id);
+    console.log('[BillingRulesEditor] Found customStatus:', customStatus);
     if (customStatus) {
-      updateCustomStatus(id, { is_active: !customStatus.is_active });
+      const newActiveState = !customStatus.is_active;
+      console.log('[BillingRulesEditor] Toggling is_active to:', newActiveState);
+      updateCustomStatus(id, { is_active: newActiveState });
+    } else {
+      console.warn('[BillingRulesEditor] Custom status not found:', id);
     }
   };
 
