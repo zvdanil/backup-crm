@@ -237,7 +237,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   }, [visibleEnrollments, groups]);
 
   const attendanceMap = useMemo(() => {
-    const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; manual_value_edit: boolean }>();
+    const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; notes: string | null; manual_value_edit: boolean }>();
     if (!attendanceData || !Array.isArray(attendanceData)) return map;
     attendanceData.forEach((a: any) => {
       const key = `${a.enrollment_id}-${a.date}`;
@@ -245,6 +245,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         status: a.status, 
         amount: a.charged_amount || 0,
         value: a.value || null,
+        notes: a.notes || null,
         manual_value_edit: a.manual_value_edit || false
       });
     });
@@ -270,7 +271,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return map;
   }, [staff]);
 
-  const buildAttendanceRecordsFromMap = useCallback((mapOverride?: Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; manual_value_edit: boolean }>) => {
+  const buildAttendanceRecordsFromMap = useCallback((mapOverride?: Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; notes: string | null; manual_value_edit: boolean }>) => {
     const map = mapOverride ?? attendanceMap;
     const records: AttendanceRecord[] = [];
 
@@ -760,6 +761,35 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     discountPercent: number = 0,
     enrollment?: any
   ) => {
+    // Получаем существующую запись для проверки изменений
+    const existing = attendanceMap.get(`${enrollmentId}-${date}`);
+    
+    // Если изменяется только примечание (статус и value не изменились), сохраняем только notes
+    if (existing && existing.status === status && existing.value === value && existing.notes !== notes) {
+      try {
+        await setAttendance.mutateAsync({
+          enrollment_id: enrollmentId,
+          date,
+          status: existing.status,
+          charged_amount: existing.amount,
+          value: existing.value,
+          notes: notes || null,
+          manual_value_edit: existing.manual_value_edit,
+        });
+        
+        // Обновляем локальную карту
+        const updatedMap = new Map(attendanceMap);
+        updatedMap.set(`${enrollmentId}-${date}`, {
+          ...existing,
+          notes: notes || null,
+        });
+        // Не нужно вызывать syncStaffJournalEntriesForMonth, так как статус и value не изменились
+      } catch (error) {
+        console.error('Failed to update notes:', error);
+      }
+      return;
+    }
+    
     // Якщо обидва null - видаляємо запис
     if (status === null && (value === null || value === undefined || value === 0)) {
       try {
@@ -812,6 +842,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           status: null,
           amount: 0,
           value: calculatedValue !== null ? calculatedValue : value,
+          notes: notes || null,
           manual_value_edit: isManualEdit,
         });
         const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
@@ -886,6 +917,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           status,
           amount: chargedAmount,
           value: finalValue,
+          notes: notes || null,
           manual_value_edit: isManualEdit,
         });
         const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
