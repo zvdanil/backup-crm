@@ -39,9 +39,11 @@ export function StudentActivityBalanceRow({
   const isMonthlyBilling = !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
 
   const accountLabel = useMemo(() => {
-    if (!enrollment.activities.account_id) return 'Без рахунку';
-    return accounts.find(account => account.id === enrollment.activities.account_id)?.name || 'Без рахунку';
-  }, [accounts, enrollment.activities.account_id]);
+    // Приоритет: enrollment.account_id ?? activity.account_id
+    const accountId = enrollment.account_id || enrollment.activities.account_id;
+    if (!accountId) return 'Без рахунку';
+    return accounts.find(account => account.id === accountId)?.name || 'Без рахунку';
+  }, [accounts, enrollment.account_id, enrollment.activities.account_id]);
 
   const baseMonthlyCharge = useMemo(() => {
     if (!isMonthlyBilling) return 0;
