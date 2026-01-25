@@ -10,11 +10,10 @@ import {
   ATTENDANCE_LABELS, 
   ATTENDANCE_FULL_LABELS, 
   ATTENDANCE_COLORS,
-  ATTENDANCE_COEFFICIENTS,
-  calculateChargedAmount,
   formatCurrency,
   WEEKEND_BG_COLOR,
-  type AttendanceStatus 
+  type AttendanceStatus,
+  type BaseAttendanceStatus
 } from '@/lib/attendance';
 import { X } from 'lucide-react';
 
@@ -28,7 +27,7 @@ interface AttendanceCellProps {
   discountPercent: number;
 }
 
-const statuses: AttendanceStatus[] = ['present', 'sick', 'absent', 'vacation'];
+const statuses: BaseAttendanceStatus[] = ['present', 'sick', 'absent', 'vacation'];
 
 export function AttendanceCell({ 
   status, 
@@ -57,11 +56,11 @@ export function AttendanceCell({
             'w-9 h-9 rounded-md text-xs font-semibold transition-all hover:scale-105',
             isWeekend && !status && WEEKEND_BG_COLOR,
             !status && !isWeekend && 'bg-muted hover:bg-muted/80',
-            status && ATTENDANCE_COLORS[status],
+            status && status in ATTENDANCE_COLORS && ATTENDANCE_COLORS[status as BaseAttendanceStatus],
             status && 'text-white shadow-sm'
           )}
         >
-          {status ? ATTENDANCE_LABELS[status] : ''}
+          {status && status in ATTENDANCE_LABELS ? ATTENDANCE_LABELS[status as BaseAttendanceStatus] : ''}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-56 p-3" align="center">
@@ -70,8 +69,8 @@ export function AttendanceCell({
           
           <div className="grid grid-cols-2 gap-2">
             {statuses.map((s) => {
-              const coefficient = ATTENDANCE_COEFFICIENTS[s];
-              const calculatedAmount = calculateChargedAmount(activityPrice, customPrice, discountPercent, s);
+              const basePrice = customPrice ?? activityPrice;
+              const priceWithDiscount = basePrice * (1 - discountPercent / 100);
               
               return (
                 <Button
@@ -88,7 +87,7 @@ export function AttendanceCell({
                   <span className="font-semibold">{ATTENDANCE_LABELS[s]}</span>
                   <span className="text-xs opacity-80">{ATTENDANCE_FULL_LABELS[s]}</span>
                   <span className="text-xs mt-1">
-                    {coefficient * 100}% = {formatCurrency(calculatedAmount)}
+                    {formatCurrency(priceWithDiscount)}
                   </span>
                 </Button>
               );

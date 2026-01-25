@@ -27,12 +27,22 @@ export interface BillingRule {
   type: BillingRuleType;
 }
 
+export interface CustomAttendanceStatus {
+  id: string; // UUID
+  name: string; // Название (например, "Отработка")
+  rate: number; // Может быть отрицательным
+  type: BillingRuleType;
+  color: string; // Hex цвет (например, "#FF5733")
+  is_active: boolean;
+}
+
 export interface BillingRules {
   present?: BillingRule;
   sick?: BillingRule;
   absent?: BillingRule;
   vacation?: BillingRule;
   value?: BillingRule; // For hourly/numeric input
+  custom_statuses?: CustomAttendanceStatus[]; // Максимум 2
 }
 
 export interface Activity {

@@ -11,9 +11,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import type { BillingRules, BillingRule, BillingRuleType } from '@/hooks/useActivities';
+import type { BillingRules, BillingRule, BillingRuleType, CustomAttendanceStatus } from '@/hooks/useActivities';
 import { ATTENDANCE_LABELS, ATTENDANCE_FULL_LABELS } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
+import { Trash2, X } from 'lucide-react';
 
 const BILLING_RULE_TYPES: { value: BillingRuleType; label: string }[] = [
   { value: 'fixed', label: 'Разово (фіксована сума)' },
@@ -56,6 +57,66 @@ export function BillingRulesEditor({
   const getStatusLabel = (status: AttendanceStatus | 'value') => {
     if (status === 'value') return 'Число';
     return `${ATTENDANCE_LABELS[status]} - ${ATTENDANCE_FULL_LABELS[status]}`;
+  };
+
+  const addCustomStatus = () => {
+    const currentCustomStatuses = localRules.custom_statuses || [];
+    if (currentCustomStatuses.length >= 2) {
+      return; // Максимум 2 кастомных статуса
+    }
+
+    const newCustomStatus: CustomAttendanceStatus = {
+      id: crypto.randomUUID(),
+      name: '',
+      rate: 0,
+      type: 'fixed',
+      color: '#3B82F6',
+      is_active: true,
+    };
+
+    const newRules = {
+      ...localRules,
+      custom_statuses: [...currentCustomStatuses, newCustomStatus],
+    };
+
+    setLocalRules(newRules);
+    onChange(newRules);
+  };
+
+  const updateCustomStatus = (id: string, updates: Partial<CustomAttendanceStatus>) => {
+    const currentCustomStatuses = localRules.custom_statuses || [];
+    const updatedStatuses = currentCustomStatuses.map((cs) =>
+      cs.id === id ? { ...cs, ...updates } : cs
+    );
+
+    const newRules = {
+      ...localRules,
+      custom_statuses: updatedStatuses,
+    };
+
+    setLocalRules(newRules);
+    onChange(newRules);
+  };
+
+  const removeCustomStatus = (id: string) => {
+    const currentCustomStatuses = localRules.custom_statuses || [];
+    const updatedStatuses = currentCustomStatuses.filter((cs) => cs.id !== id);
+
+    const newRules = {
+      ...localRules,
+      custom_statuses: updatedStatuses.length > 0 ? updatedStatuses : undefined,
+    };
+
+    setLocalRules(newRules);
+    onChange(newRules);
+  };
+
+  const toggleCustomStatusActive = (id: string) => {
+    const currentCustomStatuses = localRules.custom_statuses || [];
+    const customStatus = currentCustomStatuses.find((cs) => cs.id === id);
+    if (customStatus) {
+      updateCustomStatus(id, { is_active: !customStatus.is_active });
+    }
   };
 
   return (
@@ -162,6 +223,162 @@ export function BillingRulesEditor({
             </div>
           );
         })}
+
+        <Separator />
+
+        {/* Кастомные статусы */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-base font-semibold">Кастомні статуси</Label>
+              <p className="text-xs text-muted-foreground">
+                Додайте до 2 додаткових статусів з індивідуальними налаштуваннями
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addCustomStatus}
+              disabled={(localRules.custom_statuses || []).length >= 2}
+            >
+              Додати статус
+            </Button>
+          </div>
+
+          {(localRules.custom_statuses || []).map((customStatus) => (
+            <div
+              key={customStatus.id}
+              className={`space-y-3 p-3 border rounded-lg ${
+                !customStatus.is_active ? 'opacity-60' : ''
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-6 h-6 rounded border-2 border-gray-300"
+                    style={{ backgroundColor: customStatus.color }}
+                  />
+                  <Label className="font-medium">
+                    {customStatus.name || 'Новий статус'}
+                  </Label>
+                  {!customStatus.is_active && (
+                    <span className="text-xs text-muted-foreground">(деактивовано)</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleCustomStatusActive(customStatus.id)}
+                  >
+                    {customStatus.is_active ? 'Деактивувати' : 'Активувати'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeCustomStatus(customStatus.id)}
+                    className="text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Назва статусу</Label>
+                  <Input
+                    type="text"
+                    value={customStatus.name}
+                    onChange={(e) =>
+                      updateCustomStatus(customStatus.id, { name: e.target.value })
+                    }
+                    placeholder="Наприклад: Отработка"
+                    className="h-9"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Колір</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="color"
+                        value={customStatus.color}
+                        onChange={(e) =>
+                          updateCustomStatus(customStatus.id, { color: e.target.value })
+                        }
+                        className="h-9 w-20 p-1 cursor-pointer"
+                      />
+                      <Input
+                        type="text"
+                        value={customStatus.color}
+                        onChange={(e) =>
+                          updateCustomStatus(customStatus.id, { color: e.target.value })
+                        }
+                        placeholder="#3B82F6"
+                        className="h-9 flex-1"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Тип оплати</Label>
+                    <Select
+                      value={customStatus.type}
+                      onValueChange={(value) =>
+                        updateCustomStatus(customStatus.id, {
+                          type: value as BillingRuleType,
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BILLING_RULE_TYPES.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs">Ставка (₴)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={customStatus.rate || ''}
+                      onChange={(e) =>
+                        updateCustomStatus(customStatus.id, {
+                          rate: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      placeholder="0"
+                      className="h-9"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Може бути від'ємним (для відпрацювань/повернень)
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  {customStatus.type === 'fixed' && 'Розрахунок: ставка × 1'}
+                  {customStatus.type === 'subscription' &&
+                    'Розрахунок: ставка ÷ кількість робочих днів у місяці'}
+                  {customStatus.type === 'hourly' &&
+                    'Розрахунок: ставка × число, введене в журналі'}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );

@@ -754,9 +754,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     date: string, 
     status: AttendanceStatus | null,
     value: number | null,
-    _activityPrice: number, // Deprecated: не використовується, залишено для сумісності
-    customPrice: number | null,
-    discountPercent: number,
+    notes: string | null = null,
+    _activityPrice: number = 0, // Deprecated: не використовується, залишено для сумісності
+    customPrice: number | null = null,
+    discountPercent: number = 0,
     enrollment?: any
   ) => {
     // Якщо обидва null - видаляємо запис
@@ -803,7 +804,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           status: null,
           charged_amount: 0,
           value: calculatedValue !== null ? calculatedValue : value,
-          notes: null,
+          notes: notes || null,
           manual_value_edit: isManualEdit,
         });
         const updatedMap = new Map(attendanceMap);
@@ -871,7 +872,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           status,
           charged_amount: chargedAmount,
           value: finalValue, // Використовуємо передане або розраховане value
-          notes: null,
+          notes: notes || null,
           manual_value_edit: isManualEdit,
         });
         
@@ -1202,13 +1203,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                             status={attendance?.status || null}
                             amount={attendance?.amount || 0}
                             value={attendance?.value || null}
+                            notes={attendance?.notes || null}
                             manualValueEdit={attendance?.manual_value_edit || false}
                             isWeekend={selectedDay ? isWeekend(selectedDay) : false}
-                            onChange={(status, value) => handleStatusChange(
+                            onChange={(status, value, notes) => handleStatusChange(
                               enrollment.id,
                               selectedDateStr,
                               status,
                               value,
+                              notes || null,
                               0,
                               enrollment.custom_price,
                               enrollment.discount_percent,
@@ -1266,13 +1269,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                           status={attendance?.status || null}
                           amount={attendance?.amount || 0}
                           value={attendance?.value || null}
+                          notes={attendance?.notes || null}
                           manualValueEdit={attendance?.manual_value_edit || false}
                           isWeekend={selectedDay ? isWeekend(selectedDay) : false}
-                          onChange={(status, value) => handleStatusChange(
+                          onChange={(status, value, notes) => handleStatusChange(
                             enrollment.id,
                             selectedDateStr,
                             status,
                             value,
+                            notes || null,
                             0,
                             enrollment.custom_price,
                             enrollment.discount_percent,
@@ -1496,13 +1501,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                                 status={attendance?.status || null}
                                 amount={attendance?.amount || 0}
                                 value={attendance?.value || null}
+                                notes={attendance?.notes || null}
                                 manualValueEdit={attendance?.manual_value_edit || false}
                                 isWeekend={isWeekend(day)}
-                                onChange={(status, value) => handleStatusChange(
+                                onChange={(status, value, notes) => handleStatusChange(
                                   enrollment.id,
                                   dateStr,
                                   status,
                                   value,
+                                  notes || null,
                                   0, // activityPrice не використовується - залишаємо для сумісності
                                   enrollment.custom_price,
                                   enrollment.discount_percent,
@@ -1590,13 +1597,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                               status={attendance?.status || null}
                               amount={attendance?.amount || 0}
                               value={attendance?.value || null}
+                              notes={attendance?.notes || null}
                               manualValueEdit={attendance?.manual_value_edit || false}
                               isWeekend={isWeekend(day)}
-                              onChange={(status, value) => handleStatusChange(
+                              onChange={(status, value, notes) => handleStatusChange(
                                 enrollment.id,
                                 dateStr,
                                 status,
                                 value,
+                                notes || null,
                                 0, // activityPrice не використовується - залишаємо для сумісності
                                 enrollment.custom_price,
                                 enrollment.discount_percent,

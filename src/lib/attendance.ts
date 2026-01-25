@@ -1,12 +1,18 @@
 /**
  * Attendance Status Types
+ * Базовые статусы (фиксированные)
  */
-export type AttendanceStatus = 'present' | 'sick' | 'absent' | 'vacation';
+export type BaseAttendanceStatus = 'present' | 'sick' | 'absent' | 'vacation';
 
 /**
- * Attendance Status Labels (short)
+ * Расширенный тип статуса: базовые или UUID кастомных статусов
  */
-export const ATTENDANCE_LABELS: Record<AttendanceStatus, string> = {
+export type AttendanceStatus = BaseAttendanceStatus | string; // string = UUID кастомного статуса
+
+/**
+ * Attendance Status Labels (short) - только для базовых статусов
+ */
+export const ATTENDANCE_LABELS: Record<BaseAttendanceStatus, string> = {
   present: 'П',
   sick: 'Х',
   absent: 'Н',
@@ -14,9 +20,9 @@ export const ATTENDANCE_LABELS: Record<AttendanceStatus, string> = {
 };
 
 /**
- * Attendance Status Full Labels
+ * Attendance Status Full Labels - только для базовых статусов
  */
-export const ATTENDANCE_FULL_LABELS: Record<AttendanceStatus, string> = {
+export const ATTENDANCE_FULL_LABELS: Record<BaseAttendanceStatus, string> = {
   present: 'Присутні',
   sick: 'Хворі',
   absent: 'Пропуски',
@@ -24,14 +30,129 @@ export const ATTENDANCE_FULL_LABELS: Record<AttendanceStatus, string> = {
 };
 
 /**
- * Attendance Status Colors (Tailwind CSS classes)
+ * Attendance Status Colors (Tailwind CSS classes) - только для базовых статусов
  */
-export const ATTENDANCE_COLORS: Record<AttendanceStatus, string> = {
+export const ATTENDANCE_COLORS: Record<BaseAttendanceStatus, string> = {
   present: 'bg-green-500 hover:bg-green-600',
   sick: 'bg-yellow-500 hover:bg-yellow-600',
   absent: 'bg-red-500 hover:bg-red-600',
   vacation: 'bg-blue-500 hover:bg-blue-600',
 };
+
+/**
+ * Получить метку статуса (короткую)
+ */
+export function getAttendanceLabel(
+  status: AttendanceStatus | null,
+  customStatuses?: Array<{ id: string; name: string }>
+): string {
+  if (!status) return '';
+  
+  // Проверяем базовые статусы
+  if (status in ATTENDANCE_LABELS) {
+    return ATTENDANCE_LABELS[status as BaseAttendanceStatus];
+  }
+  
+  // Ищем кастомный статус
+  if (customStatuses) {
+    const customStatus = customStatuses.find(cs => cs.id === status);
+    if (customStatus) {
+      // Возвращаем первые 2 символа названия или первые 3 буквы
+      return customStatus.name.length > 2 
+        ? customStatus.name.substring(0, 2).toUpperCase()
+        : customStatus.name.toUpperCase();
+    }
+  }
+  
+  return '';
+}
+
+/**
+ * Получить полное название статуса
+ */
+export function getAttendanceFullLabel(
+  status: AttendanceStatus | null,
+  customStatuses?: Array<{ id: string; name: string }>
+): string {
+  if (!status) return '';
+  
+  // Проверяем базовые статусы
+  if (status in ATTENDANCE_FULL_LABELS) {
+    return ATTENDANCE_FULL_LABELS[status as BaseAttendanceStatus];
+  }
+  
+  // Ищем кастомный статус
+  if (customStatuses) {
+    const customStatus = customStatuses.find(cs => cs.id === status);
+    if (customStatus) {
+      return customStatus.name;
+    }
+  }
+  
+  return '';
+}
+
+/**
+ * Получить цвет статуса (CSS класс для базовых, hex для кастомных)
+ */
+export function getAttendanceColor(
+  status: AttendanceStatus | null,
+  customStatuses?: Array<{ id: string; color: string }>
+): string {
+  if (!status) return '';
+  
+  // Проверяем базовые статусы
+  if (status in ATTENDANCE_COLORS) {
+    return ATTENDANCE_COLORS[status as BaseAttendanceStatus];
+  }
+  
+  // Ищем кастомный статус
+  if (customStatuses) {
+    const customStatus = customStatuses.find(cs => cs.id === status);
+    if (customStatus) {
+      // Возвращаем hex цвет, который будет использоваться как inline style
+      return customStatus.color;
+    }
+  }
+  
+  return '';
+}
+
+/**
+ * Проверить, является ли статус базовым
+ */
+export function isBaseAttendanceStatus(status: AttendanceStatus | null): status is BaseAttendanceStatus {
+  if (!status) return false;
+  return status in ATTENDANCE_LABELS;
+}
+
+/**
+ * Вычислить яркость цвета (для определения контрастности)
+ * @param hexColor - Hex цвет (например, "#FF5733")
+ * @returns Яркость от 0 до 255
+ */
+export function getColorBrightness(hexColor: string): number {
+  // Удаляем # если есть
+  const hex = hexColor.replace('#', '');
+  
+  // Конвертируем в RGB
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  
+  // Вычисляем яркость по формуле
+  return (r * 299 + g * 587 + b * 114) / 1000;
+}
+
+/**
+ * Получить контрастный цвет для обводки точки примечания
+ * @param backgroundColor - Hex цвет фона
+ * @returns Цвет обводки (#FFFFFF для темных, #000000 для светлых)
+ */
+export function getContrastColor(backgroundColor: string): string {
+  const brightness = getColorBrightness(backgroundColor);
+  return brightness < 128 ? '#FFFFFF' : '#000000';
+}
 
 /**
  * Weekend background color (Tailwind CSS classes)
@@ -187,8 +308,32 @@ export function calculateValueFromBillingRules(
     return null;
   }
 
-  const rule = billingRules[status];
-  if (!rule || !rule.rate || rule.rate <= 0) {
+  // Сначала проверяем базовые статусы
+  let rule = billingRules[status];
+  
+  // Если не найден базовый статус, ищем в кастомных статусах
+  if (!rule && billingRules.custom_statuses && Array.isArray(billingRules.custom_statuses)) {
+    const customStatus = billingRules.custom_statuses.find(
+      (cs: any) => cs.id === status && cs.is_active !== false
+    );
+    if (customStatus) {
+      // Преобразуем кастомный статус в формат BillingRule
+      rule = {
+        rate: customStatus.rate,
+        type: customStatus.type,
+      };
+    }
+  }
+  
+  // Проверяем наличие правила и rate (rate может быть отрицательным для кастомных статусов)
+  if (!rule || rule.rate === null || rule.rate === undefined) {
+    return null;
+  }
+  
+  // Для базовых статусов проверяем, что rate > 0 (для обратной совместимости)
+  // Для кастомных статусов rate может быть отрицательным
+  const isBaseStatus = isBaseAttendanceStatus(status);
+  if (isBaseStatus && rule.rate <= 0) {
     return null;
   }
 
