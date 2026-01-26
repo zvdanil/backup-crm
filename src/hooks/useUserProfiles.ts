@@ -68,76 +68,39 @@ export function useCreateUser() {
 
   return useMutation({
     mutationFn: async (userData: CreateUserData) => {
-      // Создаем пользователя через signUp
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          data: {
-            parent_name: userData.parentName,
-            child_name: userData.childName,
-            full_name: userData.parentName,
-          },
+      // Получаем текущую сессию для авторизации
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Необхідна авторизація для створення користувача');
+      }
+
+      // Используем Edge Function для создания пользователя через Admin API
+      // Это обходит rate limits для обычной регистрации
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '',
         },
+        body: JSON.stringify({
+          email: userData.email,
+          password: userData.password,
+          parentName: userData.parentName,
+          childName: userData.childName,
+          role: userData.role,
+          isActive: userData.isActive,
+        }),
       });
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Користувач не створений');
+      const result = await response.json();
 
-      // Ждем немного, чтобы триггер успел создать профиль
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Проверяем, существует ли профиль
-      const { data: existingProfile, error: checkError } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('id', authData.user.id)
-        .maybeSingle();
-
-      if (checkError && checkError.code !== 'PGRST116') {
-        // PGRST116 = not found, это нормально
-        throw checkError;
+      if (!response.ok || result.error) {
+        throw new Error(result.error?.message || 'Помилка створення користувача');
       }
 
-      let profileData: UserProfile;
-
-      if (existingProfile) {
-        // Профиль существует, обновляем его
-        const { data: updatedProfile, error: updateError } = await supabase
-          .from('user_profiles')
-          .update({
-            role: userData.role,
-            is_active: userData.isActive,
-            parent_name: userData.parentName,
-            child_name: userData.childName,
-            full_name: userData.parentName,
-          })
-          .eq('id', authData.user.id)
-          .select('*')
-          .single();
-
-        if (updateError) throw updateError;
-        profileData = updatedProfile as UserProfile;
-      } else {
-        // Профиль не существует, создаем его явно
-        const { data: createdProfile, error: createError } = await supabase
-          .from('user_profiles')
-          .insert({
-            id: authData.user.id,
-            full_name: userData.parentName,
-            parent_name: userData.parentName,
-            child_name: userData.childName,
-            role: userData.role,
-            is_active: userData.isActive,
-          })
-          .select('*')
-          .single();
-
-        if (createError) throw createError;
-        profileData = createdProfile as UserProfile;
-      }
-
-      return profileData;
+      return result.data as UserProfile;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
