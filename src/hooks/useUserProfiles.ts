@@ -84,22 +84,60 @@ export function useCreateUser() {
       if (authError) throw authError;
       if (!authData.user) throw new Error('Користувач не створений');
 
-      // Обновляем профиль с правильной ролью и статусом
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .update({
-          role: userData.role,
-          is_active: userData.isActive,
-          parent_name: userData.parentName,
-          child_name: userData.childName,
-          full_name: userData.parentName,
-        })
-        .eq('id', authData.user.id)
-        .select('*')
-        .single();
+      // Ждем немного, чтобы триггер успел создать профиль
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      if (profileError) throw profileError;
-      return profileData as UserProfile;
+      // Проверяем, существует ли профиль
+      const { data: existingProfile, error: checkError } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        // PGRST116 = not found, это нормально
+        throw checkError;
+      }
+
+      let profileData: UserProfile;
+
+      if (existingProfile) {
+        // Профиль существует, обновляем его
+        const { data: updatedProfile, error: updateError } = await supabase
+          .from('user_profiles')
+          .update({
+            role: userData.role,
+            is_active: userData.isActive,
+            parent_name: userData.parentName,
+            child_name: userData.childName,
+            full_name: userData.parentName,
+          })
+          .eq('id', authData.user.id)
+          .select('*')
+          .single();
+
+        if (updateError) throw updateError;
+        profileData = updatedProfile as UserProfile;
+      } else {
+        // Профиль не существует, создаем его явно
+        const { data: createdProfile, error: createError } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: authData.user.id,
+            full_name: userData.parentName,
+            parent_name: userData.parentName,
+            child_name: userData.childName,
+            role: userData.role,
+            is_active: userData.isActive,
+          })
+          .select('*')
+          .single();
+
+        if (createError) throw createError;
+        profileData = createdProfile as UserProfile;
+      }
+
+      return profileData;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
