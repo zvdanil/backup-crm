@@ -220,9 +220,11 @@ export function useCreateStaffBillingRule() {
       }
 
       // Create new rule - map rate to rate_value for database
+      // Важно: сохраняем group_lesson_id явно
       const insertData: any = {
         ...rule,
         rate_value: rule.rate,
+        group_lesson_id: rule.group_lesson_id ?? null, // Явно сохраняем group_lesson_id
       };
       delete insertData.rate;
 

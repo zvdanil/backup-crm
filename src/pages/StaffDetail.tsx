@@ -140,6 +140,7 @@ export default function StaffDetail() {
       createBillingRule.mutate({
         staff_id: id,
         activity_id: activityId,
+        group_lesson_id: rule.group_lesson_id ?? null, // Важно: сохраняем group_lesson_id
         rate_type: rule.rate_type,
         rate: rule.rate,
         lesson_limit: rule.lesson_limit ?? null,
