@@ -380,26 +380,8 @@ export default function StaffExpenseJournal() {
       const hours = parseFloat(manualValue);
       if (isNaN(hours) || hours < 0) return;
 
-      // Якщо години = 0, видаляємо запис
-      if (hours === 0) {
-        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}-manual`;
-        const existing = journalMap.get(key);
-        if (existing?.id) {
-          deleteJournalEntry.mutate({ id: existing.id });
-        } else {
-          deleteJournalEntry.mutate({
-            staff_id: editingCell.staffId,
-            activity_id: editingCell.activityId,
-            date: editingCell.date,
-            is_manual_override: true,
-          });
-        }
-        setEditingCell(null);
-        setManualValue('');
-        return;
-      }
-
-      const amount = hours * rateValue;
+      // Якщо години = 0, зберігаємо запис з 0 годин (явна відмітка про відсутність)
+      const amount = hours * rateValue; // Буде 0, якщо hours = 0
 
       upsertJournalEntry.mutate({
         staff_id: editingCell.staffId,
@@ -438,25 +420,9 @@ export default function StaffExpenseJournal() {
 
       const sessions = parseFloat(manualValue);
       if (isNaN(sessions) || sessions < 0) return;
-      if (sessions === 0) {
-        const key = `${editingCell.staffId}-${editingCell.activityId || 'null'}-${editingCell.date}-manual`;
-        const existing = journalMap.get(key);
-        if (existing?.id) {
-          deleteJournalEntry.mutate({ id: existing.id });
-        } else {
-          deleteJournalEntry.mutate({
-            staff_id: editingCell.staffId,
-            activity_id: editingCell.activityId,
-            date: editingCell.date,
-            is_manual_override: true,
-          });
-        }
-        setEditingCell(null);
-        setManualValue('');
-        return;
-      }
-
-      const amount = sessions * rateValue;
+      
+      // Якщо занять = 0, зберігаємо запис з 0 занять (явна відмітка про відсутність)
+      const amount = sessions * rateValue; // Буде 0, якщо sessions = 0
 
       upsertJournalEntry.mutate({
         staff_id: editingCell.staffId,
@@ -466,7 +432,7 @@ export default function StaffExpenseJournal() {
         base_amount: rateValue,
         deductions_applied: [],
         is_manual_override: true,
-        notes: `${sessions} зан. × ${rateValue} ₴`,
+        notes: sessions === 0 ? '0 зан. (відмітка про відсутність)' : `${sessions} зан. × ${rateValue} ₴`,
       });
 
       setEditingCell(null);
@@ -684,7 +650,7 @@ export default function StaffExpenseJournal() {
                           size="sm"
                           onClick={handleSaveManualEntry}
                           className="flex-1"
-                          disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                          disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
                         >
                           Зберегти
                         </Button>
@@ -731,7 +697,7 @@ export default function StaffExpenseJournal() {
                           size="sm"
                           onClick={handleSaveManualEntry}
                           className="flex-1"
-                          disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                          disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
                         >
                           Зберегти
                         </Button>
