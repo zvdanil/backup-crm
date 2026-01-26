@@ -186,14 +186,18 @@ export function useCreateStaffBillingRule() {
   return useMutation({
     mutationFn: async (rule: StaffBillingRuleInsert) => {
       // Close previous rule if exists
+      // Важно: закрываем только ставки с совпадающим activity_id И group_lesson_id
+      // Это позволяет иметь одновременно активные ставки для одной активности, но для разных журналов
       let query = supabase
         .from('staff_billing_rules' as any)
         .select('id')
         .eq('staff_id', rule.staff_id)
         .eq('activity_id', rule.activity_id)
-        .is('effective_to', null)
-        .limit(1);
+        .is('effective_to', null);
 
+      // Добавляем проверку на совпадение group_lesson_id
+      // Если group_lesson_id IS NULL - ищем только ставки с NULL
+      // Если group_lesson_id IS NOT NULL - ищем только ставки с тем же UUID
       if (rule.group_lesson_id === null || rule.group_lesson_id === undefined) {
         query = query.is('group_lesson_id', null);
       } else {
