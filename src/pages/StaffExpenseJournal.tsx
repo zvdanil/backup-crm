@@ -206,14 +206,16 @@ export default function StaffExpenseJournal() {
     return map;
   }, [allManualRateHistory]);
   
-  // Map staff activities once at the top level
+  // Map staff activities based on billing rules (not enrollments)
+  // Only staff with automatic billing rules should have activities
   const staffActivitiesMap = useMemo(() => {
     const map = new Map<string, typeof activities>();
     activeStaff.forEach(staffMember => {
       const activityIds = new Set<string>();
-      enrollments.forEach(e => {
-        if (e.teacher_id === staffMember.id && e.activity_id) {
-          activityIds.add(e.activity_id);
+      // Get activities from billing rules (automatic rates)
+      allBillingRules.forEach((rule: any) => {
+        if (rule.staff_id === staffMember.id && rule.activity_id) {
+          activityIds.add(rule.activity_id);
         }
       });
       const staffActivities = Array.from(activityIds)
@@ -222,7 +224,18 @@ export default function StaffExpenseJournal() {
       map.set(staffMember.id, staffActivities);
     });
     return map;
-  }, [activeStaff, enrollments, activities]);
+  }, [activeStaff, allBillingRules, activities]);
+  
+  // Check if staff has automatic billing rules
+  const staffHasAutoRates = useMemo(() => {
+    const set = new Set<string>();
+    allBillingRules.forEach((rule: any) => {
+      if (rule.staff_id) {
+        set.add(rule.staff_id);
+      }
+    });
+    return set;
+  }, [allBillingRules]);
 
   // Create a map of journal entries for quick lookup
   // Key format: staff_id-date (for summing all activities per day)
@@ -858,10 +871,13 @@ export default function StaffExpenseJournal() {
               {filteredStaff.map((staffMember) => {
                 // Get activities from pre-computed map (no hooks here!)
                 const staffActivities = staffActivitiesMap.get(staffMember.id) || [];
+                // Only show "Авто нарахування" row if staff has automatic billing rules
+                const hasAutoRates = staffHasAutoRates.has(staffMember.id);
 
                 return (
                   <React.Fragment key={staffMember.id}>
-                    {/* Staff row with all activities combined */}
+                    {/* Staff row with all activities combined - only if has automatic rates */}
+                    {hasAutoRates && (
                   <tr className="border-t hover:bg-muted/20">
                       <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
                         <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
@@ -910,6 +926,7 @@ export default function StaffExpenseJournal() {
                         );
                       })}
                     </tr>
+                    )}
                     {(manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
                       <tr key={`${staffMember.id}-${manualActivity.activityId || 'null'}`} className="border-t bg-muted/10">
                         <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
