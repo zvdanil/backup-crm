@@ -208,17 +208,20 @@ export function useCreateStaffBillingRule() {
 
       if (findError) throw findError;
 
-      const previousRule = (previousRuleArray && previousRuleArray.length > 0 ? previousRuleArray[0] : null) as { id: string } | null;
-
-      if (previousRule && typeof previousRule === 'object' && 'id' in previousRule) {
+      // Закрываем все найденные активные ставки с совпадающим activity_id и group_lesson_id
+      // Это позволяет иметь одновременно активные ставки для одной активности, но для разных журналов
+      if (previousRuleArray && previousRuleArray.length > 0) {
         const effectiveToDate = new Date(rule.effective_from);
         effectiveToDate.setDate(effectiveToDate.getDate() - 1);
         const effectiveToStr = effectiveToDate.toISOString().split('T')[0];
         
+        // Закрываем все найденные ставки (может быть несколько, если были созданы с одинаковыми параметрами)
+        const ruleIds = previousRuleArray.map((r: any) => r.id);
+        
         const { error: updateError } = await supabase
           .from('staff_billing_rules' as any)
           .update({ effective_to: effectiveToStr })
-          .eq('id', (previousRule as any).id);
+          .in('id', ruleIds);
         
         if (updateError) throw updateError;
       }
