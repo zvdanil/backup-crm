@@ -48,6 +48,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { cn } from '@/lib/utils';
 import { useActivities } from '@/hooks/useActivities';
+import { useGroupLessons } from '@/hooks/useGroupLessons';
 import { useMemo } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
@@ -87,6 +88,7 @@ export default function StaffDetail() {
   const { data: allJournalEntries = [] } = useStaffJournalEntries(id);
   const { data: payouts = [] } = useStaffPayouts(id);
   const { data: activities = [] } = useActivities();
+  const { data: allGroupLessons = [] } = useGroupLessons(); // Получаем все групповые занятия для получения названий
   const createPayout = useCreateStaffPayout();
   const updatePayout = useUpdateStaffPayout();
   const deletePayout = useDeleteStaffPayout();
@@ -220,6 +222,15 @@ export default function StaffDetail() {
     return { accrued, paid, balance: accrued - paid };
   }, [journalEntries, payouts, calendarMonth, calendarYear]);
 
+  // Создаем Map для быстрого доступа к названиям групповых занятий
+  const groupLessonsMap = useMemo(() => {
+    const map = new Map<string, string>();
+    allGroupLessons.forEach((lesson) => {
+      map.set(lesson.id, lesson.name);
+    });
+    return map;
+  }, [allGroupLessons]);
+
   // Группировка записей по статьям выплат для детализации
   const paymentItemsSummary = useMemo(() => {
     const itemsMap = new Map<string, { 
@@ -233,13 +244,27 @@ export default function StaffDetail() {
     journalEntries.forEach((entry) => {
       const activityId = entry.activity_id || 'none';
       const mode = entry.is_manual_override ? 'manual' : 'auto';
-      const rowKey = `${activityId}:${mode}`;
+      const isGroup = entry.group_lesson_id !== null && entry.group_lesson_id !== undefined;
+      
+      // Формируем ключ с учетом типа журнала
+      const rowKey = isGroup 
+        ? `${activityId}:${mode}:group:${entry.group_lesson_id}`
+        : `${activityId}:${mode}:regular`;
       
       const activity = activities.find(a => a.id === activityId);
       const baseName = activity ? activity.name : 'Без активності';
-      const name = activityId === 'none'
-        ? (mode === 'manual' ? 'Ручні записи (без активності)' : 'Авто нарахування (без активності)')
-        : `${baseName}${mode === 'manual' ? ' — ручні' : ''}`;
+      
+      let name: string;
+      if (activityId === 'none') {
+        name = mode === 'manual' ? 'Ручні записи (без активності)' : 'Авто нарахування (без активності)';
+      } else if (isGroup) {
+        // Для групповых занятий добавляем название группового занятия
+        const groupLessonName = entry.group_lesson_id ? groupLessonsMap.get(entry.group_lesson_id) : 'Невідоме заняття';
+        name = `${baseName} — ${groupLessonName}${mode === 'manual' ? ' (ручні)' : ' (авто)'}`;
+      } else {
+        // Обычные записи
+        name = `${baseName}${mode === 'manual' ? ' — ручні' : ''}`;
+      }
 
       if (!itemsMap.has(rowKey)) {
         itemsMap.set(rowKey, {
@@ -248,6 +273,7 @@ export default function StaffDetail() {
           totalHours: null,
           entriesCount: 0,
           hasHours: false,
+          isGroup,
         });
       }
 
@@ -265,11 +291,18 @@ export default function StaffDetail() {
       }
     });
 
-    // Преобразуем в массив и сортируем
+    // Преобразуем в массив и сортируем: сначала обычные, потом групповые, внутри каждой группы - по алфавиту
     return Array.from(itemsMap.values())
       .filter(item => item.totalAmount > 0) // Показываем только статьи с начислениями
-      .sort((a, b) => a.name.localeCompare(b.name, 'uk-UA'));
-  }, [journalEntries, activities]);
+      .sort((a, b) => {
+        // Сначала обычные (isGroup = false), потом групповые (isGroup = true)
+        if (a.isGroup !== b.isGroup) {
+          return a.isGroup ? 1 : -1;
+        }
+        // Внутри каждой группы - по алфавиту
+        return a.name.localeCompare(b.name, 'uk-UA');
+      });
+  }, [journalEntries, activities, groupLessonsMap]);
 
   const totalSummary = useMemo(() => {
     const accrued = allJournalEntries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
@@ -582,6 +615,7 @@ export default function StaffDetail() {
                         activities={activities}
                         auditMode={auditMode}
                         onPayoutCellClick={handlePayoutCellClick}
+                        groupLessonsMap={groupLessonsMap}
                       />
                     </div>
                   </TabsContent>
@@ -854,6 +888,7 @@ interface FinancialCalendarTableProps {
   activities: any[];
   auditMode: boolean;
   onPayoutCellClick: (date: string) => void;
+  groupLessonsMap: Map<string, string>;
 }
 
 function FinancialCalendarTable({ 
@@ -864,7 +899,8 @@ function FinancialCalendarTable({
   payouts, 
   activities,
   auditMode,
-  onPayoutCellClick 
+  onPayoutCellClick,
+  groupLessonsMap,
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const salaryActivityId = useMemo(
@@ -872,14 +908,20 @@ function FinancialCalendarTable({
     [activities]
   );
   
-  // Group journal entries by activity + mode (auto/manual)
+  // Group journal entries by activity + mode (auto/manual) + journal type (regular/group)
   const entriesByRow = useMemo(() => {
     const map = new Map<string, Map<string, number>>(); // rowKey -> date -> amount
 
     journalEntries.forEach(entry => {
       const activityId = entry.activity_id || 'none';
       const mode = entry.is_manual_override ? 'manual' : 'auto';
-      const rowKey = `${activityId}:${mode}`;
+      const isGroup = entry.group_lesson_id !== null && entry.group_lesson_id !== undefined;
+      
+      // Формируем ключ с учетом типа журнала
+      const rowKey = isGroup 
+        ? `${activityId}:${mode}:group:${entry.group_lesson_id}`
+        : `${activityId}:${mode}:regular`;
+      
       if (!map.has(rowKey)) {
         map.set(rowKey, new Map());
       }
@@ -897,7 +939,13 @@ function FinancialCalendarTable({
     journalEntries.forEach((entry) => {
       const activityId = entry.activity_id || 'none';
       const mode = entry.is_manual_override ? 'manual' : 'auto';
-      const rowKey = `${activityId}:${mode}`;
+      const isGroup = entry.group_lesson_id !== null && entry.group_lesson_id !== undefined;
+      
+      // Формируем ключ с учетом типа журнала
+      const rowKey = isGroup 
+        ? `${activityId}:${mode}:group:${entry.group_lesson_id}`
+        : `${activityId}:${mode}:regular`;
+      
       if (!map.has(rowKey)) {
         map.set(rowKey, new Map());
       }
@@ -935,27 +983,48 @@ function FinancialCalendarTable({
     return { amounts: amountMap, notes: notesMap };
   }, [payouts, month, year]);
   
-  // Build rows for auto/manual entries per activity
+  // Build rows for auto/manual entries per activity, with separate rows for group lessons
   const activityRows = useMemo(() => {
     const rows = Array.from(entriesByRow.keys()).map((rowKey) => {
-      const [activityId, mode] = rowKey.split(':');
+      const parts = rowKey.split(':');
+      const activityId = parts[0];
+      const mode = parts[1];
       const isManual = mode === 'manual';
+      const isGroup = parts[2] === 'group';
+      const groupLessonId = isGroup ? parts[3] : null;
+      
       const activity = activities.find(a => a.id === activityId);
       const baseName = activity ? activity.name : 'Без активності';
-      const name = activityId === 'none'
-        ? (isManual ? 'Ручні записи (без активності)' : 'Авто нарахування (без активності)')
-        : `${baseName} — ${isManual ? 'ручні' : 'авто'}`;
+      
+      let name: string;
+      if (activityId === 'none') {
+        name = isManual ? 'Ручні записи (без активності)' : 'Авто нарахування (без активності)';
+      } else if (isGroup && groupLessonId) {
+        // Для групповых занятий добавляем название группового занятия
+        const groupLessonName = groupLessonsMap.get(groupLessonId) || 'Невідоме заняття';
+        name = `${baseName} — ${groupLessonName} (${isManual ? 'ручні' : 'авто'})`;
+      } else {
+        // Обычные записи
+        name = `${baseName} — ${isManual ? 'ручні' : 'авто'}`;
+      }
 
       return {
         id: rowKey,
         name,
         source: 'staff-expenses' as const,
+        isGroup, // Для сортировки
       };
     });
 
-    rows.sort((a, b) => a.name.localeCompare(b.name, 'uk-UA'));
+    // Сортируем: сначала обычные, потом групповые, внутри каждой группы - по алфавиту
+    rows.sort((a, b) => {
+      if (a.isGroup !== b.isGroup) {
+        return a.isGroup ? 1 : -1;
+      }
+      return a.name.localeCompare(b.name, 'uk-UA');
+    });
     return rows;
-  }, [entriesByRow, activities]);
+  }, [entriesByRow, activities, groupLessonsMap]);
   
   const getDateString = (date: Date) => {
     return formatDateString(date);
