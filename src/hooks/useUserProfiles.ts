@@ -6,6 +6,8 @@ import type { UserRole } from '@/context/AuthContext';
 export interface UserProfile {
   id: string;
   full_name: string | null;
+  parent_name: string | null;
+  child_name: string | null;
   role: UserRole;
   is_active: boolean;
   created_at: string;
@@ -48,6 +50,63 @@ export function useUpdateUserProfile() {
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export interface CreateUserData {
+  email: string;
+  password: string;
+  parentName: string;
+  childName: string;
+  role: UserRole;
+  isActive: boolean;
+}
+
+export function useCreateUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userData: CreateUserData) => {
+      // Создаем пользователя через signUp
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          data: {
+            parent_name: userData.parentName,
+            child_name: userData.childName,
+            full_name: userData.parentName,
+          },
+        },
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('Користувач не створений');
+
+      // Обновляем профиль с правильной ролью и статусом
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .update({
+          role: userData.role,
+          is_active: userData.isActive,
+          parent_name: userData.parentName,
+          child_name: userData.childName,
+          full_name: userData.parentName,
+        })
+        .eq('id', authData.user.id)
+        .select('*')
+        .single();
+
+      if (profileError) throw profileError;
+      return profileData as UserProfile;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
+      toast({ title: 'Користувача створено' });
+    },
+    onError: (error) => {
+      toast({ title: 'Помилка створення користувача', description: error.message, variant: 'destructive' });
     },
   });
 }

@@ -9,6 +9,8 @@ export type UserRole = Database['public']['Enums']['user_role'];
 export interface UserProfile {
   id: string;
   full_name: string | null;
+  parent_name: string | null;
+  child_name: string | null;
   role: UserRole;
   is_active: boolean;
 }
@@ -19,7 +21,8 @@ interface AuthContextValue {
   profile: UserProfile | null;
   role: UserRole | null;
   isLoading: boolean;
-  signInWithProvider: (provider: 'google' | 'apple') => Promise<void>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, parentName: string, childName: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -140,8 +143,10 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
 
   // Профиль не найден - создаем новый с ролью 'newregistration'
   const role: UserRole = 'newregistration';
-  const fullName = user.user_metadata?.full_name || user.user_metadata?.name || null;
-  logAuth('fetchOrCreateProfile:create', { userId: user.id, role, fullName });
+  const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.user_metadata?.parent_name || null;
+  const parentName = user.user_metadata?.parent_name || null;
+  const childName = user.user_metadata?.child_name || null;
+  logAuth('fetchOrCreateProfile:create', { userId: user.id, role, fullName, parentName, childName });
 
   // Пытаемся создать профиль
   // Используем ON CONFLICT для обработки race condition (если триггер уже создал профиль)
@@ -150,6 +155,8 @@ async function fetchOrCreateProfile(user: User): Promise<UserProfile | null> {
     .insert({
       id: user.id,
       full_name: fullName,
+      parent_name: parentName,
+      child_name: childName,
       role,
       is_active: false, // Новые пользователи неактивны по умолчанию
     })
@@ -292,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Для новых регистраций (SIGNED_IN после OAuth) логируем, но не ждем
+      // Для новых регистраций логируем, но не ждем
       const isNewRegistration = event === 'SIGNED_IN' && !lastProfileUserIdRef.current;
       if (isNewRegistration) {
         logAuth('authStateChange:new-registration', { userId });
@@ -405,18 +412,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Устанавливаем флаг сразу, чтобы предотвратить повторные вызовы
     initialSessionHandledRef.current = true;
 
-    // Обработка OAuth callback URL (очистка параметров после обработки)
-    const urlParams = new URLSearchParams(window.location.search);
-    const hasOAuthCode = urlParams.has('code') || urlParams.has('access_token');
-    const hasOAuthError = urlParams.has('error') || urlParams.has('error_description');
-    
-    console.log('[Auth] Initializing auth', { 
-      hasOAuthCode, 
-      hasOAuthError,
-      url: window.location.href,
-      search: window.location.search 
-    });
-    
     // Явная загрузка начальной сессии
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
@@ -425,55 +420,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       
-      // Если есть ошибка OAuth, но сессия существует - пытаемся восстановить
-      if (hasOAuthError && session?.user) {
-        const error = urlParams.get('error');
-        const errorDescription = urlParams.get('error_description');
-        console.log('[Auth] OAuth error but session exists, attempting recovery', { 
-          error, 
-          errorDescription,
-          userId: session.user.id 
-        });
-        
-        // Если ошибка связана с созданием профиля, пытаемся создать его вручную
-        if (error === 'server_error' && errorDescription?.includes('Database error saving new user')) {
-          console.log('[Auth] Attempting to create profile manually after database error');
-          loadProfile(session.user)
-            .then((profile) => {
-              console.log('[Auth] Profile created successfully after error', { profile });
-              setProfile(profile);
-              lastProfileUserIdRef.current = session.user.id;
-              handleAuthChange('INITIAL_SESSION', session);
-            })
-            .catch((profileError) => {
-              console.error('[Auth] Failed to create profile manually', profileError);
-              toast({
-                title: 'Помилка створення профілю',
-                description: 'Користувач створений, але профіль не вдалося створити. Спробуйте увійти ще раз.',
-                variant: 'destructive',
-              });
-            });
-          // Очищаем параметры ошибки из URL
-          window.history.replaceState({}, '', window.location.pathname);
-          return;
-        }
-      }
-      
-      if (hasOAuthError) {
-        const error = urlParams.get('error');
-        const errorDescription = urlParams.get('error_description');
-        console.error('[Auth] OAuth error in URL', { error, errorDescription });
-        toast({
-          title: 'Помилка авторизації',
-          description: errorDescription || error || 'Помилка при авторизації через OAuth',
-          variant: 'destructive',
-        });
-        // Очищаем параметры ошибки из URL
-        window.history.replaceState({}, '', window.location.pathname);
-      }
-      
       if (session?.user) {
-        logAuth('initialSession:found', { userId: session.user.id, hasOAuthCode });
+        logAuth('initialSession:found', { userId: session.user.id });
         
         // Проверяем кэш перед вызовом handleAuthChange
         const cached = getCachedProfile(session.user.id);
@@ -492,18 +440,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsLoading(false);
           });
         }
-        
-        // Очищаем OAuth параметры из URL после успешной загрузки сессии
-        if (hasOAuthCode) {
-          window.history.replaceState({}, '', window.location.pathname);
-          logAuth('initialSession:oauth-callback-cleaned');
-        }
       } else {
         logAuth('initialSession:none');
-        // Очищаем OAuth параметры даже если сессии нет (на случай ошибки)
-        if (hasOAuthCode) {
-          window.history.replaceState({}, '', window.location.pathname);
-        }
         setIsLoading(false);
       }
     }).catch((error) => {
@@ -556,8 +494,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [handleAuthChange, user]);
 
-  const signInWithProvider = useCallback(async (provider: 'google' | 'apple') => {
-    console.log('[Auth] signInWithProvider called', { provider, url: window.location.origin });
+  const signInWithPassword = useCallback(async (email: string, password: string) => {
+    logAuth('signInWithPassword:start', { email });
     
     if (!supabaseUrl || !supabaseKey) {
       console.error('[Auth] Missing Supabase configuration', { hasUrl: !!supabaseUrl, hasKey: !!supabaseKey });
@@ -570,33 +508,88 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     
     try {
-      console.log('[Auth] Starting OAuth sign in', { provider, redirectTo: window.location.origin });
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) {
+        logAuth('signInWithPassword:error', { message: error.message });
+        toast({ 
+          title: 'Помилка входу', 
+          description: error.message || 'Невірний email або пароль', 
+          variant: 'destructive' 
+        });
+        throw error;
+      }
+      
+      logAuth('signInWithPassword:success', { userId: data.user?.id });
+      // Автоматически обработается через onAuthStateChange
+    } catch (err: any) {
+      logAuth('signInWithPassword:exception', { message: err?.message });
+      if (!err.message || !err.message.includes('Невірний')) {
+        toast({ 
+          title: 'Помилка входу', 
+          description: err?.message || 'Несподівана помилка при спробі входу', 
+          variant: 'destructive' 
+        });
+      }
+      throw err;
+    }
+  }, []);
+
+  const signUp = useCallback(async (email: string, password: string, parentName: string, childName: string) => {
+    logAuth('signUp:start', { email, parentName, childName });
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('[Auth] Missing Supabase configuration', { hasUrl: !!supabaseUrl, hasKey: !!supabaseKey });
+      toast({
+        title: 'Помилка конфігурації',
+        description: 'Не задано VITE_SUPABASE_URL або VITE_SUPABASE_PUBLISHABLE_KEY.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
         options: {
-          redirectTo: window.location.origin,
+          data: {
+            parent_name: parentName,
+            child_name: childName,
+            full_name: parentName, // Для обратной совместимости
+          },
         },
       });
       
       if (error) {
-        console.error('[Auth] OAuth sign in error', error);
+        logAuth('signUp:error', { message: error.message });
         toast({ 
-          title: 'Помилка входу', 
-          description: error.message || 'Не вдалося ініціювати вхід через OAuth', 
+          title: 'Помилка реєстрації', 
+          description: error.message || 'Не вдалося зареєструвати користувача', 
           variant: 'destructive' 
         });
-      } else {
-        console.log('[Auth] OAuth sign in initiated', { provider, data });
-        // OAuth должен редиректить, но если этого не происходит, показываем сообщение
-        // Обычно редирект происходит автоматически
+        throw error;
       }
-    } catch (err: any) {
-      console.error('[Auth] Unexpected error during OAuth sign in', err);
-      toast({ 
-        title: 'Помилка входу', 
-        description: err?.message || 'Несподівана помилка при спробі входу', 
-        variant: 'destructive' 
+      
+      logAuth('signUp:success', { userId: data.user?.id });
+      toast({
+        title: 'Реєстрація успішна',
+        description: 'Ваш акаунт створено. Очікуйте активації адміністратором.',
       });
+      // Автоматически обработается через onAuthStateChange
+    } catch (err: any) {
+      logAuth('signUp:exception', { message: err?.message });
+      if (!err.message || !err.message.includes('успішна')) {
+        toast({ 
+          title: 'Помилка реєстрації', 
+          description: err?.message || 'Несподівана помилка при реєстрації', 
+          variant: 'destructive' 
+        });
+      }
+      throw err;
     }
   }, []);
 
@@ -616,9 +609,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile,
     role: profile?.role ?? null,
     isLoading,
-    signInWithProvider,
+    signInWithPassword,
+    signUp,
     signOut,
-  }), [user, session, profile, isLoading, signInWithProvider, signOut]);
+  }), [user, session, profile, isLoading, signInWithPassword, signUp, signOut]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
