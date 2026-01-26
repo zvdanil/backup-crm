@@ -637,6 +637,7 @@ export default function StaffDetail() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Активність</TableHead>
+                        <TableHead>Журнал</TableHead>
                         <TableHead>Тип</TableHead>
                         <TableHead>Значення</TableHead>
                         <TableHead>Діє з</TableHead>
@@ -645,7 +646,14 @@ export default function StaffDetail() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {billingRules.map((rule) => (
+                      {billingRules.map((rule) => {
+                        // Определяем принадлежность к журналу
+                        const isGroup = rule.group_lesson_id !== null && rule.group_lesson_id !== undefined;
+                        const groupLessonName = isGroup && rule.group_lesson_id 
+                          ? groupLessonsMap.get(rule.group_lesson_id) 
+                          : null;
+                        
+                        return (
                         <TableRow key={rule.id}>
                           <TableCell>
                             {rule.activity_id ? (
@@ -654,6 +662,17 @@ export default function StaffDetail() {
                               </Badge>
                             ) : (
                               <Badge variant="secondary">Всі активності (глобально)</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isGroup && groupLessonName ? (
+                              <span className="text-sm text-muted-foreground">
+                                Журнал групи: {groupLessonName}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                Журнал списки
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>
