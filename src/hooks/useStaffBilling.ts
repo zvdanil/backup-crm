@@ -137,10 +137,12 @@ export function useStaffBillingRulesByActivity(staffId: string | undefined, acti
       
       if (error) throw error;
       // Map rate_value from DB to rate for TypeScript interface
+      // Важно: сохраняем все поля, включая group_lesson_id
       return ((data as any[]) || []).map(rule => ({
         ...rule,
         rate: rule.rate_value ?? rule.rate ?? 0,
         activity: rule.activity || null,
+        group_lesson_id: rule.group_lesson_id ?? null, // Явно сохраняем group_lesson_id
       })) as StaffBillingRule[];
     },
     enabled: !!staffId && !!activityId,
