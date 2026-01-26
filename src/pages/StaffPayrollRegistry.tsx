@@ -38,6 +38,20 @@ export default function StaffPayrollRegistry() {
   const [filterYear, setFilterYear] = useState(now.getFullYear());
   const [filterMonth, setFilterMonth] = useState(now.getMonth());
   
+  // Get all staff billing rules to determine which staff have rates configured
+  const { data: allBillingRules = [] } = useQuery({
+    queryKey: ['staff-billing-rules-all'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_billing_rules' as any)
+        .select('staff_id')
+        .limit(10000); // Get all rules
+      
+      if (error) throw error;
+      return ((data as any) || []) as { staff_id: string }[];
+    },
+  });
+  
   // Get all journal entries (cumulative, no month filter) - для балансу
   const { data: journalEntriesAll = [] } = useQuery({
     queryKey: ['staff-journal-entries-all-cumulative'],
@@ -198,7 +212,21 @@ export default function StaffPayrollRegistry() {
     }
   };
 
-  const activeStaff = useMemo(() => staff.filter(s => s.is_active), [staff]);
+  // Get set of staff IDs that have at least one billing rule configured
+  const staffWithRates = useMemo(() => {
+    const staffIdsSet = new Set<string>();
+    allBillingRules.forEach(rule => {
+      if (rule.staff_id) {
+        staffIdsSet.add(rule.staff_id);
+      }
+    });
+    return staffIdsSet;
+  }, [allBillingRules]);
+  
+  // Filter: only active staff who have at least one billing rule configured
+  const activeStaff = useMemo(() => {
+    return staff.filter(s => s.is_active && staffWithRates.has(s.id));
+  }, [staff, staffWithRates]);
 
   // Calculate totals for all columns
   const totals = useMemo(() => {
