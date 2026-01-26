@@ -62,3 +62,14 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- Убеждаемся, что триггер существует и правильно настроен
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user_profile();
+
+-- Комментарий для документации
+COMMENT ON FUNCTION public.handle_new_user_profile() IS 
+'Автоматически создает профиль пользователя при регистрации. При ошибке не блокирует создание пользователя, профиль будет создан позже через клиентский код.';
