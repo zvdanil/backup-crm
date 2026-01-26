@@ -648,10 +648,22 @@ export default function StaffDetail() {
                     <TableBody>
                       {billingRules.map((rule) => {
                         // Определяем принадлежность к журналу
-                        const isGroup = rule.group_lesson_id !== null && rule.group_lesson_id !== undefined;
+                        // Проверяем наличие group_lesson_id (может быть null, undefined или строкой)
+                        const isGroup = rule.group_lesson_id != null && rule.group_lesson_id !== '';
                         const groupLessonName = isGroup && rule.group_lesson_id 
                           ? groupLessonsMap.get(rule.group_lesson_id) 
                           : null;
+                        
+                        // Debug logging
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log('[StaffDetail] Billing rule:', {
+                            id: rule.id,
+                            activity_id: rule.activity_id,
+                            group_lesson_id: rule.group_lesson_id,
+                            isGroup,
+                            groupLessonName,
+                          });
+                        }
                         
                         return (
                         <TableRow key={rule.id}>
