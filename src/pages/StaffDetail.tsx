@@ -707,7 +707,8 @@ export default function StaffDetail() {
                             </Button>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </CardContent>
