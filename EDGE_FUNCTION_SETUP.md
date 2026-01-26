@@ -10,6 +10,27 @@
 
 ## Шаги развертывания
 
+### Вариант 1: Через Supabase Dashboard (рекомендуется)
+
+1. **Откройте Supabase Dashboard:**
+   - Перейдите в ваш проект: `https://app.supabase.com/project/qtphickigswerhvintvh`
+
+2. **Создайте Edge Function:**
+   - Перейдите в **Edge Functions** в левом меню
+   - Нажмите **"Create a new function"**
+   - Имя функции: `create-user`
+   - Скопируйте содержимое файла `supabase/functions/create-user/index.ts` в редактор
+   - Нажмите **"Deploy"**
+
+3. **Настройте переменные окружения:**
+   - В разделе **Edge Functions** → **Settings** (или в настройках функции)
+   - Добавьте секрет:
+     - **Name:** `SUPABASE_SERVICE_ROLE_KEY`
+     - **Value:** Ваш Service Role Key
+     - Service Role Key можно найти в **Settings** → **API** → **service_role key** (секретный ключ)
+
+### Вариант 2: Через Supabase CLI
+
 ### 1. Установите Supabase CLI (если еще не установлен)
 
 ```bash
@@ -22,14 +43,11 @@ npm install -g supabase
 supabase login
 ```
 
-### 3. Свяжите проект
+### 3. Свяжите проект (если еще не связан)
 
 ```bash
-supabase link --project-ref ваш-project-ref
+supabase link --project-ref qtphickigswerhvintvh
 ```
-
-Project ref можно найти в URL вашего проекта Supabase:
-`https://app.supabase.com/project/ваш-project-ref`
 
 ### 4. Разверните функцию
 
@@ -39,17 +57,17 @@ supabase functions deploy create-user
 
 ### 5. Настройте переменные окружения
 
-В Supabase Dashboard:
-1. Перейдите в **Edge Functions** → **Settings**
-2. Добавьте переменную окружения:
-   - **Name:** `SUPABASE_SERVICE_ROLE_KEY`
-   - **Value:** Ваш Service Role Key (можно найти в Settings → API)
-
-Или через CLI:
+Через CLI:
 
 ```bash
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY=ваш-service-role-key
 ```
+
+Или через Dashboard:
+1. Перейдите в **Edge Functions** → **Settings**
+2. Добавьте переменную окружения:
+   - **Name:** `SUPABASE_SERVICE_ROLE_KEY`
+   - **Value:** Ваш Service Role Key (можно найти в Settings → API)
 
 ## Альтернативное решение (без Edge Function)
 
