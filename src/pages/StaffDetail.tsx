@@ -654,16 +654,20 @@ export default function StaffDetail() {
                           ? groupLessonsMap.get(rule.group_lesson_id) 
                           : null;
                         
-                        // Debug logging
-                        if (process.env.NODE_ENV === 'development') {
-                          console.log('[StaffDetail] Billing rule:', {
-                            id: rule.id,
-                            activity_id: rule.activity_id,
-                            group_lesson_id: rule.group_lesson_id,
-                            isGroup,
-                            groupLessonName,
-                          });
-                        }
+                        // Debug logging для проверки данных (всегда включено для диагностики)
+                        console.log('[StaffDetail] Billing rule debug:', {
+                          id: rule.id,
+                          activity_id: rule.activity_id,
+                          activity_name: rule.activity?.name,
+                          group_lesson_id: rule.group_lesson_id,
+                          group_lesson_id_type: typeof rule.group_lesson_id,
+                          group_lesson_id_is_null: rule.group_lesson_id === null,
+                          group_lesson_id_is_undefined: rule.group_lesson_id === undefined,
+                          isGroup,
+                          groupLessonName,
+                          groupLessonsMap_size: groupLessonsMap.size,
+                          allGroupLessons_count: allGroupLessons.length,
+                        });
                         
                         return (
                         <TableRow key={rule.id}>
