@@ -143,8 +143,25 @@ export function useCreateUser() {
       queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
       toast({ title: 'Користувача створено' });
     },
-    onError: (error) => {
-      toast({ title: 'Помилка створення користувача', description: error.message, variant: 'destructive' });
+    onError: (error: any) => {
+      let errorMessage = error.message;
+      
+      // Обработка специфичных ошибок Supabase
+      if (error.status === 429 || error.message?.includes('rate limit')) {
+        errorMessage = 'Перевищено ліміт запитів. Зачекайте кілька хвилин перед повторною спробою.';
+      } else if (error.message?.includes('already registered') || error.message?.includes('already exists')) {
+        errorMessage = 'Користувач з таким email вже існує.';
+      } else if (error.message?.includes('invalid email')) {
+        errorMessage = 'Невірний формат email.';
+      } else if (error.message?.includes('password')) {
+        errorMessage = 'Пароль не відповідає вимогам (мінімум 6 символів).';
+      }
+      
+      toast({ 
+        title: 'Помилка створення користувача', 
+        description: errorMessage, 
+        variant: 'destructive' 
+      });
     },
   });
 }

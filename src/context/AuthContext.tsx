@@ -565,10 +565,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       
       if (error) {
-        logAuth('signUp:error', { message: error.message });
+        logAuth('signUp:error', { message: error.message, status: (error as any).status });
+        let errorMessage = error.message || 'Не вдалося зареєструвати користувача';
+        
+        // Обработка специфичных ошибок Supabase
+        if ((error as any).status === 429 || error.message?.includes('rate limit')) {
+          errorMessage = 'Перевищено ліміт запитів. Зачекайте кілька хвилин перед повторною спробою.';
+        } else if (error.message?.includes('already registered') || error.message?.includes('already exists')) {
+          errorMessage = 'Користувач з таким email вже зареєстрований.';
+        } else if (error.message?.includes('invalid email')) {
+          errorMessage = 'Невірний формат email.';
+        } else if (error.message?.includes('password')) {
+          errorMessage = 'Пароль не відповідає вимогам (мінімум 6 символів).';
+        }
+        
         toast({ 
           title: 'Помилка реєстрації', 
-          description: error.message || 'Не вдалося зареєструвати користувача', 
+          description: errorMessage, 
           variant: 'destructive' 
         });
         throw error;
