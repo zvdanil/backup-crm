@@ -20,6 +20,7 @@ import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib
 import { Input } from '@/components/ui/input';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
+import { useAdvanceBalances } from '@/hooks/useAdvanceBalances';
 import {
   Select,
   SelectContent,

@@ -249,10 +249,40 @@ export function useUpsertFinanceTransaction() {
           .single();
         
         if (error) throw error;
+        
+        // Auto-charge from advance balance for new income/expense transactions
+        if (data && 
+            (insertData.type === 'income' || insertData.type === 'expense') &&
+            insertData.student_id && 
+            insertData.account_id && 
+            insertData.activity_id) {
+          try {
+            // Call PostgreSQL function to auto-charge from advance
+            const { error: rpcError } = await supabase.rpc('auto_charge_from_advance', {
+              p_student_id: insertData.student_id,
+              p_account_id: insertData.account_id,
+              p_activity_id: insertData.activity_id,
+              p_charge_amount: insertData.amount,
+            });
+            
+            if (rpcError) {
+              console.error('[useUpsertFinanceTransaction] Auto-charge error:', rpcError);
+              // Don't throw - transaction is already created, just log the error
+            }
+          } catch (err) {
+            console.error('[useUpsertFinanceTransaction] Auto-charge exception:', err);
+            // Don't throw - transaction is already created
+          }
+        }
+        
         return data;
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
+      // Invalidate advance balances if transaction is for a student with account_id
+      if (data?.student_id && data?.account_id) {
+        queryClient.invalidateQueries({ queryKey: ['advance_balances'] });
+      }
       // Принудительно инвалидируем и перезапрашиваем все связанные запросы
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
