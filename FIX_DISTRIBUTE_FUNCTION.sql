@@ -25,6 +25,19 @@ DECLARE
   v_debt_record RECORD;
   v_payment_amount DECIMAL(10,2);
 BEGIN
+  -- Validate input parameters
+  IF p_student_id IS NULL THEN
+    RAISE EXCEPTION 'p_student_id cannot be NULL';
+  END IF;
+  
+  IF p_account_id IS NULL THEN
+    RAISE EXCEPTION 'p_account_id cannot be NULL';
+  END IF;
+  
+  IF p_amount IS NULL OR p_amount <= 0 THEN
+    RAISE EXCEPTION 'p_amount must be greater than 0';
+  END IF;
+  
   -- Initialize or update advance balance
   INSERT INTO public.advance_balances (student_id, account_id, balance)
   VALUES (p_student_id, p_account_id, p_amount)
