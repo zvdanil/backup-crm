@@ -1,11 +1,21 @@
-import { useStudentActivityBalance, useStudentActivityMonthlyBalance } from '@/hooks/useFinanceTransactions';
+import { 
+  useStudentActivityBalance, 
+  useStudentActivityMonthlyBalance,
+  useActivityIncomeTransaction,
+  useDeleteIncomeTransaction
+} from '@/hooks/useFinanceTransactions';
 import { formatCurrency } from '@/lib/attendance';
 import type { EnrollmentWithRelations } from '@/hooks/useEnrollments';
 import { cn } from '@/lib/utils';
 import { useActivities } from '@/hooks/useActivities';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
+import { useAuth } from '@/context/AuthContext';
+import { Button } from '@/components/ui/button';
+import { Trash2 } from 'lucide-react';
+import { DeleteTransactionDialog } from './DeleteTransactionDialog';
+import { toast } from '@/hooks/use-toast';
 
 interface StudentActivityBalanceRowProps {
   studentId: string;
@@ -22,6 +32,11 @@ export function StudentActivityBalanceRow({
 }: StudentActivityBalanceRowProps) {
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
+  const { role } = useAuth();
+  const canDelete = role === 'owner' || role === 'admin';
+  
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const deleteIncome = useDeleteIncomeTransaction();
 
   // Check if this is a food activity
   const isFoodActivity = useMemo(() => {
@@ -71,6 +86,45 @@ export function StudentActivityBalanceRow({
     month,
     year
   );
+  
+  // Get income transaction for subscription charges (only if monthly billing)
+  const incomeTransactionQuery = useActivityIncomeTransaction(
+    studentId,
+    enrollment.activity_id,
+    month,
+    year
+  );
+  
+  const incomeTransaction = incomeTransactionQuery.data;
+  const hasSubscriptionCharge = isMonthlyBilling && incomeTransaction && charges > 0;
+  
+  const handleDeleteClick = () => {
+    if (incomeTransaction) {
+      setDeleteDialogOpen(true);
+    }
+  };
+  
+  const handleDeleteConfirm = async (reason: string) => {
+    if (!incomeTransaction) return;
+    
+    try {
+      await deleteIncome.mutateAsync({
+        transactionId: incomeTransaction.id,
+        reason,
+      });
+      toast({
+        title: 'Успішно',
+        description: 'Нарахування видалено',
+      });
+      setDeleteDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: 'Помилка',
+        description: error.message || 'Не вдалося видалити нарахування',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const displayMode =
     enrollment.activities.balance_display_mode ??
@@ -127,34 +181,59 @@ export function StudentActivityBalanceRow({
   const isPositive = isFoodActivity ? (refunds > 0 ? true : balance >= 0) : (balance >= 0);
 
   return (
-    <div className="flex flex-col gap-2 p-3 border rounded-lg sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-center gap-2">
-        <span 
-          className="w-3 h-3 rounded-full" 
-          style={{ backgroundColor: enrollment.activities.color }}
-        />
-        <span className="text-sm font-medium break-words">
-          {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
-        </span>
-        <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {accountLabel}
-        </span>
-      </div>
-      <div className="text-left sm:text-right">
-        <div className={cn(
-          "text-sm font-semibold",
-          isPositive ? "text-success" : "text-destructive"
-        )}>
-          {displayBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(displayBalance))}
+    <>
+      <div className="flex flex-col gap-2 p-3 border rounded-lg sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2">
+          <span 
+            className="w-3 h-3 rounded-full" 
+            style={{ backgroundColor: enrollment.activities.color }}
+          />
+          <span className="text-sm font-medium break-words">
+            {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
+          </span>
+          <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+            {accountLabel}
+          </span>
         </div>
-        <div className="text-xs text-muted-foreground whitespace-normal break-words">
-          {isFoodActivity ? (
-            <>Оплати: {formatCurrency(payments)} | Повернення: {formatCurrency(displayRefunds)}</>
-          ) : (
-            <>Оплати: {formatCurrency(payments)} | Витрати: {formatCurrency(displayCharges)}</>
+        <div className="flex items-center gap-2">
+          <div className="text-left sm:text-right">
+            <div className={cn(
+              "text-sm font-semibold",
+              isPositive ? "text-success" : "text-destructive"
+            )}>
+              {displayBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(displayBalance))}
+            </div>
+            <div className="text-xs text-muted-foreground whitespace-normal break-words">
+              {isFoodActivity ? (
+                <>Оплати: {formatCurrency(payments)} | Повернення: {formatCurrency(displayRefunds)}</>
+              ) : (
+                <>Оплати: {formatCurrency(payments)} | Витрати: {formatCurrency(displayCharges)}</>
+              )}
+            </div>
+          </div>
+          {canDelete && hasSubscriptionCharge && incomeTransaction && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+              onClick={handleDeleteClick}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           )}
         </div>
       </div>
-    </div>
+      
+      {incomeTransaction && (
+        <DeleteTransactionDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          onConfirm={handleDeleteConfirm}
+          transactionType="income"
+          amount={incomeTransaction.amount || 0}
+          isLoading={deleteIncome.isPending}
+        />
+      )}
+    </>
   );
 }

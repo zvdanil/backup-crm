@@ -879,3 +879,116 @@ export function useStudentAccountBalances(
     enabled: !!studentId,
   });
 }
+
+// Delete payment transaction and rollback distribution
+export function useDeletePaymentTransaction() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }) => {
+      const { data, error } = await supabase.rpc('delete_payment_transaction', {
+        p_transaction_id: transactionId,
+        p_reason: reason,
+      });
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: async () => {
+      // Invalidate all related queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
+        queryClient.invalidateQueries({ queryKey: ['advance_balances'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_account_balances'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
+      ]);
+      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+    },
+    onError: (error) => {
+      console.error('Error deleting payment transaction:', error);
+      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+// Get income transaction for activity and month (for subscription charges)
+export function useActivityIncomeTransaction(
+  studentId: string,
+  activityId: string,
+  month?: number,
+  year?: number
+) {
+  return useQuery({
+    queryKey: ['activity_income_transaction', studentId, activityId, month, year],
+    queryFn: async () => {
+      const now = new Date();
+      const targetMonth = month !== undefined ? month : now.getMonth();
+      const targetYear = year !== undefined ? year : now.getFullYear();
+      
+      const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
+      const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
+      
+      const { data, error } = await supabase
+        .from('finance_transactions')
+        .select('*')
+        .eq('student_id', studentId)
+        .eq('activity_id', activityId)
+        .eq('type', 'income')
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data as FinanceTransaction | null;
+    },
+    enabled: !!studentId && !!activityId,
+  });
+}
+
+// Delete income transaction (for subscription charges)
+export function useDeleteIncomeTransaction() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }) => {
+      // Get transaction details before deletion for logging
+      const { data: transaction, error: fetchError } = await supabase
+        .from('finance_transactions')
+        .select('*')
+        .eq('id', transactionId)
+        .eq('type', 'income')
+        .single();
+      
+      if (fetchError) throw fetchError;
+      if (!transaction) throw new Error('Transaction not found');
+      
+      // Delete the transaction
+      const { error: deleteError } = await supabase
+        .from('finance_transactions')
+        .delete()
+        .eq('id', transactionId);
+      
+      if (deleteError) throw deleteError;
+      
+      return transaction;
+    },
+    onSuccess: async () => {
+      // Invalidate all related queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
+        queryClient.invalidateQueries({ queryKey: ['activity_income_transaction'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_account_balances'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
+      ]);
+      await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
+    },
+    onError: (error) => {
+      console.error('Error deleting income transaction:', error);
+      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+    },
+  });
+}

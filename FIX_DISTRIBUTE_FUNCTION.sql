@@ -77,16 +77,23 @@ BEGIN
     ),
     enrollment_balances AS (
       -- Calculate balance for each enrollment
-      -- Balance formula: charges (income) - payments (payment + advance_payment) + refunds (expense)
-      -- Debt = charges - payments - refunds (negative balance)
+      -- Balance formula: charges (income from finance_transactions OR attendance.charged_amount) - payments (payment + advance_payment) + refunds (expense)
+      -- Debt = charges - payments - refunds (positive balance = debt)
       SELECT 
         ea.enrollment_id,
         ea.activity_id,
         ea.account_id,
-        COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) AS charges,
+        -- Charges: сначала из finance_transactions, если нет - из attendance.charged_amount
+        GREATEST(
+          COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0),
+          COALESCE(SUM(a.charged_amount), 0)
+        ) AS charges,
         COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) AS payments,
         COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) AS refunds,
-        COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) - 
+        GREATEST(
+          COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0),
+          COALESCE(SUM(a.charged_amount), 0)
+        ) - 
         COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) -
         COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) AS balance
       FROM enrollment_accounts ea
@@ -99,8 +106,14 @@ BEGIN
           -- ИЛИ старые транзакции с NULL account_id (если для enrollment/activity установлен account_id)
           OR (ft.account_id IS NULL AND ea.account_id IS NOT NULL)
         )
+      -- Добавляем attendance как источник charges
+      LEFT JOIN public.attendance a ON 
+        a.enrollment_id = ea.enrollment_id
       GROUP BY ea.enrollment_id, ea.activity_id, ea.account_id
-      HAVING COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) - 
+      HAVING GREATEST(
+               COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0),
+               COALESCE(SUM(a.charged_amount), 0)
+             ) - 
              COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) -
              COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) > 0
     )
