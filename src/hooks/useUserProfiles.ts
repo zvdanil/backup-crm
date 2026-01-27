@@ -77,6 +77,14 @@ export function useCreateUser() {
       // Используем Edge Function для создания пользователя через Admin API
       // Это обходит rate limits для обычной регистрации
       // Используем supabase.functions.invoke для автоматической обработки CORS
+      console.log('[useCreateUser] Calling Edge Function with data:', {
+        email: userData.email,
+        parentName: userData.parentName,
+        childName: userData.childName,
+        role: userData.role,
+        isActive: userData.isActive,
+      });
+
       const { data: result, error: functionError } = await supabase.functions.invoke('create-user', {
         body: {
           email: userData.email,
@@ -88,23 +96,51 @@ export function useCreateUser() {
         },
       });
 
+      console.log('[useCreateUser] Edge Function response:', { result, functionError });
+
       if (functionError) {
+        console.error('[useCreateUser] Function error:', functionError);
+        // Если пользователь создан, но есть ошибка CORS, все равно обновляем список
+        // Проверяем, создан ли пользователь по email
+        if (functionError.message?.includes('CORS') || functionError.message?.includes('Failed to fetch')) {
+          console.warn('[useCreateUser] CORS error, but user might be created. Checking...');
+          // Даем время на создание пользователя
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Пытаемся найти созданного пользователя
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('email', userData.email)
+            .maybeSingle();
+          
+          if (profiles) {
+            console.log('[useCreateUser] User found despite CORS error:', profiles);
+            // Пользователь создан, возвращаем его
+            return profiles as UserProfile;
+          }
+        }
         throw new Error(functionError.message || 'Помилка створення користувача');
       }
 
       if (result?.error) {
+        console.error('[useCreateUser] Result error:', result.error);
         throw new Error(result.error.message || 'Помилка створення користувача');
       }
 
       if (!result?.data) {
+        console.error('[useCreateUser] No data in result:', result);
         throw new Error('Користувач не створений');
       }
 
+      console.log('[useCreateUser] User created successfully:', result.data);
       return result.data as UserProfile;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('[useCreateUser] onSuccess, invalidating queries');
+      // Инвалидируем и сразу обновляем список
       queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
-      toast({ title: 'Користувача створено' });
+      queryClient.refetchQueries({ queryKey: ['user_profiles'] });
+      toast({ title: 'Користувача створено', description: `Створено: ${data.full_name || data.parent_name || 'Користувач'}` });
     },
     onError: (error: any) => {
       let errorMessage = error.message;
