@@ -107,11 +107,17 @@ export function useCreateUser() {
           // Даем время на создание пользователя
           await new Promise(resolve => setTimeout(resolve, 1000));
           // Пытаемся найти созданного пользователя
-          const { data: profiles } = await supabase
+          // Ищем по parent_name и child_name, так как email может быть не в user_profiles
+          const { data: profiles, error: searchError } = await supabase
             .from('user_profiles')
             .select('*')
-            .eq('email', userData.email)
+            .eq('parent_name', userData.parentName)
+            .eq('child_name', userData.childName)
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
+          
+          console.log('[useCreateUser] Search result:', { profiles, searchError });
           
           if (profiles) {
             console.log('[useCreateUser] User found despite CORS error:', profiles);
