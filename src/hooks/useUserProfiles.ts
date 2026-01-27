@@ -74,10 +74,9 @@ export function useCreateUser() {
         throw new Error('Необхідна авторизація для створення користувача');
       }
 
-      // Используем Edge Function для создания пользователя через Admin API
-      // Это обходит rate limits для обычной регистрации
-      // Используем supabase.functions.invoke для автоматической обработки CORS
-      console.log('[useCreateUser] Calling Edge Function with data:', {
+      // Используем Vercel API Route для создания пользователя через Admin API
+      // Это обходит rate limits и CORS проблемы
+      console.log('[useCreateUser] Calling API Route with data:', {
         email: userData.email,
         parentName: userData.parentName,
         childName: userData.childName,
@@ -85,46 +84,41 @@ export function useCreateUser() {
         isActive: userData.isActive,
       });
 
-      const { data: result, error: functionError } = await supabase.functions.invoke('create-user', {
-        body: {
+      // Получаем токен для авторизации
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error('Необхідна авторизація для створення користувача');
+      }
+
+      // Вызываем Vercel API Route (тот же домен - нет CORS)
+      const response = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
           email: userData.email,
           password: userData.password,
           parentName: userData.parentName,
           childName: userData.childName,
           role: userData.role,
           isActive: userData.isActive,
-        },
+        }),
       });
 
-      console.log('[useCreateUser] Edge Function response:', { result, functionError });
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Помилка створення користувача');
+      }
+      
+      const functionError = result.error ? { message: result.error } : null;
+
+      console.log('[useCreateUser] API Route response:', { result, functionError });
 
       if (functionError) {
-        console.error('[useCreateUser] Function error:', functionError);
-        // Если пользователь создан, но есть ошибка CORS, все равно обновляем список
-        // Проверяем, создан ли пользователь по email
-        if (functionError.message?.includes('CORS') || functionError.message?.includes('Failed to fetch')) {
-          console.warn('[useCreateUser] CORS error, but user might be created. Checking...');
-          // Даем время на создание пользователя
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          // Пытаемся найти созданного пользователя
-          // Ищем по parent_name и child_name, так как email может быть не в user_profiles
-          const { data: profiles, error: searchError } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('parent_name', userData.parentName)
-            .eq('child_name', userData.childName)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          
-          console.log('[useCreateUser] Search result:', { profiles, searchError });
-          
-          if (profiles) {
-            console.log('[useCreateUser] User found despite CORS error:', profiles);
-            // Пользователь создан, возвращаем его
-            return profiles as UserProfile;
-          }
-        }
+        console.error('[useCreateUser] API Route error:', functionError);
         throw new Error(functionError.message || 'Помилка створення користувача');
       }
 
