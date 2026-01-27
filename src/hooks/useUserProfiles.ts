@@ -70,7 +70,7 @@ export function useCreateUser() {
     mutationFn: async (userData: CreateUserData) => {
       // Получаем текущую сессию для авторизации
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      if (!session?.access_token) {
         throw new Error('Необхідна авторизація для створення користувача');
       }
 
@@ -83,12 +83,6 @@ export function useCreateUser() {
         role: userData.role,
         isActive: userData.isActive,
       });
-
-      // Получаем токен для авторизации
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error('Необхідна авторизація для створення користувача');
-      }
 
       // Вызываем Vercel API Route (тот же домен - нет CORS)
       const response = await fetch('/api/create-user', {
