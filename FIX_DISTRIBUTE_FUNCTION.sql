@@ -93,7 +93,12 @@ BEGIN
       LEFT JOIN public.finance_transactions ft ON 
         ft.student_id = ea.student_id 
         AND ft.activity_id = ea.activity_id
-        AND (ft.account_id IS NOT DISTINCT FROM ea.account_id)
+        AND (
+          -- Транзакции с правильным account_id
+          ft.account_id IS NOT DISTINCT FROM ea.account_id
+          -- ИЛИ старые транзакции с NULL account_id (если для enrollment/activity установлен account_id)
+          OR (ft.account_id IS NULL AND ea.account_id IS NOT NULL)
+        )
       GROUP BY ea.enrollment_id, ea.activity_id, ea.account_id
       HAVING COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) - 
              COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) -
