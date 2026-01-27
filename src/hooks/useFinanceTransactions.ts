@@ -311,7 +311,7 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
       const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
       const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
 
-      // Get payments (income)
+      // Get payments (payment and advance_payment)
       // Strictly filter by student_id and activity_id - exclude null values
       const { data: payments, error: paymentsError } = await supabase
         .from('finance_transactions')
@@ -320,7 +320,7 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
         .not('student_id', 'is', null) // Explicitly exclude null
         .eq('activity_id', activityId)
         .not('activity_id', 'is', null) // Explicitly exclude null
-        .eq('type', 'payment')
+        .in('type', ['payment', 'advance_payment'])
         .gte('date', startDate)
         .lte('date', endDate);
 
@@ -437,7 +437,7 @@ export function useStudentActivityMonthlyBalance(
         .not('student_id', 'is', null)
         .eq('activity_id', activityId)
         .not('activity_id', 'is', null)
-        .eq('type', 'payment')
+        .in('type', ['payment', 'advance_payment'])
         .gte('date', startDate)
         .lte('date', endDate);
 
@@ -502,7 +502,7 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
         .select('amount')
         .eq('student_id', studentId)
         .not('student_id', 'is', null) // Explicitly exclude null
-        .eq('type', 'payment');
+        .in('type', ['payment', 'advance_payment']);
       
       if (startDate && endDate) {
         paymentsQuery.gte('date', startDate).lte('date', endDate);
