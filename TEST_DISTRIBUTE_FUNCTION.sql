@@ -1,0 +1,72 @@
+-- ============================================
+-- Тест функции distribute_advance_payment
+-- Замените UUID на реальные значения из вашей базы
+-- ============================================
+
+-- Пример вызова функции для тестирования
+-- Замените значения на реальные из вашей базы данных
+
+-- 1. Найти student_id и account_id для тестирования
+-- SELECT s.id, s.full_name, pa.id as account_id, pa.name as account_name
+-- FROM students s
+-- CROSS JOIN payment_accounts pa
+-- WHERE s.full_name = 'Долінце Злата' AND pa.name = 'ФОП 3';
+
+-- 2. Вызвать функцию распределения вручную
+-- SELECT * FROM public.distribute_advance_payment(
+--   'STUDENT_UUID_HERE',  -- Замените на реальный student_id
+--   'ACCOUNT_UUID_HERE',  -- Замените на реальный account_id для "ФОП 3"
+--   2450.00  -- Сумма платежа
+-- );
+
+-- 3. Проверить, создались ли advance_payment транзакции
+-- SELECT * FROM finance_transactions 
+-- WHERE type = 'advance_payment' 
+-- AND student_id = 'STUDENT_UUID_HERE'
+-- ORDER BY created_at DESC;
+
+-- 4. Проверить авансовый баланс
+-- SELECT * FROM advance_balances 
+-- WHERE student_id = 'STUDENT_UUID_HERE';
+
+-- 5. Проверить долги по активностям для этого студента и счёта
+-- WITH enrollment_accounts AS (
+--   SELECT 
+--     e.id AS enrollment_id,
+--     e.student_id,
+--     e.activity_id,
+--     a.name AS activity_name,
+--     COALESCE(e.account_id, a.account_id) AS account_id
+--   FROM public.enrollments e
+--   INNER JOIN public.activities a ON e.activity_id = a.id
+--   WHERE e.student_id = 'STUDENT_UUID_HERE'
+--     AND e.is_active = true
+--     AND COALESCE(e.account_id, a.account_id) = 'ACCOUNT_UUID_HERE'
+-- ),
+-- enrollment_balances AS (
+--   SELECT 
+--     ea.enrollment_id,
+--     ea.activity_id,
+--     ea.activity_name,
+--     ea.account_id,
+--     COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) AS charges,
+--     COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) AS payments,
+--     COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) AS refunds,
+--     COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) - 
+--     COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) -
+--     COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) AS balance
+--   FROM enrollment_accounts ea
+--   LEFT JOIN public.finance_transactions ft ON 
+--     ft.student_id = ea.student_id 
+--     AND ft.activity_id = ea.activity_id
+--     AND (ft.account_id IS NOT DISTINCT FROM ea.account_id)
+--   GROUP BY ea.enrollment_id, ea.activity_id, ea.activity_name, ea.account_id
+-- )
+-- SELECT 
+--   activity_name,
+--   charges,
+--   payments,
+--   refunds,
+--   balance AS debt_amount
+-- FROM enrollment_balances
+-- ORDER BY balance DESC;

@@ -1,6 +1,6 @@
 -- ============================================
--- Function to distribute advance payment (Waterfall algorithm)
--- Automatically distributes advance balance to pay off debts
+-- Исправить функцию distribute_advance_payment
+-- Исправляет сравнение account_id (NULL handling)
 -- ============================================
 
 CREATE OR REPLACE FUNCTION public.distribute_advance_payment(
@@ -135,6 +135,3 @@ BEGIN
   RETURN QUERY SELECT v_distributed, v_remaining_advance, v_payments_count;
 END;
 $$;
-
-COMMENT ON FUNCTION public.distribute_advance_payment IS 
-'Распределяет авансовый платёж по задолженностям (Waterfall алгоритм). Гасит долги от самого большого к самому маленькому.';
