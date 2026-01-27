@@ -856,23 +856,24 @@ export function useStudentAccountBalances(
         }
       });
 
-      if (unassignedPayments !== 0) {
-        const existing = balancesByAccount.get(null) || {
-          account_id: null,
+      // Обрабатываем платежи без activity_id - распределяем по account_id
+      paymentsByAccount.forEach((amount, accountId) => {
+        const existing = balancesByAccount.get(accountId) || {
+          account_id: accountId,
           balance: 0,
           payments: 0,
           charges: 0,
           refunds: 0,
         };
-        balancesByAccount.set(null, {
-          account_id: null,
-          balance: existing.balance + unassignedPayments,
-          payments: existing.payments + unassignedPayments,
+        balancesByAccount.set(accountId, {
+          account_id: accountId,
+          balance: existing.balance + amount,
+          payments: existing.payments + amount,
           charges: existing.charges,
           refunds: existing.refunds,
-          unassigned_payments: (existing.unassigned_payments || 0) + unassignedPayments,
+          unassigned_payments: (existing.unassigned_payments || 0) + (accountId === null ? amount : 0),
         });
-      }
+      });
 
       return Array.from(balancesByAccount.values());
     },
