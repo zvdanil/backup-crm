@@ -687,16 +687,15 @@ export function useStudentAccountBalances(
       const expenseByActivity: Record<string, number> = {};
       
       // Для платежей без activity_id - группируем по account_id напрямую
-      const paymentsByAccount: Record<string | null, number> = {};
+      const paymentsByAccount: Map<string | null, number> = new Map();
 
-      let unassignedPayments = 0;
       (transactions || []).forEach((trans: any) => {
         if (!trans.activity_id) {
           if (trans.type === 'payment' || trans.type === 'advance_payment') {
             // Для платежей без activity_id используем account_id из транзакции
             const accountId = trans.account_id || null;
-            paymentsByAccount[accountId] = (paymentsByAccount[accountId] || 0) + (trans.amount || 0);
-            unassignedPayments += trans.amount || 0;
+            const current = paymentsByAccount.get(accountId) || 0;
+            paymentsByAccount.set(accountId, current + (trans.amount || 0));
           }
           return;
         }
