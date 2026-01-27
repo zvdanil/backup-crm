@@ -87,9 +87,21 @@ export default function Users() {
       });
       createUserForm.reset();
       setIsCreateDialogOpen(false);
+      // Обновляем список пользователей после успешного создания
+      setTimeout(async () => {
+        await refetch();
+      }, 1000);
     } catch (error) {
       // Ошибка уже обработана в useCreateUser
       console.error('[Users] Create user error', error);
+      // Даже при ошибке проверяем, не был ли пользователь создан
+      // Если была ошибка CORS, но пользователь создан, обновляем список
+      setTimeout(async () => {
+        // Обновляем список пользователей через 2 секунды
+        // Это даст время на создание пользователя, если он был создан
+        console.log('[Users] Refetching profiles after error...');
+        await refetch();
+      }, 2000);
     }
   };
 
