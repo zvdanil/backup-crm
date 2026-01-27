@@ -670,10 +670,10 @@ export function useStudentAccountBalances(
 
       const transactionsQuery = supabase
         .from('finance_transactions')
-        .select('activity_id, type, amount')
+        .select('activity_id, type, amount, account_id')
         .eq('student_id', studentId)
         .not('student_id', 'is', null)
-        .in('type', ['payment', 'income', 'expense']);
+        .in('type', ['payment', 'income', 'expense', 'advance_payment']);
 
       if (startDate && endDate) {
         transactionsQuery.gte('date', startDate).lte('date', endDate);
@@ -685,16 +685,22 @@ export function useStudentAccountBalances(
       const paymentsByActivity: Record<string, number> = {};
       const incomeByActivity: Record<string, number> = {};
       const expenseByActivity: Record<string, number> = {};
+      
+      // Для платежей без activity_id - группируем по account_id напрямую
+      const paymentsByAccount: Record<string | null, number> = {};
 
       let unassignedPayments = 0;
       (transactions || []).forEach((trans: any) => {
         if (!trans.activity_id) {
-          if (trans.type === 'payment') {
+          if (trans.type === 'payment' || trans.type === 'advance_payment') {
+            // Для платежей без activity_id используем account_id из транзакции
+            const accountId = trans.account_id || null;
+            paymentsByAccount[accountId] = (paymentsByAccount[accountId] || 0) + (trans.amount || 0);
             unassignedPayments += trans.amount || 0;
           }
           return;
         }
-        if (trans.type === 'payment') {
+        if (trans.type === 'payment' || trans.type === 'advance_payment') {
           paymentsByActivity[trans.activity_id] = (paymentsByActivity[trans.activity_id] || 0) + (trans.amount || 0);
         } else if (trans.type === 'income') {
           incomeByActivity[trans.activity_id] = (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
