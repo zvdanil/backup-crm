@@ -85,11 +85,39 @@ export function useCreateFinanceTransaction() {
 
         if (payoutError) throw payoutError;
       }
+      
+      // Auto-charge from advance balance for new income/expense transactions
+      if ((transaction.type === 'income' || transaction.type === 'expense') &&
+          transaction.student_id && 
+          transaction.account_id && 
+          transaction.activity_id) {
+        try {
+          // Call PostgreSQL function to auto-charge from advance
+          const { error: rpcError } = await supabase.rpc('auto_charge_from_advance', {
+            p_student_id: transaction.student_id,
+            p_account_id: transaction.account_id,
+            p_activity_id: transaction.activity_id,
+            p_charge_amount: transaction.amount,
+          });
+          
+          if (rpcError) {
+            console.error('[useCreateFinanceTransaction] Auto-charge error:', rpcError);
+            // Don't throw - transaction is already created, just log the error
+          }
+        } catch (err) {
+          console.error('[useCreateFinanceTransaction] Auto-charge exception:', err);
+          // Don't throw - transaction is already created
+        }
+      }
 
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] });
+      // Invalidate advance balances if transaction is for a student with account_id
+      if (data.student_id && data.account_id) {
+        queryClient.invalidateQueries({ queryKey: ['advance_balances'] });
+      }
       // Invalidate all dashboard queries (with year/month variations)
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
       // Invalidate student balance queries if transaction is for a student
