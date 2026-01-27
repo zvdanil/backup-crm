@@ -14,10 +14,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { 
       status: 204, // No Content - правильный статус для OPTIONS
-      headers: {
-        ...corsHeaders,
-        'Content-Length': '0',
-      }
+      headers: corsHeaders,
     })
   }
 
