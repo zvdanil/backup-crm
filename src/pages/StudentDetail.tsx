@@ -79,6 +79,7 @@ export default function StudentDetail() {
   const { data: accounts = [] } = usePaymentAccounts();
   const { data: userProfiles = [] } = useUserProfiles();
   const { data: parentLinks = [] } = useParentLinks(id);
+  const { data: advanceBalances = [] } = useAdvanceBalances(id);
   const addParentLink = useAddParentLink();
   const removeParentLink = useRemoveParentLink();
   const createEnrollment = useCreateEnrollment();
