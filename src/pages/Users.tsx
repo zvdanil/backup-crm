@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useUserProfiles, useUpdateUserProfile, useCreateUser } from '@/hooks/useUserProfiles';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -88,19 +89,21 @@ export default function Users() {
       createUserForm.reset();
       setIsCreateDialogOpen(false);
       // Обновляем список пользователей после успешного создания
-      setTimeout(async () => {
-        await refetch();
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
+        queryClient.refetchQueries({ queryKey: ['user_profiles'] });
       }, 1000);
     } catch (error) {
       // Ошибка уже обработана в useCreateUser
       console.error('[Users] Create user error', error);
       // Даже при ошибке проверяем, не был ли пользователь создан
       // Если была ошибка CORS, но пользователь создан, обновляем список
-      setTimeout(async () => {
+      setTimeout(() => {
         // Обновляем список пользователей через 2 секунды
         // Это даст время на создание пользователя, если он был создан
         console.log('[Users] Refetching profiles after error...');
-        await refetch();
+        queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
+        queryClient.refetchQueries({ queryKey: ['user_profiles'] });
       }, 2000);
     }
   };
