@@ -34,9 +34,6 @@ export function StudentActivityBalanceRow({
   const { data: accounts = [] } = usePaymentAccounts();
   const { role } = useAuth();
   const canDelete = role === 'owner' || role === 'admin';
-  
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const deleteIncome = useDeleteIncomeTransaction();
 
   // Check if this is a food activity
   const isFoodActivity = useMemo(() => {
@@ -52,6 +49,10 @@ export function StudentActivityBalanceRow({
 
   const presentRule = enrollment.activities.billing_rules?.present;
   const isMonthlyBilling = !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
+  
+  // Initialize deleteIncome hook early to avoid initialization errors
+  const deleteIncome = useDeleteIncomeTransaction();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const accountLabel = useMemo(() => {
     // Приоритет: enrollment.account_id ?? activity.account_id
