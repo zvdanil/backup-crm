@@ -22,6 +22,7 @@ import {
 import { useStudents } from '@/hooks/useStudents';
 import { useActivities } from '@/hooks/useActivities';
 import { useStaff } from '@/hooks/useStaff';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import type { FinanceTransactionInsert, TransactionType } from '@/hooks/useFinanceTransactions';
 
 const transactionSchema = z.object({
@@ -29,10 +30,20 @@ const transactionSchema = z.object({
   student_id: z.string().optional(),
   activity_id: z.string().optional(),
   staff_id: z.string().optional(),
+  account_id: z.string().optional(),
   amount: z.string().min(1, 'Вкажіть суму'),
   date: z.string().min(1, 'Вкажіть дату'),
   description: z.string().optional(),
   category: z.string().optional(),
+}).refine((data) => {
+  // For payment type, account_id is required
+  if (data.type === 'payment') {
+    return !!data.account_id && data.account_id !== 'none';
+  }
+  return true;
+}, {
+  message: 'Для оплати необхідно вибрати рахунок',
+  path: ['account_id'],
 });
 
 type TransactionFormData = z.infer<typeof transactionSchema>;
@@ -55,6 +66,7 @@ export function TransactionForm({
   const { data: students = [] } = useStudents();
   const { data: activities = [] } = useActivities();
   const { data: staff = [] } = useStaff();
+  const { data: accounts = [] } = usePaymentAccounts();
 
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
@@ -79,6 +91,7 @@ export function TransactionForm({
         student_id: initialStudentId || '',
         activity_id: '',
         staff_id: '',
+        account_id: '',
         amount: '',
         date: new Date().toISOString().split('T')[0],
         description: '',
@@ -96,8 +109,9 @@ export function TransactionForm({
     onSubmit({
       type: data.type as TransactionType,
       student_id: data.student_id || null,
-      activity_id: (data.activity_id && data.activity_id !== 'none') ? data.activity_id : null,
+      activity_id: (data.type === 'payment' ? null : (data.activity_id && data.activity_id !== 'none') ? data.activity_id : null), // Hide activity_id for payment
       staff_id: data.staff_id || null,
+      account_id: (data.account_id && data.account_id !== 'none') ? data.account_id : null,
       amount: parseFloat(data.amount),
       date: data.date,
       description: data.description || null,
@@ -164,25 +178,75 @@ export function TransactionForm({
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label>Активність</Label>
-                <Select
-                  value={watch('activity_id') || undefined}
-                  onValueChange={(value) => setValue('activity_id', value === 'none' ? '' : value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Виберіть активність (необов'язково)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Не вказано</SelectItem>
-                    {activities.filter(a => a.is_active).map((activity) => (
-                      <SelectItem key={activity.id} value={activity.id}>
-                        {activity.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* For payment type: hide activity_id, show account_id */}
+              {selectedType === 'payment' ? (
+                <div className="space-y-2">
+                  <Label>Рахунок для оплати *</Label>
+                  <Select
+                    value={watch('account_id') || ''}
+                    onValueChange={(value) => setValue('account_id', value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Виберіть рахунок" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.filter(a => a.is_active).map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.account_id && (
+                    <p className="text-sm text-destructive">{errors.account_id.message}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Оплата буде зарахована на авансовий рахунок і автоматично розподілена по заборгованостям
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Активність</Label>
+                    <Select
+                      value={watch('activity_id') || undefined}
+                      onValueChange={(value) => setValue('activity_id', value === 'none' ? '' : value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Виберіть активність (необов'язково)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не вказано</SelectItem>
+                        {activities.filter(a => a.is_active).map((activity) => (
+                          <SelectItem key={activity.id} value={activity.id}>
+                            {activity.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Рахунок</Label>
+                    <Select
+                      value={watch('account_id') || 'none'}
+                      onValueChange={(value) => setValue('account_id', value === 'none' ? '' : value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Не вказано" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Не вказано</SelectItem>
+                        {accounts.filter(a => a.is_active).map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
             </>
           )}
 
