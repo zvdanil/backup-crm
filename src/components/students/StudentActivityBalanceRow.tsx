@@ -96,7 +96,6 @@ export function StudentActivityBalanceRow({
   );
   
   const incomeTransaction = incomeTransactionQuery.data;
-  const hasSubscriptionCharge = isMonthlyBilling && incomeTransaction && charges > 0;
   
   const handleDeleteClick = () => {
     if (incomeTransaction) {
@@ -179,6 +178,37 @@ export function StudentActivityBalanceRow({
   // For food activity: if there are refunds, balance is always positive (green) for client
   // For other activities: balance can be positive or negative
   const isPositive = isFoodActivity ? (refunds > 0 ? true : balance >= 0) : (balance >= 0);
+  
+  // Check if we can show delete button for subscription charges
+  const hasSubscriptionCharge = isMonthlyBilling && incomeTransaction && charges > 0;
+  
+  const handleDeleteClick = () => {
+    if (incomeTransaction) {
+      setDeleteDialogOpen(true);
+    }
+  };
+  
+  const handleDeleteConfirm = async (reason: string) => {
+    if (!incomeTransaction) return;
+    
+    try {
+      await deleteIncome.mutateAsync({
+        transactionId: incomeTransaction.id,
+        reason,
+      });
+      toast({
+        title: 'Успішно',
+        description: 'Нарахування видалено',
+      });
+      setDeleteDialogOpen(false);
+    } catch (error: any) {
+      toast({
+        title: 'Помилка',
+        description: error.message || 'Не вдалося видалити нарахування',
+        variant: 'destructive',
+      });
+    }
+  };
 
   return (
     <>
