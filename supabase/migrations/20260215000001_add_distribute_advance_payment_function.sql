@@ -1,0 +1,135 @@
+-- ============================================
+-- Function to distribute advance payment (Waterfall algorithm)
+-- Automatically distributes advance balance to pay off debts
+-- ============================================
+
+CREATE OR REPLACE FUNCTION public.distribute_advance_payment(
+  p_student_id UUID,
+  p_account_id UUID,
+  p_amount DECIMAL(10,2)
+)
+RETURNS TABLE(
+  distributed_amount DECIMAL(10,2),
+  remaining_advance DECIMAL(10,2),
+  payments_created INTEGER
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_advance_balance DECIMAL(10,2) := 0;
+  v_remaining_advance DECIMAL(10,2) := 0;
+  v_distributed DECIMAL(10,2) := 0;
+  v_payments_count INTEGER := 0;
+  v_debt_record RECORD;
+  v_payment_amount DECIMAL(10,2);
+BEGIN
+  -- Initialize or update advance balance
+  INSERT INTO public.advance_balances (student_id, account_id, balance)
+  VALUES (p_student_id, p_account_id, p_amount)
+  ON CONFLICT (student_id, account_id)
+  DO UPDATE SET 
+    balance = advance_balances.balance + p_amount,
+    updated_at = now();
+  
+  -- Get current advance balance
+  SELECT balance INTO v_advance_balance
+  FROM public.advance_balances
+  WHERE student_id = p_student_id AND account_id = p_account_id;
+  
+  -- If no advance balance, return early
+  IF v_advance_balance <= 0 THEN
+    RETURN QUERY SELECT 0::DECIMAL(10,2), 0::DECIMAL(10,2), 0;
+    RETURN;
+  END IF;
+  
+  v_remaining_advance := v_advance_balance;
+  
+  -- Find all enrollments for this student with debts on this account
+  -- Calculate balance for each enrollment (charges - payments)
+  FOR v_debt_record IN
+    WITH enrollment_accounts AS (
+      -- Get account_id for each enrollment (enrollment.account_id ?? activity.account_id)
+      SELECT 
+        e.id AS enrollment_id,
+        e.student_id,
+        e.activity_id,
+        COALESCE(e.account_id, a.account_id) AS account_id
+      FROM public.enrollments e
+      INNER JOIN public.activities a ON e.activity_id = a.id
+      WHERE e.student_id = p_student_id
+        AND e.is_active = true
+        AND COALESCE(e.account_id, a.account_id) = p_account_id
+    ),
+    enrollment_balances AS (
+      -- Calculate balance for each enrollment
+      SELECT 
+        ea.enrollment_id,
+        ea.activity_id,
+        ea.account_id,
+        COALESCE(SUM(CASE WHEN ft.type IN ('income', 'expense') THEN ft.amount ELSE 0 END), 0) AS charges,
+        COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) AS payments,
+        COALESCE(SUM(CASE WHEN ft.type IN ('income', 'expense') THEN ft.amount ELSE 0 END), 0) - 
+        COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) AS balance
+      FROM enrollment_accounts ea
+      LEFT JOIN public.finance_transactions ft ON 
+        ft.student_id = ea.student_id 
+        AND ft.activity_id = ea.activity_id
+        AND ft.account_id = ea.account_id
+      GROUP BY ea.enrollment_id, ea.activity_id, ea.account_id
+      HAVING COALESCE(SUM(CASE WHEN ft.type IN ('income', 'expense') THEN ft.amount ELSE 0 END), 0) - 
+             COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) > 0
+    )
+    SELECT 
+      eb.enrollment_id,
+      eb.activity_id,
+      eb.balance AS debt_amount
+    FROM enrollment_balances eb
+    ORDER BY eb.balance DESC -- Sort by debt amount (largest first)
+  LOOP
+    -- If no remaining advance, stop
+    IF v_remaining_advance <= 0 THEN
+      EXIT;
+    END IF;
+    
+    -- Calculate payment amount (full debt or remaining advance, whichever is smaller)
+    v_payment_amount := LEAST(v_debt_record.debt_amount, v_remaining_advance);
+    
+    -- Create advance_payment transaction
+    INSERT INTO public.finance_transactions (
+      type,
+      student_id,
+      activity_id,
+      account_id,
+      amount,
+      date,
+      description
+    ) VALUES (
+      'advance_payment',
+      p_student_id,
+      v_debt_record.activity_id,
+      p_account_id,
+      v_payment_amount,
+      CURRENT_DATE,
+      'Автоматичне погашення з авансового рахунку'
+    );
+    
+    v_payments_count := v_payments_count + 1;
+    v_distributed := v_distributed + v_payment_amount;
+    v_remaining_advance := v_remaining_advance - v_payment_amount;
+  END LOOP;
+  
+  -- Update advance balance with remaining amount
+  UPDATE public.advance_balances
+  SET balance = v_remaining_advance,
+      updated_at = now()
+  WHERE student_id = p_student_id AND account_id = p_account_id;
+  
+  -- Return results
+  RETURN QUERY SELECT v_distributed, v_remaining_advance, v_payments_count;
+END;
+$$;
+
+COMMENT ON FUNCTION public.distribute_advance_payment IS 
+'Распределяет авансовый платёж по задолженностям (Waterfall алгоритм). Гасит долги от самого большого к самому маленькому.';
