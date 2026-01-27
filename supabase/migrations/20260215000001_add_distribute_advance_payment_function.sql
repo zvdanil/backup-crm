@@ -64,22 +64,27 @@ BEGIN
     ),
     enrollment_balances AS (
       -- Calculate balance for each enrollment
+      -- Balance formula: charges (income) - payments (payment + advance_payment) + refunds (expense)
+      -- Debt = charges - payments - refunds (negative balance)
       SELECT 
         ea.enrollment_id,
         ea.activity_id,
         ea.account_id,
-        COALESCE(SUM(CASE WHEN ft.type IN ('income', 'expense') THEN ft.amount ELSE 0 END), 0) AS charges,
+        COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) AS charges,
         COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) AS payments,
-        COALESCE(SUM(CASE WHEN ft.type IN ('income', 'expense') THEN ft.amount ELSE 0 END), 0) - 
-        COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) AS balance
+        COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) AS refunds,
+        COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) - 
+        COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) -
+        COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) AS balance
       FROM enrollment_accounts ea
       LEFT JOIN public.finance_transactions ft ON 
         ft.student_id = ea.student_id 
         AND ft.activity_id = ea.activity_id
-        AND ft.account_id = ea.account_id
+        AND COALESCE(ft.account_id, 'NULL') = COALESCE(ea.account_id, 'NULL')
       GROUP BY ea.enrollment_id, ea.activity_id, ea.account_id
-      HAVING COALESCE(SUM(CASE WHEN ft.type IN ('income', 'expense') THEN ft.amount ELSE 0 END), 0) - 
-             COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) > 0
+      HAVING COALESCE(SUM(CASE WHEN ft.type = 'income' THEN ft.amount ELSE 0 END), 0) - 
+             COALESCE(SUM(CASE WHEN ft.type IN ('payment', 'advance_payment') THEN ft.amount ELSE 0 END), 0) -
+             COALESCE(SUM(CASE WHEN ft.type = 'expense' THEN ft.amount ELSE 0 END), 0) > 0
     )
     SELECT 
       eb.enrollment_id,
