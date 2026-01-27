@@ -9,11 +9,15 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight requests (OPTIONS)
+  // Браузер отправляет preflight запрос перед основным запросом
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { 
-      status: 200,
-      headers: corsHeaders 
+    return new Response(null, { 
+      status: 204, // No Content - правильный статус для OPTIONS
+      headers: {
+        ...corsHeaders,
+        'Content-Length': '0',
+      }
     })
   }
 

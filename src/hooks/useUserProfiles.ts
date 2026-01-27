@@ -76,30 +76,28 @@ export function useCreateUser() {
 
       // Используем Edge Function для создания пользователя через Admin API
       // Это обходит rate limits для обычной регистрации
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const response = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
-        method: 'POST',
-        mode: 'cors',
-        credentials: 'omit',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '',
-        },
-        body: JSON.stringify({
+      // Используем supabase.functions.invoke для автоматической обработки CORS
+      const { data: result, error: functionError } = await supabase.functions.invoke('create-user', {
+        body: {
           email: userData.email,
           password: userData.password,
           parentName: userData.parentName,
           childName: userData.childName,
           role: userData.role,
           isActive: userData.isActive,
-        }),
+        },
       });
 
-      const result = await response.json();
+      if (functionError) {
+        throw new Error(functionError.message || 'Помилка створення користувача');
+      }
 
-      if (!response.ok || result.error) {
-        throw new Error(result.error?.message || 'Помилка створення користувача');
+      if (result?.error) {
+        throw new Error(result.error.message || 'Помилка створення користувача');
+      }
+
+      if (!result?.data) {
+        throw new Error('Користувач не створений');
       }
 
       return result.data as UserProfile;
