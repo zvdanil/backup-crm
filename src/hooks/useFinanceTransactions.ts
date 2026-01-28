@@ -431,8 +431,11 @@ export function useStudentActivityMonthlyBalance(
 
       const totalPayments = payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
       const refunds = expenseTransactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
-
-      const charges = baseMonthlyCharge;
+      
+      // For subscription type: if there's an income transaction, use its amount
+      // If no income transaction exists, charges should be 0 (subscription was deleted/cancelled)
+      const hasIncomeTransaction = incomeTransactions && incomeTransactions.length > 0;
+      const charges = hasIncomeTransaction ? baseMonthlyCharge : 0;
       const balance = totalPayments - charges + refunds;
 
       return { balance, payments: totalPayments, charges, refunds };

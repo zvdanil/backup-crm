@@ -147,11 +147,20 @@ export function StudentActivityBalanceRow({
       </div>
     );
   }
+  
+  // Hide activity row if subscription was deleted (no charges, no payments, no refunds)
+  if (shouldHide) {
+    return null;
+  }
 
   const balance = combinedData?.balance || 0;
   const payments = combinedData?.payments || 0;
   const charges = combinedData?.charges || 0;
   const refunds = combinedData?.refunds || 0;
+  
+  // Hide activity row if subscription was deleted (no charges, no payments, no refunds)
+  // This happens when income transaction is deleted for subscription type
+  const shouldHide = isMonthlyBilling && charges === 0 && payments === 0 && refunds === 0 && !incomeTransaction;
 
   // For food activity: expense transactions are refunds (positive for client)
   // Balance calculation: payments - charges + refunds (refunds increase balance)
@@ -171,10 +180,11 @@ export function StudentActivityBalanceRow({
   // Check if we can show delete button for subscription charges
   // For subscription billing, show delete button if:
   // 1. It's monthly billing (fixed or subscription type)
-  // 2. There are charges (monthlyCharges > 0) - this means subscription is active
+  // 2. There are charges (monthlyCharges > 0) OR there's an income transaction - this means subscription is active
   // We show button even if incomeTransaction doesn't exist - we'll create it on delete
   // This works even for archived enrollments
-  const hasSubscriptionCharge = isMonthlyBilling && monthlyCharges > 0;
+  // Note: After deletion, monthlyCharges will be 0, so button will disappear
+  const hasSubscriptionCharge = isMonthlyBilling && (monthlyCharges > 0 || !!incomeTransaction);
   
   // Debug logging for "Прескул" activity
   if (enrollment.activities.name === 'Прескул' || enrollment.activities.name?.includes('Прескул')) {
