@@ -44,13 +44,19 @@ BEGIN
   
   -- Find and delete all advance_payment transactions created for this payment
   -- They should have the same student_id, account_id, and date >= payment date
+  -- Note: There are two possible descriptions:
+  --   - 'Автоматичне погашення з авансового рахунку' (from distribute_advance_payment)
+  --   - 'Автоматичне списання з авансового рахунку' (from auto_charge_from_advance)
   WITH deleted_advance_payments AS (
     DELETE FROM public.finance_transactions
     WHERE type = 'advance_payment'
       AND student_id = v_payment_record.student_id
       AND account_id = v_payment_record.account_id
       AND date >= v_payment_record.date
-      AND description = 'Автоматичне погашення з авансового рахунку'
+      AND description IN (
+        'Автоматичне погашення з авансового рахунку',
+        'Автоматичне списання з авансового рахунку'
+      )
     RETURNING amount
   )
   SELECT 
@@ -85,16 +91,25 @@ BEGIN
   WHERE id = p_transaction_id;
   
   -- Return results as JSON
+  -- Use explicit type casting to ensure proper JSON format
   v_result := json_build_object(
-    'deleted_payment_amount', v_payment_record.amount,
+    'deleted_payment_amount', v_payment_record.amount::numeric,
     'deleted_advance_payments_count', v_advance_payments_count,
-    'deleted_advance_payments_amount', v_advance_payments_amount,
-    'remaining_advance_balance', COALESCE(v_advance_balance, 0)
+    'deleted_advance_payments_amount', v_advance_payments_amount::numeric,
+    'remaining_advance_balance', COALESCE(v_advance_balance, 0)::numeric
   );
   
   RETURN v_result;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Log error details and re-raise with context
+    RAISE EXCEPTION 'Error in delete_payment_transaction: % (SQLSTATE: %)', SQLERRM, SQLSTATE;
 END;
 $$;
+
+-- Grant execute permission to authenticated users
+GRANT EXECUTE ON FUNCTION public.delete_payment_transaction(UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_payment_transaction(UUID, TEXT) TO anon;
 
 COMMENT ON FUNCTION public.delete_payment_transaction IS 
 'Удаляет платёж и откатывает распределение: удаляет advance_payment транзакции и уменьшает авансовый баланс';
