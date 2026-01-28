@@ -686,13 +686,16 @@ export function useStudentAccountBalances(
       const incomeByActivity: Record<string, number> = {};
       const expenseByActivity: Record<string, number> = {};
       
-      // Для платежей без activity_id - группируем по account_id напрямую
+      // Для платежей без activity_id и без account_id - учитываем как "Оплата без активності"
+      // Платежи с привязанным account_id, но без activity_id, в новую модели идут в аванс
+      // и затем распределяются через advance_payment, поэтому здесь их не учитываем,
+      // чтобы избежать двойного счёта (и некорректного баланса по рахунках).
       const paymentsByAccount: Map<string | null, number> = new Map();
-
+      
       (transactions || []).forEach((trans: any) => {
         if (!trans.activity_id) {
-          if (trans.type === 'payment' || trans.type === 'advance_payment') {
-            // Для платежей без activity_id используем account_id из транзакции
+          if ((trans.type === 'payment' || trans.type === 'advance_payment') && !trans.account_id) {
+            // Учитываем только платежи без account_id как "без активності"
             const accountId = trans.account_id || null;
             const current = paymentsByAccount.get(accountId) || 0;
             paymentsByAccount.set(accountId, current + (trans.amount || 0));
