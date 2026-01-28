@@ -88,6 +88,16 @@ export function StudentActivityBalanceRow({
     year
   );
   
+  // Get income transaction for subscription charges (only if monthly billing)
+  const incomeTransactionQuery = useActivityIncomeTransaction(
+    studentId,
+    enrollment.activity_id,
+    month,
+    year
+  );
+  
+  const incomeTransaction = incomeTransactionQuery.data;
+  
   const displayMode =
     enrollment.activities.balance_display_mode ??
     (isFoodActivity ? 'recalculation' : isMonthlyBilling ? 'subscription' : 'recalculation');
