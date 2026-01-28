@@ -223,10 +223,42 @@ export default function StaffPayrollRegistry() {
     return staffIdsSet;
   }, [allBillingRules]);
   
-  // Filter: only active staff who have at least one billing rule configured
+  // Get set of staff IDs that have at least one journal entry (начисления)
+  const staffWithJournalEntries = useMemo(() => {
+    const staffIdsSet = new Set<string>();
+    journalEntriesAll.forEach(entry => {
+      if (entry.staff_id) {
+        staffIdsSet.add(entry.staff_id);
+      }
+    });
+    return staffIdsSet;
+  }, [journalEntriesAll]);
+  
+  // Get set of staff IDs that have at least one payout (выплаты)
+  const staffWithPayouts = useMemo(() => {
+    const staffIdsSet = new Set<string>();
+    payoutsAll.forEach(payout => {
+      if (payout.staff_id) {
+        staffIdsSet.add(payout.staff_id);
+      }
+    });
+    return staffIdsSet;
+  }, [payoutsAll]);
+  
+  // Filter: active staff who have at least one of:
+  // 1. Billing rule configured OR
+  // 2. Journal entry (начисления) OR
+  // 3. Payout (выплаты)
+  // This ensures we show all staff with any financial activity
   const activeStaff = useMemo(() => {
-    return staff.filter(s => s.is_active && staffWithRates.has(s.id));
-  }, [staff, staffWithRates]);
+    return staff.filter(s => 
+      s.is_active && (
+        staffWithRates.has(s.id) || 
+        staffWithJournalEntries.has(s.id) || 
+        staffWithPayouts.has(s.id)
+      )
+    );
+  }, [staff, staffWithRates, staffWithJournalEntries, staffWithPayouts]);
 
   // Calculate totals for all columns
   const totals = useMemo(() => {
