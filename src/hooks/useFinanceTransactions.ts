@@ -398,7 +398,7 @@ export function useStudentActivityMonthlyBalance(
 
       const { data: incomeTransactions, error: incomeError } = await supabase
         .from('finance_transactions')
-        .select('amount')
+        .select('id, amount, date')
         .eq('student_id', studentId)
         .not('student_id', 'is', null)
         .eq('activity_id', activityId)
@@ -951,6 +951,24 @@ export function useActivityIncomeTransaction(
       // or the activity/enrollment is archived but transaction still exists and is shown in balance
       // We search without date restrictions to find archived transactions that are still in balance calculations
       if (!data) {
+        // Debug: Check if this is for "Прескул" activity
+        const { data: activityData } = await supabase
+          .from('activities')
+          .select('name')
+          .eq('id', activityId)
+          .maybeSingle();
+        
+        const isPreskul = activityData?.name === 'Прескул';
+        
+        if (isPreskul) {
+          console.log('[useActivityIncomeTransaction] Прескул: Transaction not found for month, searching any transaction...', {
+            studentId,
+            activityId,
+            startDate,
+            endDate,
+          });
+        }
+        
         const { data: anyTransaction, error: anyError } = await supabase
           .from('finance_transactions')
           .select('*')
@@ -963,11 +981,54 @@ export function useActivityIncomeTransaction(
         
         if (anyError) {
           console.error('[useActivityIncomeTransaction] Error searching any transaction:', anyError);
+          if (isPreskul) {
+            console.error('[useActivityIncomeTransaction] Прескул: Error details:', anyError);
+          }
           // Don't throw, just return null
         } else if (anyTransaction) {
+          if (isPreskul) {
+            console.log('[useActivityIncomeTransaction] Прескул: Found transaction (any month):', {
+              id: anyTransaction.id,
+              date: anyTransaction.date,
+              amount: anyTransaction.amount,
+            });
+          }
           // Use any found transaction - if it's shown in balance, we should be able to delete it
           // This is especially important for archived enrollments where transactions might be from different months
           data = anyTransaction;
+        } else {
+          if (isPreskul) {
+            console.log('[useActivityIncomeTransaction] Прескул: No transaction found at all for this activity');
+            
+            // Debug: Check if there are ANY transactions for this student and activity
+            const { data: allTransactions, error: allError } = await supabase
+              .from('finance_transactions')
+              .select('id, type, date, amount, student_id, activity_id')
+              .eq('student_id', studentId)
+              .eq('activity_id', activityId);
+            
+            if (allError) {
+              console.error('[useActivityIncomeTransaction] Прескул: Error checking all transactions:', allError);
+            } else {
+              console.log('[useActivityIncomeTransaction] Прескул: All transactions for this activity:', allTransactions);
+              
+              // If we found income transactions but not in the first query, use the first one
+              const incomeTransactions = allTransactions?.filter(t => t.type === 'income') || [];
+              if (incomeTransactions.length > 0) {
+                console.log('[useActivityIncomeTransaction] Прескул: Found income transactions in all transactions, using first:', incomeTransactions[0]);
+                // Fetch full transaction data
+                const { data: fullTransaction } = await supabase
+                  .from('finance_transactions')
+                  .select('*')
+                  .eq('id', incomeTransactions[0].id)
+                  .single();
+                
+                if (fullTransaction) {
+                  data = fullTransaction;
+                }
+              }
+            }
+          }
         }
       }
       
