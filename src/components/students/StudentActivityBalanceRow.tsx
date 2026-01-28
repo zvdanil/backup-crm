@@ -153,7 +153,10 @@ export function StudentActivityBalanceRow({
   const isPositive = isFoodActivity ? (refunds > 0 ? true : balance >= 0) : (balance >= 0);
   
   // Check if we can show delete button for subscription charges
-  const hasSubscriptionCharge = isMonthlyBilling && incomeTransaction && charges > 0;
+  // For subscription billing, we need to check monthlyCharges (not total charges)
+  // because charges might include recalculation charges which are not subscription
+  const monthlyCharges = monthlyData?.charges ?? 0;
+  const hasSubscriptionCharge = isMonthlyBilling && incomeTransaction && monthlyCharges > 0;
   
   const handleDeleteClick = () => {
     if (incomeTransaction) {

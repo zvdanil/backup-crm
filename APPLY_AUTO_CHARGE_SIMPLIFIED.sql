@@ -148,19 +148,24 @@ BEGIN
   -- Чистая сумма начислений (income - expense)
   v_charge_amount := v_total_income - v_total_expense;
   
+  -- Сохраняем начальный авансовый баланс ДО списания
+  v_advance_before := v_advance_balance;
+  
   -- Если есть начисления, списываем с авансового баланса
   IF v_charge_amount > 0 THEN
+    -- Сохраняем сумму списанного с авансового баланса
+    v_charged_amount := LEAST(v_charge_amount, v_advance_balance);
+    
     -- Списываем либо всю сумму начислений, либо весь авансовый баланс (что меньше)
     UPDATE public.advance_balances
     SET balance = GREATEST(0, balance - LEAST(v_charge_amount, v_advance_balance)),
         updated_at = now()
     WHERE student_id = p_student_id 
       AND account_id = p_account_id;
+  ELSE
+    -- Если нет начислений, устанавливаем значения в 0
+    v_charged_amount := 0;
   END IF;
-  
-  -- Сохраняем сумму списанного с авансового баланса
-  v_charged_amount := LEAST(v_charge_amount, v_advance_balance);
-  v_advance_before := v_advance_balance;
   
   -- Получаем обновлённый авансовый баланс
   SELECT COALESCE(balance, 0) INTO v_advance_balance
