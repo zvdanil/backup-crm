@@ -888,21 +888,55 @@ export function useDeletePaymentTransaction() {
     mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }) => {
       console.log('[useDeletePaymentTransaction] Calling delete_payment_transaction', {
         transactionId,
+        transactionIdType: typeof transactionId,
+        transactionIdLength: transactionId?.length,
         reason: reason.substring(0, 50) + '...',
       });
       
-      const { data, error } = await supabase.rpc('delete_payment_transaction', {
-        p_transaction_id: transactionId,
-        p_reason: reason,
-      });
-      
-      if (error) {
-        console.error('[useDeletePaymentTransaction] RPC error:', error);
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(transactionId)) {
+        const error = new Error(`Invalid transaction ID format: ${transactionId}`);
+        console.error('[useDeletePaymentTransaction] Validation error:', error);
         throw error;
       }
       
-      console.log('[useDeletePaymentTransaction] Success:', data);
-      return data;
+      if (!reason || !reason.trim()) {
+        const error = new Error('Reason is required');
+        console.error('[useDeletePaymentTransaction] Validation error:', error);
+        throw error;
+      }
+      
+      try {
+        const { data, error } = await supabase.rpc('delete_payment_transaction', {
+          p_transaction_id: transactionId,
+          p_reason: reason.trim(),
+        });
+        
+        if (error) {
+          console.error('[useDeletePaymentTransaction] RPC error:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+            error,
+          });
+          throw error;
+        }
+        
+        console.log('[useDeletePaymentTransaction] Success:', data);
+        return data;
+      } catch (err: any) {
+        console.error('[useDeletePaymentTransaction] Exception:', {
+          message: err?.message,
+          details: err?.details,
+          hint: err?.hint,
+          code: err?.code,
+          stack: err?.stack,
+          err,
+        });
+        throw err;
+      }
     },
     onSuccess: async () => {
       // Invalidate all related queries
