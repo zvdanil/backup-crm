@@ -2,7 +2,8 @@ import {
   useStudentActivityBalance, 
   useStudentActivityMonthlyBalance,
   useActivityIncomeTransaction,
-  useDeleteIncomeTransaction
+  useDeleteIncomeTransaction,
+  useCreateFinanceTransaction
 } from '@/hooks/useFinanceTransactions';
 import { formatCurrency } from '@/lib/attendance';
 import type { EnrollmentWithRelations } from '@/hooks/useEnrollments';
@@ -61,6 +62,7 @@ export function StudentActivityBalanceRow({
   
   // Initialize deleteIncome hook early to avoid initialization errors
   const deleteIncome = useDeleteIncomeTransaction();
+  const createTransaction = useCreateFinanceTransaction();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const accountLabel = useMemo(() => {
@@ -169,10 +171,10 @@ export function StudentActivityBalanceRow({
   // Check if we can show delete button for subscription charges
   // For subscription billing, show delete button if:
   // 1. It's monthly billing (fixed or subscription type)
-  // 2. Income transaction exists (this means subscription charge was created)
-  // We don't check monthlyCharges because incomeTransaction itself indicates subscription charge exists
+  // 2. There are charges (monthlyCharges > 0) - this means subscription is active
+  // We show button even if incomeTransaction doesn't exist - we'll create it on delete
   // This works even for archived enrollments
-  const hasSubscriptionCharge = isMonthlyBilling && !!incomeTransaction;
+  const hasSubscriptionCharge = isMonthlyBilling && monthlyCharges > 0;
   
   // Debug logging for "Прескул" activity
   if (enrollment.activities.name === 'Прескул' || enrollment.activities.name?.includes('Прескул')) {
@@ -198,19 +200,45 @@ export function StudentActivityBalanceRow({
   }
   
   const handleDeleteClick = () => {
-    if (incomeTransaction) {
+    // Allow deletion for subscription charges even if transaction doesn't exist
+    if (hasSubscriptionCharge) {
       setDeleteDialogOpen(true);
     }
   };
   
   const handleDeleteConfirm = async (reason: string) => {
-    if (!incomeTransaction) return;
+    if (!hasSubscriptionCharge) return;
     
     try {
+      let transactionId = incomeTransaction?.id;
+      
+      // If transaction doesn't exist, create it first
+      if (!transactionId) {
+        // Get account_id from enrollment or activity
+        const accountId = enrollment.account_id || enrollment.activities.account_id || null;
+        
+        // Create income transaction for subscription charge
+        const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+        const monthName = new Date(year, month).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+        const createdTransaction = await createTransaction.mutateAsync({
+          type: 'income',
+          student_id: studentId,
+          activity_id: enrollment.activity_id,
+          amount: baseMonthlyCharge,
+          date: startDate,
+          description: `Абонплата за ${monthName}`,
+          account_id: accountId,
+        });
+        
+        transactionId = createdTransaction.id;
+      }
+      
+      // Delete the transaction
       await deleteIncome.mutateAsync({
-        transactionId: incomeTransaction.id,
+        transactionId: transactionId!,
         reason,
       });
+      
       toast({
         title: 'Успішно',
         description: 'Нарахування видалено',
@@ -256,12 +284,13 @@ export function StudentActivityBalanceRow({
               )}
             </div>
           </div>
-          {canDelete && hasSubscriptionCharge && incomeTransaction && (
+          {canDelete && hasSubscriptionCharge && (
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
               onClick={handleDeleteClick}
+              disabled={deleteIncome.isPending || createTransaction.isPending}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -269,14 +298,14 @@ export function StudentActivityBalanceRow({
         </div>
       </div>
       
-      {incomeTransaction && (
+      {hasSubscriptionCharge && (
         <DeleteTransactionDialog
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
           onConfirm={handleDeleteConfirm}
           transactionType="income"
-          amount={incomeTransaction.amount || 0}
-          isLoading={deleteIncome.isPending}
+          amount={incomeTransaction?.amount || baseMonthlyCharge}
+          isLoading={deleteIncome.isPending || createTransaction.isPending}
         />
       )}
     </>
