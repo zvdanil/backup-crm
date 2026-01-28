@@ -944,7 +944,7 @@ export function useActivityIncomeTransaction(
       if (error) throw error;
       return data as FinanceTransaction | null;
     },
-    enabled: !!studentId && !!activityId,
+    enabled: !!studentId && !!activityId && !!month && year !== undefined,
   });
 }
 
