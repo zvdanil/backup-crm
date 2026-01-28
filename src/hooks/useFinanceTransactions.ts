@@ -928,7 +928,8 @@ export function useActivityIncomeTransaction(
       const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
       const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
       
-      const { data, error } = await supabase
+      // First, try to find transaction for the specific month
+      let { data, error } = await supabase
         .from('finance_transactions')
         .select('*')
         .eq('student_id', studentId)
@@ -940,7 +941,36 @@ export function useActivityIncomeTransaction(
         .limit(1)
         .maybeSingle();
       
-      if (error) throw error;
+      if (error) {
+        console.error('[useActivityIncomeTransaction] Error:', error);
+        throw error;
+      }
+      
+      // If not found for the specific month, try to find ANY income transaction for this activity
+      // This handles cases where the transaction exists but might be in a different month
+      // or the activity/enrollment is archived but transaction still exists and is shown in balance
+      // We search without date restrictions to find archived transactions that are still in balance calculations
+      if (!data) {
+        const { data: anyTransaction, error: anyError } = await supabase
+          .from('finance_transactions')
+          .select('*')
+          .eq('student_id', studentId)
+          .eq('activity_id', activityId)
+          .eq('type', 'income')
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (anyError) {
+          console.error('[useActivityIncomeTransaction] Error searching any transaction:', anyError);
+          // Don't throw, just return null
+        } else if (anyTransaction) {
+          // Use any found transaction - if it's shown in balance, we should be able to delete it
+          // This is especially important for archived enrollments where transactions might be from different months
+          data = anyTransaction;
+        }
+      }
+      
       return data as FinanceTransaction | null;
     },
     enabled: !!studentId && !!activityId && month !== undefined && year !== undefined,
