@@ -62,12 +62,17 @@ BEGIN
   -- Decrease advance balance by payment amount
   -- If advance_payments were deleted, we need to add them back to advance balance
   -- Then subtract the payment amount
-  UPDATE public.advance_balances
-  SET 
-    balance = GREATEST(0, balance - v_payment_record.amount + v_advance_payments_amount),
-    updated_at = now()
-  WHERE student_id = v_payment_record.student_id
-    AND account_id = v_payment_record.account_id;
+  -- Use INSERT ... ON CONFLICT to handle case when advance_balance doesn't exist
+  INSERT INTO public.advance_balances (student_id, account_id, balance)
+  VALUES (
+    v_payment_record.student_id,
+    v_payment_record.account_id,
+    GREATEST(0, 0 - v_payment_record.amount + v_advance_payments_amount)
+  )
+  ON CONFLICT (student_id, account_id)
+  DO UPDATE SET 
+    balance = GREATEST(0, advance_balances.balance - v_payment_record.amount + v_advance_payments_amount),
+    updated_at = now();
   
   -- Get remaining advance balance
   SELECT balance INTO v_advance_balance
