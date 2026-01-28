@@ -7,12 +7,7 @@ CREATE OR REPLACE FUNCTION public.delete_payment_transaction(
   p_transaction_id UUID,
   p_reason TEXT
 )
-RETURNS TABLE(
-  deleted_payment_amount DECIMAL(10,2),
-  deleted_advance_payments_count INTEGER,
-  deleted_advance_payments_amount DECIMAL(10,2),
-  remaining_advance_balance DECIMAL(10,2)
-)
+RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -22,6 +17,7 @@ DECLARE
   v_advance_payments_amount DECIMAL(10,2) := 0;
   v_advance_payments_count INTEGER := 0;
   v_advance_balance DECIMAL(10,2) := 0;
+  v_result JSON;
 BEGIN
   -- Get payment transaction details
   SELECT 
@@ -77,17 +73,18 @@ BEGIN
     AND account_id = v_payment_record.account_id;
   
   -- Delete the payment transaction itself
-  -- Add reason to description before deletion (for audit trail, if needed)
-  -- Actually, we'll just delete it - the reason is passed as parameter for logging
   DELETE FROM public.finance_transactions
   WHERE id = p_transaction_id;
   
-  -- Return results
-  RETURN QUERY SELECT 
-    v_payment_record.amount,
-    v_advance_payments_count,
-    v_advance_payments_amount,
-    COALESCE(v_advance_balance, 0);
+  -- Return results as JSON
+  v_result := json_build_object(
+    'deleted_payment_amount', v_payment_record.amount,
+    'deleted_advance_payments_count', v_advance_payments_count,
+    'deleted_advance_payments_amount', v_advance_payments_amount,
+    'remaining_advance_balance', COALESCE(v_advance_balance, 0)
+  );
+  
+  RETURN v_result;
 END;
 $$;
 
