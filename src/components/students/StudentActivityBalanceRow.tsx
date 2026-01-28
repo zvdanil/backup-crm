@@ -117,23 +117,26 @@ export function StudentActivityBalanceRow({
   const monthlyData = monthlyBalanceQuery.data;
   const recalculationData = regularBalanceQuery.data;
 
+  // Extract monthlyCharges outside useMemo so it's available for logging
+  const monthlyCharges = monthlyData?.charges ?? 0;
+
   const combinedData = useMemo(() => {
     if (!monthlyData && !recalculationData) return null;
     const payments = recalculationData?.payments ?? monthlyData?.payments ?? 0;
     const refunds = recalculationData?.refunds ?? monthlyData?.refunds ?? 0;
-    const monthlyCharges = monthlyData?.charges ?? 0;
+    const monthlyChargesLocal = monthlyData?.charges ?? 0;
     const recalculationCharges = recalculationData?.charges ?? 0;
 
     let charges = recalculationCharges;
     if (displayMode === 'subscription') {
-      charges = monthlyCharges;
+      charges = monthlyChargesLocal;
     } else if (displayMode === 'subscription_and_recalculation') {
-      charges = monthlyCharges + recalculationCharges;
+      charges = monthlyChargesLocal + recalculationCharges;
     }
 
     const balance = payments - charges + refunds;
     return { balance, payments, charges, refunds };
-  }, [displayMode, monthlyData, recalculationData]);
+  }, [displayMode, monthlyData, recalculationData, monthlyCharges]);
 
   if (isLoading) {
     return (
