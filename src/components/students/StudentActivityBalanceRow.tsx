@@ -47,6 +47,15 @@ export function StudentActivityBalanceRow({
     return foodTariffIds.has(enrollment.activity_id);
   }, [allActivities, enrollment.activity_id]);
 
+  // Check if activities data is loaded (might be null for archived activities)
+  if (!enrollment.activities) {
+    return (
+      <div className="flex items-center justify-between p-3 border rounded-lg">
+        <span className="text-sm text-muted-foreground">Завантаження даних активності...</span>
+      </div>
+    );
+  }
+
   const presentRule = enrollment.activities.billing_rules?.present;
   const isMonthlyBilling = !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
   
@@ -96,6 +105,8 @@ export function StudentActivityBalanceRow({
     year
   );
   
+  // For monthly billing, use income transaction if it exists
+  // This works even for archived enrollments - we still want to show delete button
   const incomeTransaction = isMonthlyBilling ? incomeTransactionQuery.data : null;
   
   const displayMode =
@@ -153,10 +164,29 @@ export function StudentActivityBalanceRow({
   const isPositive = isFoodActivity ? (refunds > 0 ? true : balance >= 0) : (balance >= 0);
   
   // Check if we can show delete button for subscription charges
-  // For subscription billing, we need to check monthlyCharges (not total charges)
-  // because charges might include recalculation charges which are not subscription
-  const monthlyCharges = monthlyData?.charges ?? 0;
-  const hasSubscriptionCharge = isMonthlyBilling && incomeTransaction && monthlyCharges > 0;
+  // For subscription billing, show delete button if:
+  // 1. It's monthly billing (fixed or subscription type)
+  // 2. Income transaction exists (this means subscription charge was created)
+  // We don't check monthlyCharges because incomeTransaction itself indicates subscription charge exists
+  // This works even for archived enrollments
+  const hasSubscriptionCharge = isMonthlyBilling && !!incomeTransaction;
+  
+  // Debug logging for "Прескул" activity
+  if (enrollment.activities.name === 'Прескул' || enrollment.activities.name?.includes('Прескул')) {
+    console.log('[Прескул Debug]', {
+      activityName: enrollment.activities.name,
+      isActive: enrollment.is_active,
+      isMonthlyBilling,
+      presentRuleType: presentRule?.type,
+      hasIncomeTransaction: !!incomeTransaction,
+      incomeTransaction: incomeTransaction,
+      monthlyCharges,
+      baseMonthlyCharge,
+      hasSubscriptionCharge,
+      displayMode,
+      billingRules: enrollment.activities.billing_rules,
+    });
+  }
   
   const handleDeleteClick = () => {
     if (incomeTransaction) {
