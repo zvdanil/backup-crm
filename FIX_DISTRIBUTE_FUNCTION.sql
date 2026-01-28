@@ -1,5 +1,6 @@
 -- ============================================
 -- Исправить функцию distribute_advance_payment
+-- ВАЖНО: Этот файл устарел! Используйте FIX_DISTRIBUTE_FUNCTION_V2.sql или миграцию 20260229000000_fix_distribute_advance_payment_logic.sql
 -- Исправляет сравнение account_id (NULL handling)
 -- ============================================
 

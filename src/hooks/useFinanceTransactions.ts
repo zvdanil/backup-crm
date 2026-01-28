@@ -85,30 +85,6 @@ export function useCreateFinanceTransaction() {
 
         if (payoutError) throw payoutError;
       }
-      
-      // Auto-charge from advance balance for new income/expense transactions
-      if ((transaction.type === 'income' || transaction.type === 'expense') &&
-          transaction.student_id && 
-          transaction.account_id && 
-          transaction.activity_id) {
-        try {
-          // Call PostgreSQL function to auto-charge from advance
-          const { error: rpcError } = await supabase.rpc('auto_charge_from_advance', {
-            p_student_id: transaction.student_id,
-            p_account_id: transaction.account_id,
-            p_activity_id: transaction.activity_id,
-            p_charge_amount: transaction.amount,
-          });
-          
-          if (rpcError) {
-            console.error('[useCreateFinanceTransaction] Auto-charge error:', rpcError);
-            // Don't throw - transaction is already created, just log the error
-          }
-        } catch (err) {
-          console.error('[useCreateFinanceTransaction] Auto-charge exception:', err);
-          // Don't throw - transaction is already created
-        }
-      }
 
       return data;
     },
@@ -250,31 +226,6 @@ export function useUpsertFinanceTransaction() {
         
         if (error) throw error;
         
-        // Auto-charge from advance balance for new income/expense transactions
-        if (data && 
-            (insertData.type === 'income' || insertData.type === 'expense') &&
-            insertData.student_id && 
-            insertData.account_id && 
-            insertData.activity_id) {
-          try {
-            // Call PostgreSQL function to auto-charge from advance
-            const { error: rpcError } = await supabase.rpc('auto_charge_from_advance', {
-              p_student_id: insertData.student_id,
-              p_account_id: insertData.account_id,
-              p_activity_id: insertData.activity_id,
-              p_charge_amount: insertData.amount,
-            });
-            
-            if (rpcError) {
-              console.error('[useUpsertFinanceTransaction] Auto-charge error:', rpcError);
-              // Don't throw - transaction is already created, just log the error
-            }
-          } catch (err) {
-            console.error('[useUpsertFinanceTransaction] Auto-charge exception:', err);
-            // Don't throw - transaction is already created
-          }
-        }
-        
         return data;
       }
     },
@@ -311,7 +262,7 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
       const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
       const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
 
-      // Get payments (payment and advance_payment)
+      // Get payments
       // Strictly filter by student_id and activity_id - exclude null values
       const { data: payments, error: paymentsError } = await supabase
         .from('finance_transactions')
@@ -320,7 +271,7 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
         .not('student_id', 'is', null) // Explicitly exclude null
         .eq('activity_id', activityId)
         .not('activity_id', 'is', null) // Explicitly exclude null
-        .in('type', ['payment', 'advance_payment'])
+        .eq('type', 'payment')
         .gte('date', startDate)
         .lte('date', endDate);
 
@@ -437,7 +388,7 @@ export function useStudentActivityMonthlyBalance(
         .not('student_id', 'is', null)
         .eq('activity_id', activityId)
         .not('activity_id', 'is', null)
-        .in('type', ['payment', 'advance_payment'])
+        .eq('type', 'payment')
         .gte('date', startDate)
         .lte('date', endDate);
 
@@ -502,7 +453,7 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
         .select('amount')
         .eq('student_id', studentId)
         .not('student_id', 'is', null) // Explicitly exclude null
-        .in('type', ['payment', 'advance_payment']);
+        .eq('type', 'payment');
       
       if (startDate && endDate) {
         paymentsQuery.gte('date', startDate).lte('date', endDate);
@@ -673,7 +624,7 @@ export function useStudentAccountBalances(
         .select('activity_id, type, amount, account_id')
         .eq('student_id', studentId)
         .not('student_id', 'is', null)
-        .in('type', ['payment', 'income', 'expense', 'advance_payment']);
+        .in('type', ['payment', 'income', 'expense']);
 
       if (startDate && endDate) {
         transactionsQuery.gte('date', startDate).lte('date', endDate);
@@ -687,14 +638,12 @@ export function useStudentAccountBalances(
       const expenseByActivity: Record<string, number> = {};
       
       // Для платежей без activity_id и без account_id - учитываем как "Оплата без активності"
-      // Платежи с привязанным account_id, но без activity_id, в новую модели идут в аванс
-      // и затем распределяются через advance_payment, поэтому здесь их не учитываем,
-      // чтобы избежать двойного счёта (и некорректного баланса по рахунках).
+      // Платежи с привязанным account_id, но без activity_id, идут в авансовый баланс
       const paymentsByAccount: Map<string | null, number> = new Map();
       
       (transactions || []).forEach((trans: any) => {
         if (!trans.activity_id) {
-          if ((trans.type === 'payment' || trans.type === 'advance_payment') && !trans.account_id) {
+          if (trans.type === 'payment' && !trans.account_id) {
             // Учитываем только платежи без account_id как "без активності"
             const accountId = trans.account_id || null;
             const current = paymentsByAccount.get(accountId) || 0;
@@ -702,7 +651,7 @@ export function useStudentAccountBalances(
           }
           return;
         }
-        if (trans.type === 'payment' || trans.type === 'advance_payment') {
+        if (trans.type === 'payment') {
           paymentsByActivity[trans.activity_id] = (paymentsByActivity[trans.activity_id] || 0) + (trans.amount || 0);
         } else if (trans.type === 'income') {
           incomeByActivity[trans.activity_id] = (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
