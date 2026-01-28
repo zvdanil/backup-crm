@@ -20,7 +20,6 @@ import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib
 import { Input } from '@/components/ui/input';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
-import { useAdvanceBalances } from '@/hooks/useAdvanceBalances';
 import {
   Select,
   SelectContent,
@@ -79,7 +78,6 @@ export default function StudentDetail() {
   const { data: accounts = [] } = usePaymentAccounts();
   const { data: userProfiles = [] } = useUserProfiles();
   const { data: parentLinks = [] } = useParentLinks(id);
-  const { data: advanceBalances = [] } = useAdvanceBalances(id);
   const addParentLink = useAddParentLink();
   const removeParentLink = useRemoveParentLink();
   const createEnrollment = useCreateEnrollment();
@@ -501,30 +499,6 @@ export default function StudentDetail() {
                     )}
                   </div>
 
-                  {/* Авансовые балансы */}
-                  {advanceBalances.length > 0 && (
-                    <div className="rounded-lg border border-border p-3 bg-blue-50/50 dark:bg-blue-950/20">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="text-sm font-medium">Авансові баланси</div>
-                      </div>
-                      <div className="space-y-2">
-                        {advanceBalances.map((advance) => {
-                          const accountName = advance.payment_accounts?.name || accounts.find(a => a.id === advance.account_id)?.name || 'Невідомий рахунок';
-                          return (
-                            <div key={`${advance.student_id}-${advance.account_id}`} className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">{accountName}</span>
-                              <span className="font-semibold text-blue-600 dark:text-blue-400">
-                                {formatCurrency(advance.balance)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Вільний залишок для автоматичного погашення заборгованостей
-                      </p>
-                    </div>
-                  )}
 
                   <div className="space-y-4">
                     {accountGroups.map((group) => {
