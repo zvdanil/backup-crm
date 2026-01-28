@@ -38,8 +38,24 @@ BEGIN
     RAISE EXCEPTION 'Payment transaction not found: %', p_transaction_id;
   END IF;
   
+  -- Handle old payments without account_id or student_id
+  -- If account_id is NULL, we can't rollback distribution, so just delete the payment
   IF v_payment_record.student_id IS NULL OR v_payment_record.account_id IS NULL THEN
-    RAISE EXCEPTION 'Payment transaction must have student_id and account_id';
+    -- For old payments without account_id/student_id, just delete the payment
+    -- No distribution rollback is possible
+    DELETE FROM public.finance_transactions
+    WHERE id = p_transaction_id;
+    
+    -- Return minimal result
+    v_result := json_build_object(
+      'deleted_payment_amount', v_payment_record.amount::numeric,
+      'deleted_advance_payments_count', 0,
+      'deleted_advance_payments_amount', 0::numeric,
+      'remaining_advance_balance', 0::numeric,
+      'note', 'Old payment without account_id/student_id - no distribution rollback performed'
+    );
+    
+    RETURN v_result;
   END IF;
   
   -- Find and delete all advance_payment transactions created for this payment
