@@ -231,6 +231,9 @@ export function StudentActivityBalanceRow({
         });
         
         transactionId = createdTransaction.id;
+        
+        // Wait a bit for the transaction to be fully created and queries to update
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       // Delete the transaction

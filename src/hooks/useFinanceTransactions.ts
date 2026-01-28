@@ -99,8 +99,15 @@ export function useCreateFinanceTransaction() {
       // Invalidate student balance queries if transaction is for a student
       if (data.student_id) {
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] });
+        queryClient.invalidateQueries({ queryKey: ['student_activity_monthly_balance'] });
         queryClient.invalidateQueries({ queryKey: ['student_total_balance'] });
         queryClient.invalidateQueries({ queryKey: ['student_account_balances'] });
+        if (data.activity_id) {
+          const transactionDate = new Date(data.date);
+          const month = transactionDate.getMonth();
+          const year = transactionDate.getFullYear();
+          queryClient.invalidateQueries({ queryKey: ['activity_income_transaction', data.student_id, data.activity_id, month, year] });
+        }
       }
       if (data.staff_id && data.type === 'salary') {
         queryClient.invalidateQueries({ queryKey: ['staff-payouts', data.staff_id], exact: false });
@@ -1065,15 +1072,42 @@ export function useDeleteIncomeTransaction() {
       
       return transaction;
     },
-    onSuccess: async () => {
+    onSuccess: async (transaction) => {
       // Invalidate all related queries
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
         queryClient.invalidateQueries({ queryKey: ['activity_income_transaction'] }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_activity_monthly_balance'] }),
         queryClient.invalidateQueries({ queryKey: ['student_account_balances'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_total_balance'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       ]);
+      
+      // Refetch queries for the specific student and activity if we have transaction data
+      if (transaction?.student_id && transaction?.activity_id) {
+        // Get month and year from transaction date
+        const transactionDate = new Date(transaction.date);
+        const month = transactionDate.getMonth();
+        const year = transactionDate.getFullYear();
+        
+        await Promise.all([
+          queryClient.refetchQueries({ 
+            queryKey: ['student_activity_balance', transaction.student_id, transaction.activity_id, month, year] 
+          }),
+          queryClient.refetchQueries({ 
+            queryKey: ['student_activity_monthly_balance'], 
+            predicate: (query) => {
+              const key = query.queryKey;
+              return key[1] === transaction.student_id && key[2] === transaction.activity_id;
+            }
+          }),
+          queryClient.refetchQueries({ 
+            queryKey: ['student_account_balances', transaction.student_id, month, year] 
+          }),
+        ]);
+      }
+      
       await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
     },
     onError: (error) => {
