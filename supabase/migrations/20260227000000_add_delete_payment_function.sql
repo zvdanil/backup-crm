@@ -3,6 +3,9 @@
 -- Deletes advance_payment transactions and decreases advance balance
 -- ============================================
 
+-- Drop existing function if it exists (to change return type)
+DROP FUNCTION IF EXISTS public.delete_payment_transaction(UUID, TEXT);
+
 CREATE OR REPLACE FUNCTION public.delete_payment_transaction(
   p_transaction_id UUID,
   p_reason TEXT
