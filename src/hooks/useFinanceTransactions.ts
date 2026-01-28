@@ -100,6 +100,7 @@ export function useCreateFinanceTransaction() {
       if (data.student_id) {
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] });
         queryClient.invalidateQueries({ queryKey: ['student_total_balance'] });
+        queryClient.invalidateQueries({ queryKey: ['student_account_balances'] });
       }
       if (data.staff_id && data.type === 'salary') {
         queryClient.invalidateQueries({ queryKey: ['staff-payouts', data.staff_id], exact: false });
@@ -239,6 +240,7 @@ export function useUpsertFinanceTransaction() {
         queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_account_balances'] }),
       ]);
       // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
       await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
@@ -637,14 +639,15 @@ export function useStudentAccountBalances(
       const incomeByActivity: Record<string, number> = {};
       const expenseByActivity: Record<string, number> = {};
       
-      // Для платежей без activity_id и без account_id - учитываем как "Оплата без активності"
-      // Платежи с привязанным account_id, но без activity_id, идут в авансовый баланс
+      // Для платежей без activity_id учитываем их в балансе по счёту
+      // Платежи с account_id идут в баланс соответствующего счёта
+      // Платежи без account_id идут в баланс "Без рахунку" (null)
       const paymentsByAccount: Map<string | null, number> = new Map();
       
       (transactions || []).forEach((trans: any) => {
         if (!trans.activity_id) {
-          if (trans.type === 'payment' && !trans.account_id) {
-            // Учитываем только платежи без account_id как "без активності"
+          if (trans.type === 'payment') {
+            // Учитываем все платежи без activity_id в балансе по счёту
             const accountId = trans.account_id || null;
             const current = paymentsByAccount.get(accountId) || 0;
             paymentsByAccount.set(accountId, current + (trans.amount || 0));
