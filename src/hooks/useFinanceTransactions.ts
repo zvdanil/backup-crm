@@ -886,12 +886,22 @@ export function useDeletePaymentTransaction() {
   
   return useMutation({
     mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }) => {
+      console.log('[useDeletePaymentTransaction] Calling delete_payment_transaction', {
+        transactionId,
+        reason: reason.substring(0, 50) + '...',
+      });
+      
       const { data, error } = await supabase.rpc('delete_payment_transaction', {
         p_transaction_id: transactionId,
         p_reason: reason,
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error('[useDeletePaymentTransaction] RPC error:', error);
+        throw error;
+      }
+      
+      console.log('[useDeletePaymentTransaction] Success:', data);
       return data;
     },
     onSuccess: async () => {
