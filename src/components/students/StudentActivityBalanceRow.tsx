@@ -89,14 +89,16 @@ export function StudentActivityBalanceRow({
   );
   
   // Get income transaction for subscription charges (only if monthly billing)
-  const incomeTransactionQuery = useActivityIncomeTransaction(
-    studentId,
-    enrollment.activity_id,
-    month,
-    year
-  );
-  
-  const incomeTransaction = incomeTransactionQuery.data;
+  // Temporarily disabled to debug initialization error
+  // const incomeTransactionQuery = useActivityIncomeTransaction(
+  //   studentId,
+  //   enrollment.activity_id,
+  //   month,
+  //   year
+  // );
+  // 
+  // const incomeTransaction = incomeTransactionQuery.data;
+  const incomeTransaction = null; // Temporarily set to null
   
   const displayMode =
     enrollment.activities.balance_display_mode ??
