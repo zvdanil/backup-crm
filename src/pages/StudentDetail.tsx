@@ -507,17 +507,25 @@ export default function StudentDetail() {
                           const accountBalance = accountBalanceMap.get(group.id);
                           const amount = accountBalance?.balance || 0;
                           const previousBalance = accountBalance?.previous_balance || 0;
-                          const totalToPay = previousBalance + amount;
+                          const totalBalance = previousBalance + amount;
+                          const totalToPay = totalBalance < 0 ? Math.abs(totalBalance) : 0;
                           return (
                             <div key={group.id} className="space-y-1">
                               <div className="flex items-center justify-between text-sm">
                                 <span className="text-muted-foreground">{group.label}</span>
-                                <span className={cn(
-                                  "font-semibold",
-                                  totalToPay >= 0 ? "text-success" : "text-destructive"
-                                )}>
-                                  {totalToPay >= 0 ? '+' : ''}{formatCurrency(totalToPay)}
-                                </span>
+                                {totalToPay > 0 ? (
+                                  <span className="font-semibold text-destructive">
+                                    До сплати: {formatCurrency(totalToPay)}
+                                  </span>
+                                ) : totalBalance > 0 ? (
+                                  <span className="font-semibold text-success">
+                                    Переплата: +{formatCurrency(totalBalance)}
+                                  </span>
+                                ) : (
+                                  <span className="font-semibold text-success">
+                                    {formatCurrency(totalBalance)}
+                                  </span>
+                                )}
                               </div>
                               {previousBalance !== 0 && (
                                 <div className="text-xs text-muted-foreground pl-2">
@@ -537,7 +545,10 @@ export default function StudentDetail() {
                       const accountBalance = accountBalanceMap.get(group.id);
                       const amount = accountBalance?.balance || 0;
                       const previousBalance = accountBalance?.previous_balance || 0;
-                      const totalToPay = previousBalance + amount;
+                      // Итоговый баланс = прошлый баланс + баланс за месяц
+                      const totalBalance = previousBalance + amount;
+                      // До сплати: если баланс отрицательный (долг) - показываем сумму к оплате, иначе 0 (переплата)
+                      const totalToPay = totalBalance < 0 ? Math.abs(totalBalance) : 0;
                       return (
                         <div key={group.id} className="rounded-lg border border-border p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -563,12 +574,20 @@ export default function StudentDetail() {
                             {(previousBalance !== 0 || amount !== 0) && (
                               <>
                                 <div className="border-t border-border my-1"></div>
-                                <div className={cn(
-                                  "text-sm font-bold",
-                                  totalToPay >= 0 ? "text-success" : "text-destructive"
-                                )}>
-                                  До сплати: {totalToPay >= 0 ? '+' : ''}{formatCurrency(totalToPay)}
+                                <div className="text-xs text-muted-foreground mb-1">
+                                  Загальний баланс: {totalBalance >= 0 ? '+' : ''}{formatCurrency(totalBalance)}
                                 </div>
+                                {totalToPay > 0 ? (
+                                  <div className={cn(
+                                    "text-sm font-bold text-destructive"
+                                  )}>
+                                    До сплати: {formatCurrency(totalToPay)}
+                                  </div>
+                                ) : totalBalance > 0 ? (
+                                  <div className="text-sm font-bold text-success">
+                                    Переплата: +{formatCurrency(totalBalance)}
+                                  </div>
+                                ) : null}
                               </>
                             )}
                           </div>
