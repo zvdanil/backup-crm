@@ -590,6 +590,278 @@ export interface StudentAccountBalance {
   unassigned_payments?: number;
 }
 
+// Вспомогательная функция для расчета месячного баланса (без React Query)
+async function calculateMonthlyAccountBalances(
+  studentId: string,
+  month: number,
+  year: number,
+  excludeActivityIds: string[] = [],
+  foodTariffIds: string[] = []
+): Promise<StudentAccountBalance[]> {
+  const startDate = new Date(year, month, 1).toISOString().split('T')[0];
+  const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+
+  const { data: enrollments, error: enrollmentsError } = await supabase
+    .from('enrollments')
+    .select('id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at')
+    .eq('student_id', studentId);
+
+  if (enrollmentsError) throw enrollmentsError;
+
+  // Фильтруем enrollments для месячного баланса
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const isFutureMonth = year > currentYear || (year === currentYear && month > currentMonth);
+  const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+  
+  let filteredEnrollmentsByDate = (enrollments || []);
+  if (isFutureMonth) {
+    filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => e.is_active === true);
+  } else {
+    const monthStart = new Date(year, month, 1);
+    filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => {
+      if (e.is_active === true) return true;
+      if (e.is_active === false && e.unenrolled_at) {
+        const unenrolledDate = new Date(e.unenrolled_at);
+        return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+      }
+      return false;
+    });
+  }
+
+  const excludedSet = new Set(excludeActivityIds);
+  const filteredEnrollments = filteredEnrollmentsByDate.filter((enrollment: any) => (
+    !excludedSet.has(enrollment.activity_id)
+  ));
+  const enrollmentIds = filteredEnrollments.map((e: any) => e.id);
+  const enrollmentActivityMap = new Map<string, string>();
+  const enrollmentAccountMap = new Map<string, string | null>();
+  const enrollmentDataMap = new Map<string, { activity_id: string; custom_price: number | null; discount_percent: number | null; account_id: string | null }>();
+  const activityIds = new Set<string>();
+  filteredEnrollments.forEach((enrollment: any) => {
+    enrollmentActivityMap.set(enrollment.id, enrollment.activity_id);
+    enrollmentAccountMap.set(enrollment.id, enrollment.account_id);
+    enrollmentDataMap.set(enrollment.id, {
+      activity_id: enrollment.activity_id,
+      custom_price: enrollment.custom_price ?? null,
+      discount_percent: enrollment.discount_percent ?? null,
+      account_id: enrollment.account_id ?? null,
+    });
+    activityIds.add(enrollment.activity_id);
+  });
+
+  let attendanceData: { enrollment_id: string; charged_amount: number | null }[] = [];
+  if (enrollmentIds.length > 0) {
+    const { data: attendance, error: attendanceError } = await supabase
+      .from('attendance')
+      .select('enrollment_id, charged_amount')
+      .in('enrollment_id', enrollmentIds)
+      .gte('date', startDate)
+      .lte('date', endDate);
+    if (attendanceError) throw attendanceError;
+    attendanceData = attendance || [];
+  }
+
+  const { data: transactions, error: transactionsError } = await supabase
+    .from('finance_transactions')
+    .select('activity_id, type, amount, account_id')
+    .eq('student_id', studentId)
+    .not('student_id', 'is', null)
+    .in('type', ['payment', 'income', 'expense'])
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (transactionsError) throw transactionsError;
+
+  const paymentsByActivity: Record<string, number> = {};
+  const incomeByActivity: Record<string, number> = {};
+  const expenseByActivity: Record<string, number> = {};
+  const paymentsByAccount: Map<string | null, number> = new Map();
+  
+  (transactions || []).forEach((trans: any) => {
+    if (!trans.activity_id) {
+      if (trans.type === 'payment') {
+        const accountId = trans.account_id || null;
+        const current = paymentsByAccount.get(accountId) || 0;
+        paymentsByAccount.set(accountId, current + (trans.amount || 0));
+      }
+      return;
+    }
+    if (!activityIds.has(trans.activity_id)) return;
+    if (trans.type === 'payment') {
+      paymentsByActivity[trans.activity_id] = (paymentsByActivity[trans.activity_id] || 0) + (trans.amount || 0);
+    } else if (trans.type === 'income') {
+      incomeByActivity[trans.activity_id] = (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
+    } else if (trans.type === 'expense') {
+      expenseByActivity[trans.activity_id] = (expenseByActivity[trans.activity_id] || 0) + (trans.amount || 0);
+    }
+  });
+
+  const attendanceByActivity: Record<string, number> = {};
+  attendanceData.forEach((att) => {
+    const activityId = enrollmentActivityMap.get(att.enrollment_id);
+    if (!activityId) return;
+    attendanceByActivity[activityId] = (attendanceByActivity[activityId] || 0) + (att.charged_amount || 0);
+  });
+
+  const activityIdList = Array.from(activityIds);
+  const activityAccountMap: Record<string, string | null> = {};
+  const activityDataMap: Record<string, { billing_rules: any; default_price: number; balance_display_mode: string | null }> = {};
+  if (activityIdList.length > 0) {
+    const { data: activities, error: activitiesError } = await supabase
+      .from('activities')
+      .select('id, account_id, billing_rules, default_price, balance_display_mode')
+      .in('id', activityIdList);
+    if (activitiesError) throw activitiesError;
+    (activities || []).forEach((activity: any) => {
+      activityAccountMap[activity.id] = activity.account_id || null;
+      activityDataMap[activity.id] = {
+        billing_rules: activity.billing_rules || null,
+        default_price: activity.default_price || 0,
+        balance_display_mode: activity.balance_display_mode || null,
+      };
+    });
+  }
+
+  const foodTariffIdSet = new Set(foodTariffIds);
+  const monthlyChargesByActivity: Record<string, number> = {};
+  const displayModeByActivity: Record<string, 'subscription' | 'recalculation' | 'subscription_and_recalculation'> = {};
+  const enrollmentIsActiveMap = new Map<string, boolean>();
+  filteredEnrollments.forEach((enrollment: any) => {
+    enrollmentIsActiveMap.set(enrollment.id, enrollment.is_active);
+  });
+  
+  enrollmentDataMap.forEach((enrollment, enrollmentId) => {
+    const activity = activityDataMap[enrollment.activity_id];
+    if (!activity) return;
+    const presentRule = activity.billing_rules?.present;
+    const isMonthlyBilling = presentRule?.type === 'fixed' || presentRule?.type === 'subscription';
+    const fallbackMode = isMonthlyBilling ? 'subscription' : 'recalculation';
+    displayModeByActivity[enrollment.activity_id] = (activity.balance_display_mode as any) || fallbackMode;
+    if (foodTariffIdSet.has(enrollment.activity_id)) return;
+    if (!isMonthlyBilling) return;
+    const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
+    if (!isActive) return;
+
+    let baseMonthlyCharge = 0;
+    if (enrollment.custom_price !== null && enrollment.custom_price > 0) {
+      const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
+      baseMonthlyCharge = Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
+    } else if (presentRule?.rate && presentRule.rate > 0) {
+      baseMonthlyCharge = presentRule.rate;
+    } else {
+      baseMonthlyCharge = activity.default_price || 0;
+    }
+
+    monthlyChargesByActivity[enrollment.activity_id] =
+      (monthlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
+  });
+
+  const balancesByAccount = new Map<string | null, StudentAccountBalance>();
+  const enrollmentToActivityMap = new Map<string, string>();
+  filteredEnrollments.forEach((enrollment: any) => {
+    enrollmentToActivityMap.set(enrollment.id, enrollment.activity_id);
+  });
+  const attendanceByEnrollment = new Map<string, number>();
+  attendanceData.forEach((att) => {
+    const current = attendanceByEnrollment.get(att.enrollment_id) || 0;
+    attendanceByEnrollment.set(att.enrollment_id, current + (att.charged_amount || 0));
+  });
+  
+  activityIdList.forEach((activityId) => {
+    const payments = paymentsByActivity[activityId] || 0;
+    const income = incomeByActivity[activityId] || 0;
+    const expense = expenseByActivity[activityId] || 0;
+    const hasFinanceTransactions = income !== 0 || expense !== 0;
+    const monthlyCharges = monthlyChargesByActivity[activityId] || 0;
+    const attendanceTotal = attendanceByActivity[activityId] || 0;
+    const recalculationCharges = hasFinanceTransactions ? income : attendanceTotal;
+    const displayMode = displayModeByActivity[activityId] || (monthlyCharges > 0 ? 'subscription' : 'recalculation');
+
+    const enrollmentsForActivity = Array.from(enrollmentDataMap.entries())
+      .filter(([_, data]) => data.activity_id === activityId);
+    
+    let charges = recalculationCharges;
+    if (displayMode === 'subscription') {
+      const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
+        enrollmentIsActiveMap.get(eId) ?? true
+      );
+      if (hasFinanceTransactions || hasActiveEnrollments) {
+        charges = monthlyCharges;
+      } else {
+        charges = 0;
+      }
+    } else if (displayMode === 'subscription_and_recalculation') {
+      charges = monthlyCharges + recalculationCharges;
+    }
+    const refunds = expense;
+    const balance = payments - charges + refunds;
+    
+    if (enrollmentsForActivity.length === 0) {
+      const accountId = activityAccountMap[activityId] ?? null;
+      const existing = balancesByAccount.get(accountId) || {
+        account_id: accountId,
+        balance: 0,
+        payments: 0,
+        charges: 0,
+        refunds: 0,
+      };
+      balancesByAccount.set(accountId, {
+        account_id: accountId,
+        balance: existing.balance + balance,
+        payments: existing.payments + payments,
+        charges: existing.charges + charges,
+        refunds: existing.refunds + refunds,
+      });
+    } else {
+      const perEnrollment = enrollmentsForActivity.length;
+      const perEnrollmentBalance = balance / perEnrollment;
+      const perEnrollmentPayments = payments / perEnrollment;
+      const perEnrollmentCharges = charges / perEnrollment;
+      const perEnrollmentRefunds = refunds / perEnrollment;
+      
+      enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
+        const accountId = enrollmentData.account_id ?? activityAccountMap[enrollmentData.activity_id] ?? null;
+        const existing = balancesByAccount.get(accountId) || {
+          account_id: accountId,
+          balance: 0,
+          payments: 0,
+          charges: 0,
+          refunds: 0,
+        };
+        balancesByAccount.set(accountId, {
+          account_id: accountId,
+          balance: existing.balance + perEnrollmentBalance,
+          payments: existing.payments + perEnrollmentPayments,
+          charges: existing.charges + perEnrollmentCharges,
+          refunds: existing.refunds + perEnrollmentRefunds,
+        });
+      });
+    }
+  });
+
+  paymentsByAccount.forEach((amount, accountId) => {
+    const existing = balancesByAccount.get(accountId) || {
+      account_id: accountId,
+      balance: 0,
+      payments: 0,
+      charges: 0,
+      refunds: 0,
+    };
+    balancesByAccount.set(accountId, {
+      account_id: accountId,
+      balance: existing.balance + amount,
+      payments: existing.payments + amount,
+      charges: existing.charges,
+      refunds: existing.refunds,
+      unassigned_payments: (existing.unassigned_payments || 0) + (accountId === null ? amount : 0),
+    });
+  });
+
+  return Array.from(balancesByAccount.values());
+}
+
 export function useStudentAccountBalances(
   studentId: string,
   month?: number,
@@ -601,20 +873,69 @@ export function useStudentAccountBalances(
   return useQuery({
     queryKey: ['student_account_balances', studentId, month, year, excludeActivityIds, foodTariffIds, cumulative],
     queryFn: async () => {
-      let startDate: string | undefined;
-      let endDate: string | undefined;
-
-      if (month !== undefined && year !== undefined) {
-        if (cumulative) {
-          // Для кумулятивного баланса: от начала до конца выбранного месяца
-          startDate = undefined; // Начало всех времен
-          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
-        } else {
-          // Для месячного баланса: только выбранный месяц
-          startDate = new Date(year, month, 1).toISOString().split('T')[0];
-          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      // Для кумулятивного баланса: суммируем месячные балансы от начала enrollment до выбранного месяца
+      if (cumulative && month !== undefined && year !== undefined) {
+        // Находим самую раннюю дату enrollment
+        const { data: allEnrollments, error: allEnrollmentsError } = await supabase
+          .from('enrollments')
+          .select('enrolled_at')
+          .eq('student_id', studentId)
+          .not('enrolled_at', 'is', null)
+          .order('enrolled_at', { ascending: true })
+          .limit(1);
+        
+        if (allEnrollmentsError) throw allEnrollmentsError;
+        
+        if (allEnrollments && allEnrollments.length > 0 && allEnrollments[0].enrolled_at) {
+          const earliestEnrollment = new Date(allEnrollments[0].enrolled_at);
+          const startYear = earliestEnrollment.getFullYear();
+          const startMonth = earliestEnrollment.getMonth();
+          const endYear = year;
+          const endMonth = month;
+          
+          // Суммируем месячные балансы для каждого месяца от начала enrollment до выбранного месяца
+          const cumulativeBalances = new Map<string | null, StudentAccountBalance>();
+          
+          for (let y = startYear; y <= endYear; y++) {
+            const monthStart = y === startYear ? startMonth : 0;
+            const monthEnd = y === endYear ? endMonth : 11;
+            
+            for (let m = monthStart; m <= monthEnd; m++) {
+              const monthlyBalances = await calculateMonthlyAccountBalances(
+                studentId,
+                m,
+                y,
+                excludeActivityIds,
+                foodTariffIds
+              );
+              
+              // Суммируем балансы по счетам
+              monthlyBalances.forEach((monthlyBalance) => {
+                const existing = cumulativeBalances.get(monthlyBalance.account_id);
+                if (existing) {
+                  existing.balance += monthlyBalance.balance;
+                  existing.payments += monthlyBalance.payments;
+                  existing.charges += monthlyBalance.charges;
+                  existing.refunds += monthlyBalance.refunds;
+                  existing.unassigned_payments = (existing.unassigned_payments || 0) + (monthlyBalance.unassigned_payments || 0);
+                } else {
+                  cumulativeBalances.set(monthlyBalance.account_id, { ...monthlyBalance });
+                }
+              });
+            }
+          }
+          
+          return Array.from(cumulativeBalances.values());
         }
       }
+      
+      // Для месячного баланса: используем вспомогательную функцию
+      if (month !== undefined && year !== undefined) {
+        return await calculateMonthlyAccountBalances(studentId, month, year, excludeActivityIds, foodTariffIds);
+      }
+      
+      // Если месяц не указан, возвращаем пустой массив
+      return [];
 
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
@@ -830,24 +1151,9 @@ export function useStudentAccountBalances(
           baseMonthlyCharge = activity.default_price || 0;
         }
 
-        // Для кумулятивного баланса: рассчитываем количество месяцев от начала enrollment до выбранного месяца
-        let chargeAmount = baseMonthlyCharge;
-        if (cumulative && month !== undefined && year !== undefined) {
-          const enrollmentData = filteredEnrollments.find((e: any) => e.id === enrollmentId);
-          if (enrollmentData && enrollmentData.enrolled_at) {
-            const enrolledDate = new Date(enrollmentData.enrolled_at);
-            const targetMonthEnd = new Date(year, month + 1, 0);
-            const startYear = enrolledDate.getFullYear();
-            const startMonth = enrolledDate.getMonth();
-            // Количество месяцев от начала enrollment до конца выбранного месяца включительно
-            const enrollmentMonthsCount = (targetMonthEnd.getFullYear() - startYear) * 12 + (targetMonthEnd.getMonth() - startMonth) + 1;
-            if (enrollmentMonthsCount > 0) {
-              chargeAmount = baseMonthlyCharge * enrollmentMonthsCount;
-            }
-          }
-        }
+        // Для месячного баланса: используем baseMonthlyCharge (без умножения)
         monthlyChargesByActivity[enrollment.activity_id] =
-          (monthlyChargesByActivity[enrollment.activity_id] || 0) + chargeAmount;
+          (monthlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
       });
 
       // Группируем по enrollments, чтобы использовать приоритет enrollment.account_id ?? activity.account_id
