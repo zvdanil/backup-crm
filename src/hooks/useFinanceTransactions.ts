@@ -830,8 +830,22 @@ export function useStudentAccountBalances(
           baseMonthlyCharge = activity.default_price || 0;
         }
 
-        // Для кумулятивного баланса: умножаем на количество месяцев
-        const chargeAmount = cumulative ? baseMonthlyCharge * monthsCount : baseMonthlyCharge;
+        // Для кумулятивного баланса: рассчитываем количество месяцев от начала enrollment до выбранного месяца
+        let chargeAmount = baseMonthlyCharge;
+        if (cumulative && month !== undefined && year !== undefined) {
+          const enrollmentData = filteredEnrollments.find((e: any) => e.id === enrollmentId);
+          if (enrollmentData && enrollmentData.enrolled_at) {
+            const enrolledDate = new Date(enrollmentData.enrolled_at);
+            const targetMonthEnd = new Date(year, month + 1, 0);
+            const startYear = enrolledDate.getFullYear();
+            const startMonth = enrolledDate.getMonth();
+            // Количество месяцев от начала enrollment до конца выбранного месяца включительно
+            const enrollmentMonthsCount = (targetMonthEnd.getFullYear() - startYear) * 12 + (targetMonthEnd.getMonth() - startMonth) + 1;
+            if (enrollmentMonthsCount > 0) {
+              chargeAmount = baseMonthlyCharge * enrollmentMonthsCount;
+            }
+          }
+        }
         monthlyChargesByActivity[enrollment.activity_id] =
           (monthlyChargesByActivity[enrollment.activity_id] || 0) + chargeAmount;
       });
