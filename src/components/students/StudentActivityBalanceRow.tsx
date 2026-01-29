@@ -130,8 +130,14 @@ export function StudentActivityBalanceRow({
       const payments = monthlyData?.payments ?? 0;
       const refunds = monthlyData?.refunds ?? 0;
       const monthlyChargesLocal = monthlyData?.charges ?? 0;
-      // Если monthlyData отсутствует или charges = 0, используем baseMonthlyCharge (для будущих месяцев)
-      const charges = monthlyChargesLocal > 0 ? monthlyChargesLocal : (baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
+      // Если есть incomeTransaction, используем monthlyChargesLocal (транзакция существует)
+      // Если нет incomeTransaction:
+      //   - Для архивных активностей: charges = 0 (транзакция была удалена)
+      //   - Для активных активностей: используем baseMonthlyCharge (для будущих месяцев)
+      const hasIncomeTransaction = !!incomeTransaction;
+      const charges = hasIncomeTransaction 
+        ? (monthlyChargesLocal > 0 ? monthlyChargesLocal : baseMonthlyCharge)
+        : (enrollment.is_active && baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
       const balance = payments - charges + refunds;
       return { balance, payments, charges, refunds };
     }
@@ -151,7 +157,7 @@ export function StudentActivityBalanceRow({
 
     const balance = payments - charges + refunds;
     return { balance, payments, charges, refunds };
-  }, [displayMode, monthlyData, recalculationData, monthlyCharges, baseMonthlyCharge]);
+  }, [displayMode, monthlyData, recalculationData, monthlyCharges, baseMonthlyCharge, incomeTransaction, enrollment.is_active]);
 
   if (isLoading) {
     return (
@@ -166,9 +172,14 @@ export function StudentActivityBalanceRow({
   const charges = combinedData?.charges || 0;
   const refunds = combinedData?.refunds || 0;
   
+  // Для архивных активностей: скрываем если баланс = 0 и нет транзакций
+  // Это позволяет скрывать архивные активности после удаления транзакций
+  if (!enrollment.is_active && balance === 0 && payments === 0 && charges === 0 && refunds === 0 && !incomeTransaction) {
+    return null;
+  }
+  
   // Активность отображается если ребёнок записан на неё (есть enrollment)
-  // Независимо от баланса, платежей или начислений
-  // Логика скрытия удалена согласно требованиям: активность должна показываться если есть enrollment
+  // Или если есть баланс/платежи/начисления
 
   // For food activity: expense transactions are refunds (positive for client)
   // Balance calculation: payments - charges + refunds (refunds increase balance)
