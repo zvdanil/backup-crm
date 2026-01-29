@@ -372,34 +372,6 @@ export default function StudentDetail() {
               </div>
             </div>
 
-            {/* Balance Summary */}
-            <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
-              <h3 className="text-lg font-semibold mb-4">Баланс</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="rounded-lg border border-border p-4">
-                  <p className="text-sm text-muted-foreground mb-2">За місяць</p>
-                  <StudentBalanceDisplay
-                    studentId={id!}
-                    month={balanceMonth}
-                    year={balanceYear}
-                    excludeActivityIds={controllerActivityIds}
-                    foodTariffIds={Array.from(foodTariffIds)}
-                  />
-                </div>
-                <div className="rounded-lg border border-border p-4">
-                  <p className="text-sm text-muted-foreground mb-2">Загальний баланс</p>
-                  <StudentBalanceDisplay
-                    studentId={id!}
-                    month={balanceMonth}
-                    year={balanceYear}
-                    excludeActivityIds={controllerActivityIds}
-                    foodTariffIds={Array.from(foodTariffIds)}
-                    cumulative={true}
-                  />
-                </div>
-              </div>
-            </div>
-
             {/* Payment History */}
             <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
               <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
@@ -491,6 +463,32 @@ export default function StudentDetail() {
                     />
                   </div>
                 </div>
+                
+                {/* Balance Summary - moved here */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                  <div className="rounded-lg border border-border p-4">
+                    <p className="text-sm text-muted-foreground mb-2">За місяць</p>
+                    <StudentBalanceDisplay
+                      studentId={id!}
+                      month={balanceMonth}
+                      year={balanceYear}
+                      excludeActivityIds={controllerActivityIds}
+                      foodTariffIds={Array.from(foodTariffIds)}
+                    />
+                  </div>
+                  <div className="rounded-lg border border-border p-4">
+                    <p className="text-sm text-muted-foreground mb-2">Загальний баланс</p>
+                    <StudentBalanceDisplay
+                      studentId={id!}
+                      month={balanceMonth}
+                      year={balanceYear}
+                      excludeActivityIds={controllerActivityIds}
+                      foodTariffIds={Array.from(foodTariffIds)}
+                      cumulative={true}
+                    />
+                  </div>
+                </div>
+                
                 <div className="space-y-4">
                   <div className="rounded-lg border border-border p-3">
                     <div className="flex items-center justify-between mb-3">
