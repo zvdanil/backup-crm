@@ -624,8 +624,10 @@ export function useStudentAccountBalances(
       if (enrollmentsError) throw enrollmentsError;
 
       // Фильтруем enrollments по месяцу архивации:
-      // - Для будущих месяцев: только активные enrollments
-      // - Для текущего/прошлого месяца: активные + архивные, которые были заархивированы в этом месяце
+      // - Для кумулятивного баланса: все активные + архивные, заархивированные до конца выбранного месяца
+      // - Для месячного баланса:
+      //   - Для будущих месяцев: только активные enrollments
+      //   - Для текущего/прошлого месяца: активные + архивные, которые были заархивированы в этом месяце
       const now = new Date();
       const currentMonth = now.getMonth();
       const currentYear = now.getFullYear();
@@ -635,24 +637,37 @@ export function useStudentAccountBalances(
         const targetMonth = month;
         const targetYear = year;
         const isFutureMonth = targetYear > currentYear || (targetYear === currentYear && targetMonth > currentMonth);
+        const monthEnd = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
         
-        if (isFutureMonth) {
-          // Для будущих месяцев: только активные
-          filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => e.is_active === true);
-        } else {
-          // Для текущего/прошлого месяца: активные + архивные, заархивированные в этом месяце
-          const monthStart = new Date(targetYear, targetMonth, 1).toISOString();
-          const monthEnd = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999).toISOString();
-          
+        if (cumulative) {
+          // Для кумулятивного баланса: все активные + архивные, заархивированные до конца выбранного месяца
           filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => {
             if (e.is_active === true) return true;
-            // Архивные: показываем только если были заархивированы в этом месяце
+            // Архивные: показываем если были заархивированы до конца выбранного месяца (или не заархивированы)
             if (e.is_active === false && e.unenrolled_at) {
               const unenrolledDate = new Date(e.unenrolled_at);
-              return unenrolledDate >= new Date(monthStart) && unenrolledDate <= new Date(monthEnd);
+              return unenrolledDate <= monthEnd;
             }
             return false;
           });
+        } else {
+          if (isFutureMonth) {
+            // Для будущих месяцев: только активные
+            filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => e.is_active === true);
+          } else {
+            // Для текущего/прошлого месяца: активные + архивные, заархивированные в этом месяце
+            const monthStart = new Date(targetYear, targetMonth, 1);
+            
+            filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => {
+              if (e.is_active === true) return true;
+              // Архивные: показываем только если были заархивированы в этом месяце
+              if (e.is_active === false && e.unenrolled_at) {
+                const unenrolledDate = new Date(e.unenrolled_at);
+                return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+              }
+              return false;
+            });
+          }
         }
       } else {
         // Если месяц не указан (общий баланс): только активные
