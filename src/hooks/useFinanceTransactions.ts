@@ -1303,13 +1303,8 @@ export function useDeletePaymentTransaction() {
         transactionIdLength: transactionId?.length,
         reason: reason.substring(0, 50) + '...',
       });
-    },
-    enabled: !!studentId,
-  });
-}
-
-// Delete payment transaction and rollback distribution
-export function useDeletePaymentTransaction() {
+      
+      // Validate UUID format
   const queryClient = useQueryClient();
   
   return useMutation({
