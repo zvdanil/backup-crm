@@ -845,6 +845,17 @@ function StudentBalanceDisplay({
     cumulative
   );
 
+  // Debug logging
+  if (cumulative && accountBalances) {
+    console.log('[Cumulative Balance Debug]', {
+      month,
+      year,
+      cumulative,
+      accountBalances,
+      totalBalance: accountBalances.reduce((sum, item) => sum + (item.balance || 0), 0)
+    });
+  }
+
   if (isLoading) {
     return <span className="text-sm text-muted-foreground">Завантаження...</span>;
   }
