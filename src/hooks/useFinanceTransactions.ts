@@ -805,25 +805,6 @@ export function useStudentAccountBalances(
         enrollmentIsActiveMap.set(enrollment.id, enrollment.is_active);
       });
       
-      // Для кумулятивного баланса: рассчитываем количество месяцев от начала enrollment до выбранного месяца
-      let monthsCount = 1; // По умолчанию 1 месяц для месячного баланса
-      if (cumulative && month !== undefined && year !== undefined) {
-        // Находим самую раннюю дату enrollment среди активных enrollments
-        const earliestEnrollmentDate = filteredEnrollments
-          .filter((e: any) => e.is_active === true && e.enrolled_at)
-          .map((e: any) => new Date(e.enrolled_at))
-          .sort((a: Date, b: Date) => a.getTime() - b.getTime())[0];
-        
-        if (earliestEnrollmentDate) {
-          const targetMonthEnd = new Date(year, month + 1, 0);
-          const startYear = earliestEnrollmentDate.getFullYear();
-          const startMonth = earliestEnrollmentDate.getMonth();
-          // Количество месяцев от начала enrollment до конца выбранного месяца включительно
-          monthsCount = (targetMonthEnd.getFullYear() - startYear) * 12 + (targetMonthEnd.getMonth() - startMonth) + 1;
-          if (monthsCount < 1) monthsCount = 1;
-        }
-      }
-
       enrollmentDataMap.forEach((enrollment, enrollmentId) => {
         const activity = activityDataMap[enrollment.activity_id];
         if (!activity) return;
