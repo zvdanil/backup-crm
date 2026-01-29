@@ -591,13 +591,49 @@ export function useStudentAccountBalances(
 
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select('id, activity_id, custom_price, discount_percent, account_id')
+        .select('id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at')
         .eq('student_id', studentId);
 
       if (enrollmentsError) throw enrollmentsError;
 
+      // Фильтруем enrollments по месяцу архивации:
+      // - Для будущих месяцев: только активные enrollments
+      // - Для текущего/прошлого месяца: активные + архивные, которые были заархивированы в этом месяце
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      
+      let filteredEnrollmentsByDate = (enrollments || []);
+      if (month !== undefined && year !== undefined) {
+        const targetMonth = month;
+        const targetYear = year;
+        const isFutureMonth = targetYear > currentYear || (targetYear === currentYear && targetMonth > currentMonth);
+        
+        if (isFutureMonth) {
+          // Для будущих месяцев: только активные
+          filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => e.is_active === true);
+        } else {
+          // Для текущего/прошлого месяца: активные + архивные, заархивированные в этом месяце
+          const monthStart = new Date(targetYear, targetMonth, 1).toISOString();
+          const monthEnd = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999).toISOString();
+          
+          filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => {
+            if (e.is_active === true) return true;
+            // Архивные: показываем только если были заархивированы в этом месяце
+            if (e.is_active === false && e.unenrolled_at) {
+              const unenrolledDate = new Date(e.unenrolled_at);
+              return unenrolledDate >= new Date(monthStart) && unenrolledDate <= new Date(monthEnd);
+            }
+            return false;
+          });
+        }
+      } else {
+        // Если месяц не указан (общий баланс): только активные
+        filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => e.is_active === true);
+      }
+
       const excludedSet = new Set(excludeActivityIds);
-      const filteredEnrollments = (enrollments || []).filter((enrollment: any) => (
+      const filteredEnrollments = filteredEnrollmentsByDate.filter((enrollment: any) => (
         !excludedSet.has(enrollment.activity_id)
       ));
       const enrollmentIds = filteredEnrollments.map((e: any) => e.id);

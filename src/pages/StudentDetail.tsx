@@ -121,12 +121,34 @@ export default function StudentDetail() {
     return enrollments.filter(e => !e.is_active);
   }, [enrollments]);
 
-  const balanceEnrollments = useMemo(() => (
-    enrollments.filter((enrollment) => {
+  const balanceEnrollments = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const isFutureMonth = balanceYear > currentYear || (balanceYear === currentYear && balanceMonth > currentMonth);
+    
+    return enrollments.filter((enrollment) => {
       const activity = allActivities.find(a => a.id === enrollment.activity_id);
-      return activity ? !isGardenAttendanceController(activity) : true;
-    })
-  ), [enrollments, allActivities]);
+      if (activity && isGardenAttendanceController(activity)) return false;
+      
+      // Фильтруем по месяцу архивации:
+      // - Для будущих месяцев: только активные enrollments
+      // - Для текущего/прошлого месяца: активные + архивные, которые были заархивированы в этом месяце
+      if (isFutureMonth) {
+        return enrollment.is_active === true;
+      } else {
+        if (enrollment.is_active === true) return true;
+        // Архивные: показываем только если были заархивированы в этом месяце
+        if (enrollment.is_active === false && enrollment.unenrolled_at) {
+          const unenrolledDate = new Date(enrollment.unenrolled_at);
+          const monthStart = new Date(balanceYear, balanceMonth, 1);
+          const monthEnd = new Date(balanceYear, balanceMonth + 1, 0, 23, 59, 59, 999);
+          return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+        }
+        return false;
+      }
+    });
+  }, [enrollments, allActivities, balanceMonth, balanceYear]);
 
   const accountLabelMap = useMemo(() => {
     const map = new Map<string, string>();
