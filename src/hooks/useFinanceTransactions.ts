@@ -588,6 +588,7 @@ export interface StudentAccountBalance {
   charges: number;
   refunds: number;
   unassigned_payments?: number;
+  previous_balance?: number; // Баланс на начало выбранного месяца
 }
 
 // Вспомогательная функция для расчета месячного баланса из уже загруженных данных
@@ -1262,10 +1263,152 @@ export function useStudentAccountBalances(
         monthlyBalancesMap.set(monthKey, monthlyBalances);
       }
 
-      // Для месячного баланса: возвращаем баланс за выбранный месяц
+      // Для месячного баланса: возвращаем баланс за выбранный месяц + добавляем прошлый баланс
       if (!cumulative && month !== undefined && year !== undefined) {
         const monthKey = `${year}-${month}`;
-        return monthlyBalancesMap.get(monthKey) || [];
+        const monthlyBalances = monthlyBalancesMap.get(monthKey) || [];
+        
+        // Рассчитываем баланс на начало месяца (до выбранного месяца)
+        const previousBalancesMap = new Map<string | null, number>();
+        
+        // Находим самую раннюю дату enrollment
+        const { data: allEnrollmentsForPrevious, error: allEnrollmentsForPreviousError } = await supabase
+          .from('enrollments')
+          .select('enrolled_at')
+          .eq('student_id', studentId)
+          .not('enrolled_at', 'is', null)
+          .order('enrolled_at', { ascending: true })
+          .limit(1);
+        
+        if (!allEnrollmentsForPreviousError && allEnrollmentsForPrevious && allEnrollmentsForPrevious.length > 0) {
+          const earliestEnrollment = new Date(allEnrollmentsForPrevious[0].enrolled_at);
+          const startYear = earliestEnrollment.getFullYear();
+          const startMonth = earliestEnrollment.getMonth();
+          
+          // Рассчитываем баланс до начала выбранного месяца
+          const previousMonthEnd = new Date(year, month, 0, 23, 59, 59, 999);
+          const previousStartDate = new Date(startYear, startMonth, 1).toISOString().split('T')[0];
+          const previousEndDate = previousMonthEnd.toISOString().split('T')[0];
+          
+          // Формируем список месяцев до выбранного месяца
+          const previousMonthsToCalculate: Array<{ month: number; year: number }> = [];
+          for (let y = startYear; y <= year; y++) {
+            const monthStart = y === startYear ? startMonth : 0;
+            const monthEnd = y === year ? month - 1 : 11;
+            for (let m = monthStart; m <= monthEnd; m++) {
+              previousMonthsToCalculate.push({ month: m, year: y });
+            }
+          }
+          
+          if (previousMonthsToCalculate.length > 0) {
+            // Загружаем транзакции до начала месяца
+            const { data: previousTransactions, error: previousTransactionsError } = await supabase
+              .from('finance_transactions')
+              .select('activity_id, type, amount, account_id, date')
+              .eq('student_id', studentId)
+              .not('student_id', 'is', null)
+              .in('type', ['payment', 'income', 'expense'])
+              .gte('date', previousStartDate)
+              .lte('date', previousEndDate);
+            
+            if (!previousTransactionsError && previousTransactions) {
+              // Загружаем attendance до начала месяца
+              let previousAttendanceData: { enrollment_id: string; charged_amount: number | null; date: string }[] = [];
+              if (enrollmentIds.length > 0) {
+                const { data: previousAttendance, error: previousAttendanceError } = await supabase
+                  .from('attendance')
+                  .select('enrollment_id, charged_amount, date')
+                  .in('enrollment_id', enrollmentIds)
+                  .gte('date', previousStartDate)
+                  .lte('date', previousEndDate);
+                if (!previousAttendanceError && previousAttendance) {
+                  previousAttendanceData = previousAttendance;
+                }
+              }
+              
+              // Группируем транзакции и attendance по месяцам
+              const previousTransactionsByMonth = new Map<string, typeof previousTransactions>();
+              const previousAttendanceByMonth = new Map<string, typeof previousAttendanceData>();
+              
+              previousTransactions.forEach((trans: any) => {
+                const transDate = new Date(trans.date);
+                const monthKey = `${transDate.getFullYear()}-${transDate.getMonth()}`;
+                if (!previousTransactionsByMonth.has(monthKey)) {
+                  previousTransactionsByMonth.set(monthKey, []);
+                }
+                previousTransactionsByMonth.get(monthKey)!.push(trans);
+              });
+              
+              previousAttendanceData.forEach((att) => {
+                const attDate = new Date(att.date);
+                const monthKey = `${attDate.getFullYear()}-${attDate.getMonth()}`;
+                if (!previousAttendanceByMonth.has(monthKey)) {
+                  previousAttendanceByMonth.set(monthKey, []);
+                }
+                previousAttendanceByMonth.get(monthKey)!.push(att);
+              });
+              
+              // Рассчитываем балансы для каждого месяца до выбранного
+              const previousMonthlyBalancesMap = new Map<string, StudentAccountBalance[]>();
+              
+              for (const { month: m, year: y } of previousMonthsToCalculate) {
+                const monthKey = `${y}-${m}`;
+                const monthStart = new Date(y, m, 1);
+                const monthEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
+                const isFutureMonth = y > currentYear || (y === currentYear && m > currentMonth);
+                
+                // Фильтруем enrollments для этого месяца
+                let filteredEnrollmentsForPrevious = allFilteredEnrollments.filter((e: any) => {
+                  if (isFutureMonth) {
+                    return e.is_active === true;
+                  } else {
+                    if (e.is_active === true) return true;
+                    if (e.is_active === false && e.unenrolled_at) {
+                      const unenrolledDate = new Date(e.unenrolled_at);
+                      return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+                    }
+                    return false;
+                  }
+                });
+                
+                // Получаем транзакции и attendance для этого месяца
+                const monthTransactions = previousTransactionsByMonth.get(monthKey) || [];
+                const monthAttendance = previousAttendanceByMonth.get(monthKey) || [];
+                
+                // Рассчитываем месячный баланс
+                const monthlyBalances = calculateMonthlyBalanceFromData(
+                  filteredEnrollmentsForPrevious,
+                  monthTransactions,
+                  monthAttendance,
+                  enrollmentActivityMap,
+                  enrollmentAccountMap,
+                  enrollmentDataMap,
+                  activityAccountMap,
+                  activityDataMap,
+                  foodTariffIdSet,
+                  m,
+                  y
+                );
+                
+                previousMonthlyBalancesMap.set(monthKey, monthlyBalances);
+              }
+              
+              // Суммируем все месячные балансы до выбранного месяца
+              for (const balances of previousMonthlyBalancesMap.values()) {
+                balances.forEach((balance) => {
+                  const current = previousBalancesMap.get(balance.account_id) || 0;
+                  previousBalancesMap.set(balance.account_id, current + balance.balance);
+                });
+              }
+            }
+          }
+        }
+        
+        // Добавляем previous_balance к каждому балансу
+        return monthlyBalances.map((balance) => ({
+          ...balance,
+          previous_balance: previousBalancesMap.get(balance.account_id) || 0,
+        }));
       }
 
       // Для кумулятивного баланса: суммируем все месячные балансы

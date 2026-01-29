@@ -506,15 +506,24 @@ export default function StudentDetail() {
                         {accountGroups.map((group) => {
                           const accountBalance = accountBalanceMap.get(group.id);
                           const amount = accountBalance?.balance || 0;
+                          const previousBalance = accountBalance?.previous_balance || 0;
+                          const totalToPay = previousBalance + amount;
                           return (
-                            <div key={group.id} className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">{group.label}</span>
-                              <span className={cn(
-                                "font-semibold",
-                                amount >= 0 ? "text-success" : "text-destructive"
-                              )}>
-                                {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
-                              </span>
+                            <div key={group.id} className="space-y-1">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground">{group.label}</span>
+                                <span className={cn(
+                                  "font-semibold",
+                                  totalToPay >= 0 ? "text-success" : "text-destructive"
+                                )}>
+                                  {totalToPay >= 0 ? '+' : ''}{formatCurrency(totalToPay)}
+                                </span>
+                              </div>
+                              {previousBalance !== 0 && (
+                                <div className="text-xs text-muted-foreground pl-2">
+                                  (на початок: {previousBalance >= 0 ? '+' : ''}{formatCurrency(previousBalance)} + за місяць: {amount >= 0 ? '+' : ''}{formatCurrency(amount)})
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -527,6 +536,8 @@ export default function StudentDetail() {
                     {accountGroups.map((group) => {
                       const accountBalance = accountBalanceMap.get(group.id);
                       const amount = accountBalance?.balance || 0;
+                      const previousBalance = accountBalance?.previous_balance || 0;
+                      const totalToPay = previousBalance + amount;
                       return (
                         <div key={group.id} className="rounded-lg border border-border p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -538,6 +549,30 @@ export default function StudentDetail() {
                               {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
                             </div>
                           </div>
+                          
+                          {/* Отображение прошлого баланса и итоговой суммы */}
+                          <div className="space-y-1 mb-3">
+                            {previousBalance !== 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                Баланс на початок: {previousBalance >= 0 ? '+' : ''}{formatCurrency(previousBalance)}
+                              </div>
+                            )}
+                            <div className="text-xs text-muted-foreground">
+                              Баланс за місяць: {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
+                            </div>
+                            {(previousBalance !== 0 || amount !== 0) && (
+                              <>
+                                <div className="border-t border-border my-1"></div>
+                                <div className={cn(
+                                  "text-sm font-bold",
+                                  totalToPay >= 0 ? "text-success" : "text-destructive"
+                                )}>
+                                  До сплати: {totalToPay >= 0 ? '+' : ''}{formatCurrency(totalToPay)}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          
                           {group.enrollments.length === 0 ? (
                             <div className="text-sm text-muted-foreground">Немає рядків за вибраний період</div>
                           ) : (
