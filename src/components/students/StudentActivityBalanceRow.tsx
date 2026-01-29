@@ -123,6 +123,20 @@ export function StudentActivityBalanceRow({
   const monthlyCharges = monthlyData?.charges ?? 0;
 
   const combinedData = useMemo(() => {
+    // Для подписок: используем только monthlyData (или baseMonthlyCharge если monthlyData отсутствует)
+    // Не используем recalculationData для подписок, так как он может содержать данные из другого месяца
+    if (displayMode === 'subscription') {
+      // Для подписок: используем monthlyData или baseMonthlyCharge
+      const payments = monthlyData?.payments ?? 0;
+      const refunds = monthlyData?.refunds ?? 0;
+      const monthlyChargesLocal = monthlyData?.charges ?? 0;
+      // Если monthlyData отсутствует или charges = 0, используем baseMonthlyCharge (для будущих месяцев)
+      const charges = monthlyChargesLocal > 0 ? monthlyChargesLocal : (baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
+      const balance = payments - charges + refunds;
+      return { balance, payments, charges, refunds };
+    }
+
+    // Для других режимов: используем стандартную логику
     if (!monthlyData && !recalculationData) return null;
     const payments = recalculationData?.payments ?? monthlyData?.payments ?? 0;
     const refunds = recalculationData?.refunds ?? monthlyData?.refunds ?? 0;
@@ -130,15 +144,14 @@ export function StudentActivityBalanceRow({
     const recalculationCharges = recalculationData?.charges ?? 0;
 
     let charges = recalculationCharges;
-    if (displayMode === 'subscription') {
-      charges = monthlyChargesLocal;
-    } else if (displayMode === 'subscription_and_recalculation') {
-      charges = monthlyChargesLocal + recalculationCharges;
+    if (displayMode === 'subscription_and_recalculation') {
+      const monthlyCharges = monthlyChargesLocal > 0 ? monthlyChargesLocal : (baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
+      charges = monthlyCharges + recalculationCharges;
     }
 
     const balance = payments - charges + refunds;
     return { balance, payments, charges, refunds };
-  }, [displayMode, monthlyData, recalculationData, monthlyCharges]);
+  }, [displayMode, monthlyData, recalculationData, monthlyCharges, baseMonthlyCharge]);
 
   if (isLoading) {
     return (
