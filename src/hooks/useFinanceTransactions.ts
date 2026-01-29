@@ -868,21 +868,35 @@ export function useStudentAccountBalances(
         
         let charges = recalculationCharges;
         if (displayMode === 'subscription') {
-          // Для подписок: используем monthlyCharges только если есть реальные транзакции или активность активна
-          // Для архивных активностей без транзакций: charges = 0
-          const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
-            enrollmentIsActiveMap.get(eId) ?? true
-          );
-          // Если есть транзакции (income > 0), используем monthlyCharges
-          // Если нет транзакций, но есть активные enrollments, используем monthlyCharges (для будущих месяцев)
-          // Если нет транзакций и нет активных enrollments, charges = 0 (архивная активность без транзакций)
-          if (hasFinanceTransactions || hasActiveEnrollments) {
-            charges = monthlyCharges;
+          // Для подписок:
+          // - Для кумулятивного баланса: используем реальные транзакции income (они уже отфильтрованы по endDate)
+          // - Для месячного баланса: используем monthlyCharges только если есть реальные транзакции или активность активна
+          if (cumulative) {
+            // Для кумулятивного баланса: используем реальные транзакции income
+            // income уже содержит сумму всех транзакций от начала до конца выбранного месяца
+            charges = income;
           } else {
-            charges = 0; // Архивная активность без транзакций
+            // Для месячного баланса: используем monthlyCharges только если есть реальные транзакции или активность активна
+            // Для архивных активностей без транзакций: charges = 0
+            const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
+              enrollmentIsActiveMap.get(eId) ?? true
+            );
+            // Если есть транзакции (income > 0), используем monthlyCharges
+            // Если нет транзакций, но есть активные enrollments, используем monthlyCharges (для будущих месяцев)
+            // Если нет транзакций и нет активных enrollments, charges = 0 (архивная активность без транзакций)
+            if (hasFinanceTransactions || hasActiveEnrollments) {
+              charges = monthlyCharges;
+            } else {
+              charges = 0; // Архивная активность без транзакций
+            }
           }
         } else if (displayMode === 'subscription_and_recalculation') {
-          charges = monthlyCharges + recalculationCharges;
+          if (cumulative) {
+            // Для кумулятивного баланса: используем реальные транзакции income + recalculationCharges
+            charges = income + recalculationCharges;
+          } else {
+            charges = monthlyCharges + recalculationCharges;
+          }
         }
         const refunds = expense;
         const balance = payments - charges + refunds;
