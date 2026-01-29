@@ -432,10 +432,12 @@ export function useStudentActivityMonthlyBalance(
       const totalPayments = payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
       const refunds = expenseTransactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
       
-      // For subscription type: if there's an income transaction, use its amount
-      // If no income transaction exists, charges should be 0 (subscription was deleted/cancelled)
+      // For subscription type: 
+      // - If there's an income transaction, use its amount (actual charge)
+      // - If no income transaction exists but baseMonthlyCharge > 0, use baseMonthlyCharge (for future months or pending charges)
+      // - If no income transaction and baseMonthlyCharge = 0, charges = 0 (subscription was deleted/cancelled)
       const hasIncomeTransaction = incomeTransactions && incomeTransactions.length > 0;
-      const charges = hasIncomeTransaction ? baseMonthlyCharge : 0;
+      const charges = hasIncomeTransaction ? baseMonthlyCharge : (baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
       const balance = totalPayments - charges + refunds;
 
       return { balance, payments: totalPayments, charges, refunds };
@@ -654,6 +656,8 @@ export function useStudentAccountBalances(
       // Платежи без account_id идут в баланс "Без рахунку" (null)
       const paymentsByAccount: Map<string | null, number> = new Map();
       
+      // Фильтруем транзакции: учитываем только те, которые относятся к активностям из activityIdList
+      // Исключение: платежи без activity_id учитываются отдельно
       (transactions || []).forEach((trans: any) => {
         if (!trans.activity_id) {
           if (trans.type === 'payment') {
@@ -662,6 +666,11 @@ export function useStudentAccountBalances(
             const current = paymentsByAccount.get(accountId) || 0;
             paymentsByAccount.set(accountId, current + (trans.amount || 0));
           }
+          return;
+        }
+        // Фильтруем транзакции: учитываем только те, которые относятся к активностям из activityIdList
+        // Это предотвращает учет транзакций для архивных активностей, которых нет в списке
+        if (!activityIds.has(trans.activity_id)) {
           return;
         }
         if (trans.type === 'payment') {
