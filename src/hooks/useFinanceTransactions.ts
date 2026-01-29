@@ -476,8 +476,11 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
         .not('student_id', 'is', null) // Explicitly exclude null
         .eq('type', 'payment');
       
-      if (startDate && endDate) {
-        paymentsQuery.gte('date', startDate).lte('date', endDate);
+      if (endDate) {
+        paymentsQuery.lte('date', endDate);
+        if (startDate) {
+          paymentsQuery.gte('date', startDate);
+        }
       }
 
       const { data: payments, error: paymentsError } = await paymentsQuery;
