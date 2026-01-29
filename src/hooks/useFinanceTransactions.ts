@@ -618,7 +618,7 @@ export function useStudentAccountBalances(
 
       const { data: enrollments, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select('id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at')
+        .select('id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at')
         .eq('student_id', studentId);
 
       if (enrollmentsError) throw enrollmentsError;
@@ -805,6 +805,25 @@ export function useStudentAccountBalances(
         enrollmentIsActiveMap.set(enrollment.id, enrollment.is_active);
       });
       
+      // Для кумулятивного баланса: рассчитываем количество месяцев от начала enrollment до выбранного месяца
+      let monthsCount = 1; // По умолчанию 1 месяц для месячного баланса
+      if (cumulative && month !== undefined && year !== undefined) {
+        // Находим самую раннюю дату enrollment среди активных enrollments
+        const earliestEnrollmentDate = filteredEnrollments
+          .filter((e: any) => e.is_active === true && e.enrolled_at)
+          .map((e: any) => new Date(e.enrolled_at))
+          .sort((a: Date, b: Date) => a.getTime() - b.getTime())[0];
+        
+        if (earliestEnrollmentDate) {
+          const targetMonthEnd = new Date(year, month + 1, 0);
+          const startYear = earliestEnrollmentDate.getFullYear();
+          const startMonth = earliestEnrollmentDate.getMonth();
+          // Количество месяцев от начала enrollment до конца выбранного месяца включительно
+          monthsCount = (targetMonthEnd.getFullYear() - startYear) * 12 + (targetMonthEnd.getMonth() - startMonth) + 1;
+          if (monthsCount < 1) monthsCount = 1;
+        }
+      }
+
       enrollmentDataMap.forEach((enrollment, enrollmentId) => {
         const activity = activityDataMap[enrollment.activity_id];
         if (!activity) return;
@@ -830,8 +849,10 @@ export function useStudentAccountBalances(
           baseMonthlyCharge = activity.default_price || 0;
         }
 
+        // Для кумулятивного баланса: умножаем на количество месяцев
+        const chargeAmount = cumulative ? baseMonthlyCharge * monthsCount : baseMonthlyCharge;
         monthlyChargesByActivity[enrollment.activity_id] =
-          (monthlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
+          (monthlyChargesByActivity[enrollment.activity_id] || 0) + chargeAmount;
       });
 
       // Группируем по enrollments, чтобы использовать приоритет enrollment.account_id ?? activity.account_id
@@ -868,35 +889,21 @@ export function useStudentAccountBalances(
         
         let charges = recalculationCharges;
         if (displayMode === 'subscription') {
-          // Для подписок:
-          // - Для кумулятивного баланса: используем реальные транзакции income (они уже отфильтрованы по endDate)
-          // - Для месячного баланса: используем monthlyCharges только если есть реальные транзакции или активность активна
-          if (cumulative) {
-            // Для кумулятивного баланса: используем реальные транзакции income
-            // income уже содержит сумму всех транзакций от начала до конца выбранного месяца
-            charges = income;
+          // Для подписок: используем monthlyCharges только если есть реальные транзакции или активность активна
+          // Для архивных активностей без транзакций: charges = 0
+          const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
+            enrollmentIsActiveMap.get(eId) ?? true
+          );
+          // Если есть транзакции (income > 0), используем monthlyCharges
+          // Если нет транзакций, но есть активные enrollments, используем monthlyCharges (для будущих месяцев)
+          // Если нет транзакций и нет активных enrollments, charges = 0 (архивная активность без транзакций)
+          if (hasFinanceTransactions || hasActiveEnrollments) {
+            charges = monthlyCharges;
           } else {
-            // Для месячного баланса: используем monthlyCharges только если есть реальные транзакции или активность активна
-            // Для архивных активностей без транзакций: charges = 0
-            const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
-              enrollmentIsActiveMap.get(eId) ?? true
-            );
-            // Если есть транзакции (income > 0), используем monthlyCharges
-            // Если нет транзакций, но есть активные enrollments, используем monthlyCharges (для будущих месяцев)
-            // Если нет транзакций и нет активных enrollments, charges = 0 (архивная активность без транзакций)
-            if (hasFinanceTransactions || hasActiveEnrollments) {
-              charges = monthlyCharges;
-            } else {
-              charges = 0; // Архивная активность без транзакций
-            }
+            charges = 0; // Архивная активность без транзакций
           }
         } else if (displayMode === 'subscription_and_recalculation') {
-          if (cumulative) {
-            // Для кумулятивного баланса: используем реальные транзакции income + recalculationCharges
-            charges = income + recalculationCharges;
-          } else {
-            charges = monthlyCharges + recalculationCharges;
-          }
+          charges = monthlyCharges + recalculationCharges;
         }
         const refunds = expense;
         const balance = payments - charges + refunds;
