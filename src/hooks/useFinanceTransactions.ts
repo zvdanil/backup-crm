@@ -447,17 +447,24 @@ export function useStudentActivityMonthlyBalance(
 }
 
 // Calculate total balance for student across all activities
-export function useStudentTotalBalance(studentId: string, month?: number, year?: number) {
+export function useStudentTotalBalance(studentId: string, month?: number, year?: number, cumulative: boolean = false) {
   return useQuery({
-    queryKey: ['student_total_balance', studentId, month, year],
+    queryKey: ['student_total_balance', studentId, month, year, cumulative],
     queryFn: async () => {
       // Only calculate date range if month and year are provided
       let startDate: string | undefined;
       let endDate: string | undefined;
       
       if (month !== undefined && year !== undefined) {
-        startDate = new Date(year, month, 1).toISOString().split('T')[0];
-        endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        if (cumulative) {
+          // Для кумулятивного баланса: от начала до конца выбранного месяца
+          startDate = undefined; // Начало всех времен
+          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        } else {
+          // Для месячного баланса: только выбранный месяц
+          startDate = new Date(year, month, 1).toISOString().split('T')[0];
+          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        }
       }
 
       // Get all payments (for selected month or all time)
@@ -576,17 +583,25 @@ export function useStudentAccountBalances(
   month?: number,
   year?: number,
   excludeActivityIds: string[] = [],
-  foodTariffIds: string[] = []
+  foodTariffIds: string[] = [],
+  cumulative: boolean = false // Если true, считает от начала до выбранного месяца включительно
 ) {
   return useQuery({
-    queryKey: ['student_account_balances', studentId, month, year, excludeActivityIds, foodTariffIds],
+    queryKey: ['student_account_balances', studentId, month, year, excludeActivityIds, foodTariffIds, cumulative],
     queryFn: async () => {
       let startDate: string | undefined;
       let endDate: string | undefined;
 
       if (month !== undefined && year !== undefined) {
-        startDate = new Date(year, month, 1).toISOString().split('T')[0];
-        endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        if (cumulative) {
+          // Для кумулятивного баланса: от начала до конца выбранного месяца
+          startDate = undefined; // Начало всех времен
+          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        } else {
+          // Для месячного баланса: только выбранный месяц
+          startDate = new Date(year, month, 1).toISOString().split('T')[0];
+          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        }
       }
 
       const { data: enrollments, error: enrollmentsError } = await supabase

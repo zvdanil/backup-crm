@@ -390,8 +390,11 @@ export default function StudentDetail() {
                   <p className="text-sm text-muted-foreground mb-2">Загальний баланс</p>
                   <StudentBalanceDisplay
                     studentId={id!}
+                    month={balanceMonth}
+                    year={balanceYear}
                     excludeActivityIds={controllerActivityIds}
                     foodTariffIds={Array.from(foodTariffIds)}
+                    cumulative={true}
                   />
                 </div>
               </div>
@@ -823,20 +826,23 @@ function StudentBalanceDisplay({
   month, 
   year,
   excludeActivityIds = [],
-  foodTariffIds = []
+  foodTariffIds = [],
+  cumulative = false
 }: { 
   studentId: string; 
   month?: number; 
   year?: number;
   excludeActivityIds?: string[];
   foodTariffIds?: string[];
+  cumulative?: boolean; // Если true, считает от начала до выбранного месяца включительно
 }) {
   const { data: accountBalances, isLoading } = useStudentAccountBalances(
     studentId,
     month,
     year,
     excludeActivityIds,
-    foodTariffIds
+    foodTariffIds,
+    cumulative
   );
 
   if (isLoading) {
