@@ -492,8 +492,11 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
         .not('student_id', 'is', null) // Explicitly exclude null
         .eq('type', 'income');
       
-      if (startDate && endDate) {
-        incomeQuery.gte('date', startDate).lte('date', endDate);
+      if (endDate) {
+        incomeQuery.lte('date', endDate);
+        if (startDate) {
+          incomeQuery.gte('date', startDate);
+        }
       }
 
       const { data: incomeTransactions, error: incomeError } = await incomeQuery;
@@ -508,8 +511,11 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
         .not('student_id', 'is', null) // Explicitly exclude null
         .eq('type', 'expense');
       
-      if (startDate && endDate) {
-        expenseQuery.gte('date', startDate).lte('date', endDate);
+      if (endDate) {
+        expenseQuery.lte('date', endDate);
+        if (startDate) {
+          expenseQuery.gte('date', startDate);
+        }
       }
 
       const { data: expenseTransactions, error: expenseError } = await expenseQuery;
@@ -549,8 +555,11 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
             .select('charged_amount')
             .in('enrollment_id', enrollmentIds);
           
-          if (startDate && endDate) {
-            attendanceQuery.gte('date', startDate).lte('date', endDate);
+          if (endDate) {
+            attendanceQuery.lte('date', endDate);
+            if (startDate) {
+              attendanceQuery.gte('date', startDate);
+            }
           }
 
           const { data: attendance, error: attendanceError } = await attendanceQuery;
@@ -675,8 +684,11 @@ export function useStudentAccountBalances(
           .select('enrollment_id, charged_amount')
           .in('enrollment_id', enrollmentIds);
 
-        if (startDate && endDate) {
-          attendanceQuery.gte('date', startDate).lte('date', endDate);
+        if (endDate) {
+          attendanceQuery.lte('date', endDate);
+          if (startDate) {
+            attendanceQuery.gte('date', startDate);
+          }
         }
 
         const { data: attendance, error: attendanceError } = await attendanceQuery;
@@ -691,8 +703,11 @@ export function useStudentAccountBalances(
         .not('student_id', 'is', null)
         .in('type', ['payment', 'income', 'expense']);
 
-      if (startDate && endDate) {
-        transactionsQuery.gte('date', startDate).lte('date', endDate);
+      if (endDate) {
+        transactionsQuery.lte('date', endDate);
+        if (startDate) {
+          transactionsQuery.gte('date', startDate);
+        }
       }
 
       const { data: transactions, error: transactionsError } = await transactionsQuery;
