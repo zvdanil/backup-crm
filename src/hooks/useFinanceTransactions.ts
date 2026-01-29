@@ -1305,18 +1305,6 @@ export function useDeletePaymentTransaction() {
       });
       
       // Validate UUID format
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }) => {
-      console.log('[useDeletePaymentTransaction] Calling delete_payment_transaction', {
-        transactionId,
-        transactionIdType: typeof transactionId,
-        transactionIdLength: transactionId?.length,
-        reason: reason.substring(0, 50) + '...',
-      });
-      
-      // Validate UUID format
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(transactionId)) {
         const error = new Error(`Invalid transaction ID format: ${transactionId}`);
