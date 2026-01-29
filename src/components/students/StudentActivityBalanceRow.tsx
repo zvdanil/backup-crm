@@ -153,13 +153,9 @@ export function StudentActivityBalanceRow({
   const charges = combinedData?.charges || 0;
   const refunds = combinedData?.refunds || 0;
   
-  // Hide activity row if subscription was deleted (no charges, no payments, no refunds)
-  // This happens when income transaction is deleted for subscription type
-  const shouldHide = isMonthlyBilling && charges === 0 && payments === 0 && refunds === 0 && !incomeTransaction;
-  
-  if (shouldHide) {
-    return null;
-  }
+  // Активность отображается если ребёнок записан на неё (есть enrollment)
+  // Независимо от баланса, платежей или начислений
+  // Логика скрытия удалена согласно требованиям: активность должна показываться если есть enrollment
 
   // For food activity: expense transactions are refunds (positive for client)
   // Balance calculation: payments - charges + refunds (refunds increase balance)

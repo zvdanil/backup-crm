@@ -678,7 +678,8 @@ export function useStudentAccountBalances(
         const activityId = enrollmentActivityMap.get(att.enrollment_id);
         if (!activityId) return;
         attendanceByActivity[activityId] = (attendanceByActivity[activityId] || 0) + (att.charged_amount || 0);
-        activityIds.add(activityId);
+        // Не добавляем activityId из attendance - активности должны попадать только из enrollments
+        // activityIds.add(activityId);
       });
 
       const activityIdList = Array.from(activityIds);

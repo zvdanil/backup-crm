@@ -146,15 +146,118 @@ export function useSetAttendance() {
         attendanceId: data?.id,
         enrollmentId: data?.enrollment_id,
         date: data?.date,
+        charged_amount: data?.charged_amount,
         timestamp: new Date().toISOString(),
       });
+      
+      // Создаем/обновляем/удаляем finance_transaction из attendance
+      if (data && data.enrollment_id) {
+        try {
+          // Получаем enrollment с activity для определения account_id
+          const { data: enrollment, error: enrollmentError } = await supabase
+            .from('enrollments')
+            .select(`
+              id,
+              student_id,
+              activity_id,
+              account_id,
+              activities (
+                id,
+                account_id
+              )
+            `)
+            .eq('id', data.enrollment_id)
+            .single();
+          
+          if (enrollmentError) {
+            console.error('[Dashboard Debug] Error fetching enrollment:', enrollmentError);
+          } else if (enrollment) {
+            // Определяем account_id: enrollment.account_id ?? activity.account_id
+            const accountId = enrollment.account_id ?? (enrollment.activities as any)?.account_id ?? null;
+            const studentId = enrollment.student_id;
+            const activityId = enrollment.activity_id;
+            
+            // Ищем существующую finance_transaction
+            const { data: existingTransaction, error: findError } = await supabase
+              .from('finance_transactions')
+              .select('id')
+              .eq('student_id', studentId)
+              .eq('activity_id', activityId)
+              .eq('date', data.date)
+              .eq('type', 'income')
+              .maybeSingle();
+            
+            if (findError && findError.code !== 'PGRST116') {
+              console.error('[Dashboard Debug] Error finding existing transaction:', findError);
+            } else {
+              if (data.charged_amount && data.charged_amount > 0) {
+                // Если charged_amount > 0, создаем или обновляем транзакцию
+                if (existingTransaction && existingTransaction.id) {
+                  // Обновляем существующую транзакцию
+                  const { error: updateError } = await supabase
+                    .from('finance_transactions')
+                    .update({
+                      amount: data.charged_amount,
+                      account_id: accountId,
+                      description: 'Нарахування за відвідування',
+                    })
+                    .eq('id', existingTransaction.id);
+                  
+                  if (updateError) {
+                    console.error('[Dashboard Debug] Error updating finance_transaction:', updateError);
+                  } else {
+                    console.log('[Dashboard Debug] Finance transaction updated:', existingTransaction.id);
+                  }
+                } else {
+                  // Создаем новую транзакцию
+                  const { error: insertError } = await supabase
+                    .from('finance_transactions')
+                    .insert({
+                      type: 'income',
+                      student_id: studentId,
+                      activity_id: activityId,
+                      account_id: accountId,
+                      amount: data.charged_amount,
+                      date: data.date,
+                      description: 'Нарахування за відвідування',
+                    });
+                  
+                  if (insertError) {
+                    console.error('[Dashboard Debug] Error creating finance_transaction:', insertError);
+                  } else {
+                    console.log('[Dashboard Debug] Finance transaction created for attendance:', data.id);
+                  }
+                }
+              } else {
+                // Если charged_amount = 0 или null, удаляем транзакцию если она существует
+                if (existingTransaction && existingTransaction.id) {
+                  const { error: deleteError } = await supabase
+                    .from('finance_transactions')
+                    .delete()
+                    .eq('id', existingTransaction.id);
+                  
+                  if (deleteError) {
+                    console.error('[Dashboard Debug] Error deleting finance_transaction:', deleteError);
+                  } else {
+                    console.log('[Dashboard Debug] Finance transaction deleted (charged_amount = 0):', existingTransaction.id);
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[Dashboard Debug] Error in finance_transaction creation:', error);
+        }
+      }
       
       // Invalidate all related queries
       console.log('[Dashboard Debug] Invalidating queries...');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['attendance'] }),
+        queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_account_balances'] }),
       ]);
       
       // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
@@ -204,6 +307,18 @@ export function useDeleteAttendance() {
 
   return useMutation({
     mutationFn: async ({ enrollmentId, date }: { enrollmentId: string; date: string }) => {
+      // Получаем enrollment для определения student_id и activity_id
+      const { data: enrollment, error: enrollmentError } = await supabase
+        .from('enrollments')
+        .select('id, student_id, activity_id')
+        .eq('id', enrollmentId)
+        .single();
+      
+      if (enrollmentError) {
+        console.error('[Dashboard Debug] Error fetching enrollment for delete:', enrollmentError);
+      }
+      
+      // Удаляем attendance
       const { error } = await supabase
         .from('attendance')
         .delete()
@@ -211,6 +326,24 @@ export function useDeleteAttendance() {
         .eq('date', date);
 
       if (error) throw error;
+      
+      // Удаляем соответствующую finance_transaction, если она существует
+      if (enrollment && enrollment.student_id && enrollment.activity_id) {
+        const { error: deleteTransactionError } = await supabase
+          .from('finance_transactions')
+          .delete()
+          .eq('student_id', enrollment.student_id)
+          .eq('activity_id', enrollment.activity_id)
+          .eq('date', date)
+          .eq('type', 'income');
+        
+        if (deleteTransactionError) {
+          console.error('[Dashboard Debug] Error deleting finance_transaction:', deleteTransactionError);
+          // Не бросаем ошибку, так как attendance уже удален
+        } else {
+          console.log('[Dashboard Debug] Finance transaction deleted for attendance:', { enrollmentId, date });
+        }
+      }
     },
     onSuccess: async () => {
       // Invalidate all related queries
@@ -220,6 +353,7 @@ export function useDeleteAttendance() {
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
         queryClient.invalidateQueries({ queryKey: ['student_total_balance'] }),
+        queryClient.invalidateQueries({ queryKey: ['student_account_balances'] }),
       ]);
       // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
       await queryClient.refetchQueries({ queryKey: ['dashboard'], exact: false });
