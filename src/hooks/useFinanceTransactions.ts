@@ -751,7 +751,13 @@ export function useStudentAccountBalances(
 
       const monthlyChargesByActivity: Record<string, number> = {};
       const displayModeByActivity: Record<string, 'subscription' | 'recalculation' | 'subscription_and_recalculation'> = {};
-      enrollmentDataMap.forEach((enrollment) => {
+      // Создаем мапу enrollment_id -> is_active для проверки статуса enrollment
+      const enrollmentIsActiveMap = new Map<string, boolean>();
+      filteredEnrollments.forEach((enrollment: any) => {
+        enrollmentIsActiveMap.set(enrollment.id, enrollment.is_active);
+      });
+      
+      enrollmentDataMap.forEach((enrollment, enrollmentId) => {
         const activity = activityDataMap[enrollment.activity_id];
         if (!activity) return;
         const presentRule = activity.billing_rules?.present;
@@ -761,6 +767,10 @@ export function useStudentAccountBalances(
           (activity.balance_display_mode as any) || fallbackMode;
         if (foodTariffIdSet.has(enrollment.activity_id)) return;
         if (!isMonthlyBilling) return;
+
+        // Для архивных enrollments: не используем baseMonthlyCharge, только реальные транзакции
+        const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
+        if (!isActive) return; // Пропускаем архивные enrollments при расчете monthlyCharges
 
         let baseMonthlyCharge = 0;
         if (enrollment.custom_price !== null && enrollment.custom_price > 0) {
@@ -804,18 +814,30 @@ export function useStudentAccountBalances(
         const displayMode = displayModeByActivity[activityId]
           || (monthlyCharges > 0 ? 'subscription' : 'recalculation');
 
+        // Находим все enrollments для этой активности
+        const enrollmentsForActivity = Array.from(enrollmentDataMap.entries())
+          .filter(([_, data]) => data.activity_id === activityId);
+        
         let charges = recalculationCharges;
         if (displayMode === 'subscription') {
-          charges = monthlyCharges;
+          // Для подписок: используем monthlyCharges только если есть реальные транзакции или активность активна
+          // Для архивных активностей без транзакций: charges = 0
+          const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
+            enrollmentIsActiveMap.get(eId) ?? true
+          );
+          // Если есть транзакции (income > 0), используем monthlyCharges
+          // Если нет транзакций, но есть активные enrollments, используем monthlyCharges (для будущих месяцев)
+          // Если нет транзакций и нет активных enrollments, charges = 0 (архивная активность без транзакций)
+          if (hasFinanceTransactions || hasActiveEnrollments) {
+            charges = monthlyCharges;
+          } else {
+            charges = 0; // Архивная активность без транзакций
+          }
         } else if (displayMode === 'subscription_and_recalculation') {
           charges = monthlyCharges + recalculationCharges;
         }
         const refunds = expense;
         const balance = payments - charges + refunds;
-        
-        // Находим все enrollments для этой активности
-        const enrollmentsForActivity = Array.from(enrollmentDataMap.entries())
-          .filter(([_, data]) => data.activity_id === activityId);
         
         if (enrollmentsForActivity.length === 0) {
           // Если нет enrollments, используем account_id из активности
