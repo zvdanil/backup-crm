@@ -34,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -820,19 +821,21 @@ export default function StaffExpenseJournal() {
 
         {/* Staff filter */}
         <div className="mb-4">
-          <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
-            <SelectTrigger className="w-full md:w-[250px]">
-              <SelectValue placeholder="Фільтр по персоналу" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Всі співробітники</SelectItem>
-              {activeStaff.map((staffMember) => (
-                <SelectItem key={staffMember.id} value={staffMember.id}>
-                  {staffMember.full_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={[
+              { value: 'all', label: 'Всі співробітники' },
+              ...activeStaff.map((staffMember) => ({
+                value: staffMember.id,
+                label: staffMember.full_name,
+              })),
+            ]}
+            value={selectedStaffId}
+            onValueChange={setSelectedStaffId}
+            placeholder="Фільтр по персоналу"
+            searchPlaceholder="Пошук співробітника..."
+            emptyText="Співробітників не знайдено"
+            className="w-full md:w-[250px]"
+          />
         </div>
 
         {/* Grid */}
