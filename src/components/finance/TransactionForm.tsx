@@ -126,8 +126,8 @@ export function TransactionForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto !top-[5vh] !translate-y-0">
+        <DialogHeader className="sticky top-0 bg-background z-10 pb-2 border-b">
           <DialogTitle>+ Транзакція</DialogTitle>
         </DialogHeader>
         
@@ -321,7 +321,7 @@ export function TransactionForm({
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-4">
+          <div className="flex justify-end gap-3 pt-4 pb-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Скасувати
             </Button>
