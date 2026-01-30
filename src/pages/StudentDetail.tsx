@@ -304,9 +304,9 @@ export default function StudentDetail() {
       />
       
       <div className="p-4 sm:p-8 overflow-x-hidden">
-        <div className="grid gap-4 sm:gap-8 lg:grid-cols-3">
+        <div className="grid gap-4 sm:gap-8 lg:grid-cols-5">
           {/* Student Info */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-2">
             <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft min-w-0 overflow-hidden">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4 min-w-0">
@@ -627,7 +627,7 @@ export default function StudentDetail() {
           </div>
 
           {/* Enrollments */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-3">
             <div className="rounded-xl bg-card border border-border shadow-soft">
               <div className="flex items-center justify-between p-4 sm:p-6 border-b">
                 <h3 className="text-lg font-semibold">Активності</h3>
