@@ -464,8 +464,8 @@ export default function StudentDetail() {
                   </div>
                 </div>
                 
-                {/* Balance Summary - moved here */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                {/* Balance Summary - hidden per user request */}
+                {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                   <div className="rounded-lg border border-border p-4">
                     <p className="text-sm text-muted-foreground mb-2">За місяць</p>
                     <StudentBalanceDisplay
@@ -487,7 +487,7 @@ export default function StudentDetail() {
                       cumulative={true}
                     />
                   </div>
-                </div>
+                </div> */}
                 
                 <div className="space-y-4">
                   <div className="rounded-lg border border-border p-3">
