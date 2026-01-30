@@ -930,7 +930,11 @@ export default function StaffExpenseJournal() {
                     {(manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
                       <tr key={`${staffMember.id}-${manualActivity.activityId || 'null'}`} className="border-t bg-muted/10">
                         <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
-                          {staffMember.full_name} — {manualActivity.name}
+                          <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                            {staffMember.full_name}
+                          </Link>
+                          {' — '}
+                          {manualActivity.name}
                         </td>
                         {days.map((day) =>
                           renderManualCell(
@@ -944,7 +948,10 @@ export default function StaffExpenseJournal() {
                     ))}
                     <tr className="border-t bg-muted/20">
                       <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
-                        {staffMember.full_name} — Виплати
+                        <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                          {staffMember.full_name}
+                        </Link>
+                        {' — Виплати'}
                       </td>
                       {days.map((day) => {
                         const dateStr = formatDateString(day);
