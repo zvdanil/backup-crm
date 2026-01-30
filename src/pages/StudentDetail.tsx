@@ -570,7 +570,7 @@ export default function StudentDetail() {
                               </div>
                             )}
                             <div className="text-xs text-muted-foreground">
-                              Баланс за місяць: {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
+                              Нараховано за місяць: {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
                             </div>
                             {(previousBalance !== 0 || amount !== 0) && (
                               <>
