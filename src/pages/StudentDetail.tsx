@@ -372,16 +372,7 @@ export default function StudentDetail() {
               </div>
             </div>
 
-            {/* Payment History */}
-            <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
-              <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
-              <StudentPaymentHistory 
-                studentId={id!}
-                month={balanceMonth}
-                year={balanceYear}
-              />
-            </div>
-
+            {/* Parent Access - moved to top */}
             {(role === 'owner' || role === 'admin') && (
               <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
                 <h3 className="text-lg font-semibold mb-4">Доступ для батьків</h3>
@@ -433,6 +424,16 @@ export default function StudentDetail() {
                 </div>
               </div>
             )}
+
+            {/* Payment History */}
+            <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
+              <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
+              <StudentPaymentHistory 
+                studentId={id!}
+                month={balanceMonth}
+                year={balanceYear}
+              />
+            </div>
 
             {/* Balance by activities */}
             {balanceEnrollments.length > 0 && (
