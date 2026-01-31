@@ -406,6 +406,10 @@ export default function GardenAttendanceJournal() {
           continue;
         }
 
+        console.log(`[Garden Attendance] Found ${billingRules.length} billing rules for activity ${baseTariffActivityId}:`, 
+          billingRules.map((r: any) => ({ staff_id: r.staff_id, activity_id: r.activity_id, rate_type: r.rate_type, rate: r.rate_value || r.rate }))
+        );
+
         // 2. Create function to get billing rule for date
         const getBillingRuleForDate = (date: string) => {
           const dateObj = new Date(date);
@@ -418,19 +422,31 @@ export default function GardenAttendanceJournal() {
             return dateObj >= fromDate && (!toDate || dateObj < toDate);
           });
 
-          if (relevantRules.length === 0) return null;
+          if (relevantRules.length === 0) {
+            console.log(`[Garden Attendance] No relevant billing rules found for date ${date} and activity ${baseTariffActivityId}`);
+            return null;
+          }
 
           // Priority: specific rule for activity, then global rule
           const specificRule = relevantRules.find((r: any) => r.activity_id === baseTariffActivityId);
           if (specificRule) {
-            return getStaffBillingRuleForDate([specificRule], date, baseTariffActivityId);
+            const rule = getStaffBillingRuleForDate([specificRule], date, baseTariffActivityId);
+            if (rule) {
+              console.log(`[Garden Attendance] Found specific billing rule for date ${date}:`, { staff_id: rule.staff_id, rate_type: rule.rate_type, rate: rule.rate });
+            }
+            return rule;
           }
 
           const globalRule = relevantRules.find((r: any) => r.activity_id === null);
           if (globalRule) {
-            return getStaffBillingRuleForDate([globalRule], date, baseTariffActivityId);
+            const rule = getStaffBillingRuleForDate([globalRule], date, baseTariffActivityId);
+            if (rule) {
+              console.log(`[Garden Attendance] Found global billing rule for date ${date}:`, { staff_id: rule.staff_id, rate_type: rule.rate_type, rate: rule.rate });
+            }
+            return rule;
           }
 
+          console.log(`[Garden Attendance] No valid billing rule found for date ${date} and activity ${baseTariffActivityId}`);
           return null;
         };
 
@@ -444,18 +460,37 @@ export default function GardenAttendanceJournal() {
           continue;
         }
 
-        // 4. Build attendance records for this base tariff activity
-        const attendanceRecords: AttendanceRecord[] = [];
-        const enrollmentIds = new Set(baseTariffEnrollments.map((e) => e.id));
+        // Get student IDs for base tariff enrollments
+        const baseTariffStudentIds = new Set(baseTariffEnrollments.map((e) => e.student_id));
 
-        // Get all attendance records for the month
+        // 4. Build attendance records for this base tariff activity
+        // IMPORTANT: Attendance is created for controllerActivity enrollments,
+        // but we need to link it to base tariff enrollments through student_id
+        const attendanceRecords: AttendanceRecord[] = [];
+        
+        // Get controller activity enrollment IDs to fetch attendance
+        const controllerEnrollmentIds = enrollments.map((e) => e.id);
+
+        // Get all attendance records for the month for controller activity
         const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
         const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`;
         
+        // Fetch attendance with enrollment and student data
         const { data: monthAttendanceData = [], error: attendanceError } = await supabase
           .from('attendance')
-          .select('*')
-          .in('enrollment_id', Array.from(enrollmentIds))
+          .select(`
+            *,
+            enrollments!inner(
+              id,
+              student_id,
+              activity_id,
+              students!inner(
+                id,
+                full_name
+              )
+            )
+          `)
+          .in('enrollment_id', controllerEnrollmentIds)
           .gte('date', monthStart)
           .lte('date', monthEnd);
 
@@ -464,18 +499,32 @@ export default function GardenAttendanceJournal() {
           continue;
         }
 
-        // Convert attendance data to AttendanceRecord format
-        monthAttendanceData.forEach((att: any) => {
-          const enrollment = baseTariffEnrollments.find((e) => e.id === att.enrollment_id);
-          if (!enrollment) return;
+        console.log(`[Garden Attendance] Found ${monthAttendanceData.length} attendance records for controller activity, checking for base tariff students...`);
 
-          const studentId = enrollment.student_id;
-          const studentName = enrollment.students?.full_name || '';
+        // Convert attendance data to AttendanceRecord format
+        // Link attendance (for controller activity) to base tariff enrollments through student_id
+        monthAttendanceData.forEach((att: any) => {
+          const attendanceStudentId = att.enrollments?.student_id;
+          if (!attendanceStudentId) return;
+
+          // Check if this student has enrollment for base tariff activity
+          if (!baseTariffStudentIds.has(attendanceStudentId)) {
+            return; // Skip if student doesn't have base tariff enrollment
+          }
+
+          // Find base tariff enrollment for this student
+          const baseTariffEnrollment = baseTariffEnrollments.find(
+            (e) => e.student_id === attendanceStudentId
+          );
+          if (!baseTariffEnrollment) return;
+
+          const studentId = baseTariffEnrollment.student_id;
+          const studentName = baseTariffEnrollment.students?.full_name || att.enrollments?.students?.full_name || '';
 
           if (att.status === 'present' && studentId) {
             attendanceRecords.push({
               date: att.date,
-              enrollment_id: att.enrollment_id,
+              enrollment_id: baseTariffEnrollment.id, // Use base tariff enrollment_id
               student_id: studentId,
               student_name: studentName,
               status: 'present',
@@ -484,11 +533,21 @@ export default function GardenAttendanceJournal() {
           }
         });
 
+        console.log(`[Garden Attendance] Built ${attendanceRecords.length} attendance records for base tariff activity ${baseTariffActivityId}`);
+
+        if (attendanceRecords.length === 0) {
+          console.log(`[Garden Attendance] No attendance records found for base tariff activity ${baseTariffActivityId}, skipping accrual calculation`);
+          continue;
+        }
+
         // 5. Calculate accruals
+        console.log(`[Garden Attendance] Calculating accruals for ${attendanceRecords.length} records...`);
         const accruals = calculateMonthlyStaffAccruals({
           attendanceRecords,
           getRuleForDate: getBillingRuleForDate,
         });
+
+        console.log(`[Garden Attendance] Calculated accruals for ${accruals.size} staff members`);
 
         // 6. Collect all staff IDs that have billing rules or accruals
         const staffIds = new Set<string>();
@@ -731,7 +790,13 @@ export default function GardenAttendanceJournal() {
 
         // Sync staff journal entries for all base tariff activities
         // This must be called after attendance and finance_transactions are created/updated
-        await syncStaffJournalEntriesForBaseTariffs();
+        console.log('[Garden Attendance] Calling syncStaffJournalEntriesForBaseTariffs after attendance update...');
+        try {
+          await syncStaffJournalEntriesForBaseTariffs();
+          console.log('[Garden Attendance] syncStaffJournalEntriesForBaseTariffs completed successfully');
+        } catch (syncError) {
+          console.error('[Garden Attendance] Error in syncStaffJournalEntriesForBaseTariffs:', syncError);
+        }
       } catch (error) {
         console.error('Error setting attendance:', error);
         throw error; // Пробрасываем ошибку, чтобы не продолжать выполнение
