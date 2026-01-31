@@ -92,7 +92,6 @@ export default function StaffDetail() {
   const { data: payouts = [] } = useStaffPayouts(id);
   const { data: activities = [] } = useActivities();
   const { data: allGroupLessons = [] } = useGroupLessons(); // Получаем все групповые занятия для получения названий
-  const { data: manualRateHistory = [] } = useStaffManualRateHistory(id);
   const createPayout = useCreateStaffPayout();
   const updatePayout = useUpdateStaffPayout();
   const deletePayout = useDeleteStaffPayout();
