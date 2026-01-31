@@ -229,8 +229,9 @@ export default function SummaryReport() {
                       <TableRow>
                         <TableHead>Активність</TableHead>
                         <TableHead>Рахунок</TableHead>
-                        <TableHead className="text-right">Сума</TableHead>
-                        <TableHead className="text-right">Кількість транзакцій</TableHead>
+                        <TableHead className="text-right">Нараховано</TableHead>
+                        <TableHead className="text-right">Повернено</TableHead>
+                        <TableHead className="text-right">Доход</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -246,17 +247,20 @@ export default function SummaryReport() {
                                 : <Badge variant="outline">Без рахунку</Badge>
                               }
                             </TableCell>
-                            <TableCell className="text-right font-medium">
-                              {formatCurrency(detail.amount)}
+                            <TableCell className="text-right">
+                              {formatCurrency(detail.charges)}
                             </TableCell>
-                            <TableCell className="text-right text-muted-foreground">
-                              {detail.count}
+                            <TableCell className="text-right text-destructive">
+                              {formatCurrency(detail.refunds)}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-primary">
+                              {formatCurrency(detail.amount)}
                             </TableCell>
                           </TableRow>
                         ))
                       ) : (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          <TableCell colSpan={5} className="text-center text-muted-foreground">
                             Немає даних
                           </TableCell>
                         </TableRow>
