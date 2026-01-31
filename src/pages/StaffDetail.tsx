@@ -1281,7 +1281,9 @@ function FinancialCalendarTable({
                       sessions = entry.amount / rateValue;
                     }
                     
-                    const isEditing = editingCell?.activityId === activity.realActivityId && editingCell?.date === dateStr;
+                    // Compare with realActivityId (convert null to empty string for comparison)
+                    const editingActivityId = editingCell?.activityId === '' ? null : editingCell?.activityId;
+                    const isEditing = editingActivityId === activity.realActivityId && editingCell?.date === dateStr;
                     const isWeekendDay = isWeekend(date);
                     
                     return (
