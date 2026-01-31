@@ -907,6 +907,7 @@ export default function StaffDetail() {
                         onPerWorkingDayStateChange={setPerWorkingDayState}
                         popoverOpenKey={popoverOpenKey}
                         setPopoverOpenKey={setPopoverOpenKey}
+                        popoverActivityIdRef={popoverActivityIdRef}
                       />
                     </div>
                   </TabsContent>
@@ -1222,6 +1223,7 @@ interface FinancialCalendarTableProps {
   }) => void;
   popoverOpenKey: string | null;
   setPopoverOpenKey: (key: string | null) => void;
+  popoverActivityIdRef: React.RefObject<string | null>;
 }
 
 function FinancialCalendarTable({ 
@@ -1245,6 +1247,7 @@ function FinancialCalendarTable({
   onPerWorkingDayStateChange,
   popoverOpenKey,
   setPopoverOpenKey,
+  popoverActivityIdRef,
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const salaryActivityId = useMemo(
