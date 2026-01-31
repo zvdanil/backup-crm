@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { StaffForm } from '@/components/staff/StaffForm';
 import { useStaffMember, useUpdateStaff } from '@/hooks/useStaff';
 import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString, WEEKEND_BG_COLOR, getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import { getWorkingDaysInMonthWithHolidays } from '@/hooks/useHolidays';
 import { StaffBillingEditorNew } from '@/components/staff/StaffBillingEditorNew';
 import { StaffManualRateHistoryEditor } from '@/components/staff/StaffManualRateHistoryEditor';
 import { DeductionsEditor } from '@/components/staff/DeductionsEditor';
@@ -100,6 +101,18 @@ export default function StaffDetail() {
   // State for editing journal entries in financial calendar
   const [editingCell, setEditingCell] = useState<{ activityId: string; date: string } | null>(null);
   const [manualValue, setManualValue] = useState<string>('');
+  // State for per_working_day popup
+  const [perWorkingDayState, setPerWorkingDayState] = useState<{
+    attendanceStatus: 'present' | 'absent' | 'manual' | null;
+    manualAmount: string;
+    bonus: string;
+    bonusNotes: string;
+  }>({
+    attendanceStatus: null,
+    manualAmount: '',
+    bonus: '',
+    bonusNotes: '',
+  });
   
   const payoutSchema = z.object({
     amount: z.number().min(0.01, 'Сума має бути більше 0'),
@@ -364,7 +377,7 @@ export default function StaffDetail() {
   }, [payouts, selectedPayoutDate]);
 
   // Handle cell click for editing journal entries
-  const handleJournalEntryCellClick = (activityId: string, date: string) => {
+  const handleJournalEntryCellClick = async (activityId: string, date: string) => {
     if (!id) return;
     
     // Convert empty string to null for activities without activity_id
@@ -381,7 +394,40 @@ export default function StaffDetail() {
     const currentRate = getStaffManualRateForDate(manualRateHistory, date, realActivityId);
     const rateType = currentRate?.manual_rate_type || null;
     
-    if (rateType === 'hourly' && existing?.hours_worked !== null && existing?.hours_worked !== undefined) {
+    if (rateType === 'per_working_day') {
+      // For per_working_day, initialize popup state
+      const dateObj = new Date(date);
+      const year = dateObj.getFullYear();
+      const month = dateObj.getMonth() + 1;
+      const workingDays = await getWorkingDaysInMonthWithHolidays(year, month);
+      const rateValue = currentRate?.manual_rate_value || 0;
+      const dailyRate = workingDays > 0 ? rateValue / workingDays : 0;
+      
+      // Determine attendance status from existing entry
+      let attendanceStatus: 'present' | 'absent' | 'manual' | null = null;
+      let manualAmount = '';
+      const bonus = existing?.bonus?.toString() || '';
+      const bonusNotes = existing?.bonus_notes || '';
+      
+      if (existing) {
+        const baseAmount = existing.amount - (existing.bonus || 0);
+        if (Math.abs(baseAmount - 0) < 0.01) {
+          attendanceStatus = 'absent';
+        } else if (Math.abs(baseAmount - dailyRate) < 0.01) {
+          attendanceStatus = 'present';
+        } else {
+          attendanceStatus = 'manual';
+          manualAmount = baseAmount.toString();
+        }
+      }
+      
+      setPerWorkingDayState({
+        attendanceStatus,
+        manualAmount,
+        bonus,
+        bonusNotes,
+      });
+    } else if (rateType === 'hourly' && existing?.hours_worked !== null && existing?.hours_worked !== undefined) {
       setManualValue(existing.hours_worked.toString());
     } else if (rateType === 'per_session') {
       // For per_session, calculate number of sessions from amount and rate
@@ -441,6 +487,55 @@ export default function StaffDetail() {
 
       setEditingCell(null);
       setManualValue('');
+    } else if (rateType === 'per_working_day') {
+      // Per working day: calculate amount based on attendance status, add bonus
+      if (!editingCell || !id) return;
+      
+      const dateObj = new Date(editingCell.date);
+      const year = dateObj.getFullYear();
+      const month = dateObj.getMonth() + 1;
+      
+      getWorkingDaysInMonthWithHolidays(year, month).then((workingDays) => {
+        const dailyRate = workingDays > 0 ? rateValue / workingDays : 0;
+        let baseAmount = 0;
+        
+        if (perWorkingDayState.attendanceStatus === 'present') {
+          baseAmount = dailyRate;
+        } else if (perWorkingDayState.attendanceStatus === 'absent') {
+          baseAmount = 0;
+        } else if (perWorkingDayState.attendanceStatus === 'manual') {
+          baseAmount = parseFloat(perWorkingDayState.manualAmount) || 0;
+        }
+        
+        const bonus = parseFloat(perWorkingDayState.bonus) || 0;
+        const totalAmount = baseAmount + bonus;
+        
+        upsertJournalEntry.mutate({
+          id: existing?.id,
+          staff_id: id,
+          activity_id: realActivityId,
+          date: editingCell.date,
+          amount: totalAmount,
+          base_amount: dailyRate,
+          deductions_applied: [],
+          is_manual_override: true,
+          notes: perWorkingDayState.attendanceStatus === 'present' 
+            ? `Присутній (${formatCurrency(dailyRate)})` 
+            : perWorkingDayState.attendanceStatus === 'absent'
+            ? 'Відсутній'
+            : `Ручне введення (${formatCurrency(baseAmount)})`,
+          bonus: bonus !== 0 ? bonus : null,
+          bonus_notes: perWorkingDayState.bonusNotes || null,
+        });
+        
+        setEditingCell(null);
+        setPerWorkingDayState({
+          attendanceStatus: null,
+          manualAmount: '',
+          bonus: '',
+          bonusNotes: '',
+        });
+      });
     } else if (rateType === 'per_session') {
       // Per session: input sessions, amount = sessions * rate
       if (!manualValue || manualValue.trim() === '') {
@@ -761,8 +856,16 @@ export default function StaffDetail() {
                         onCancel={() => {
                           setEditingCell(null);
                           setManualValue('');
+                          setPerWorkingDayState({
+                            attendanceStatus: null,
+                            manualAmount: '',
+                            bonus: '',
+                            bonusNotes: '',
+                          });
                         }}
                         onManualValueChange={setManualValue}
+                        perWorkingDayState={perWorkingDayState}
+                        onPerWorkingDayStateChange={setPerWorkingDayState}
                       />
                     </div>
                   </TabsContent>
@@ -1064,6 +1167,18 @@ interface FinancialCalendarTableProps {
   onSave: () => void;
   onCancel: () => void;
   onManualValueChange: (value: string) => void;
+  perWorkingDayState: {
+    attendanceStatus: 'present' | 'absent' | 'manual' | null;
+    manualAmount: string;
+    bonus: string;
+    bonusNotes: string;
+  };
+  onPerWorkingDayStateChange: (state: {
+    attendanceStatus: 'present' | 'absent' | 'manual' | null;
+    manualAmount: string;
+    bonus: string;
+    bonusNotes: string;
+  }) => void;
 }
 
 function FinancialCalendarTable({ 
@@ -1083,6 +1198,8 @@ function FinancialCalendarTable({
   onSave,
   onCancel,
   onManualValueChange,
+  perWorkingDayState,
+  onPerWorkingDayStateChange,
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const salaryActivityId = useMemo(
@@ -1274,6 +1391,7 @@ function FinancialCalendarTable({
                     );
                     const isManuallyEdited = entry?.is_manual_override === true;
                     const hasEntry = entry !== undefined; // Check if entry exists (even with 0 amount)
+                    const hasBonus = (entry?.bonus || 0) > 0; // Check if entry has bonus
                     
                     // Get hours or sessions for display
                     const hours = entry?.hours_worked;
@@ -1305,6 +1423,7 @@ function FinancialCalendarTable({
                                 onClick={() => onCellClick(activity.realActivityId || '', dateStr)}
                                 className={cn(
                                   "w-full h-8 text-xs rounded hover:bg-muted transition-colors flex flex-col items-center justify-center",
+                                  hasBonus ? "bg-green-100 text-green-700 font-medium dark:bg-green-900/20 dark:text-green-400" :
                                   isManuallyEdited ? "bg-orange-100 text-orange-700 font-medium dark:bg-orange-900/20 dark:text-orange-400" : "bg-primary/10 text-primary font-medium"
                                 )}
                               >
@@ -1356,6 +1475,126 @@ function FinancialCalendarTable({
                                         onClick={onSave}
                                         className="flex-1"
                                         disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : rateType === 'per_working_day' ? (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium mb-2 block">Статус присутності</label>
+                                      <div className="space-y-2">
+                                        <div className="flex items-center space-x-2">
+                                          <input
+                                            type="radio"
+                                            id={`present-${dateStr}`}
+                                            name={`attendance-${dateStr}`}
+                                            checked={perWorkingDayState.attendanceStatus === 'present'}
+                                            onChange={() => onPerWorkingDayStateChange({
+                                              ...perWorkingDayState,
+                                              attendanceStatus: 'present',
+                                            })}
+                                            className="h-4 w-4"
+                                          />
+                                          <label htmlFor={`present-${dateStr}`} className="text-sm">
+                                            Присутній
+                                          </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <input
+                                            type="radio"
+                                            id={`absent-${dateStr}`}
+                                            name={`attendance-${dateStr}`}
+                                            checked={perWorkingDayState.attendanceStatus === 'absent'}
+                                            onChange={() => onPerWorkingDayStateChange({
+                                              ...perWorkingDayState,
+                                              attendanceStatus: 'absent',
+                                            })}
+                                            className="h-4 w-4"
+                                          />
+                                          <label htmlFor={`absent-${dateStr}`} className="text-sm">
+                                            Відсутній
+                                          </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <input
+                                            type="radio"
+                                            id={`manual-${dateStr}`}
+                                            name={`attendance-${dateStr}`}
+                                            checked={perWorkingDayState.attendanceStatus === 'manual'}
+                                            onChange={() => onPerWorkingDayStateChange({
+                                              ...perWorkingDayState,
+                                              attendanceStatus: 'manual',
+                                            })}
+                                            className="h-4 w-4"
+                                          />
+                                          <label htmlFor={`manual-${dateStr}`} className="text-sm">
+                                            Ручне введення
+                                          </label>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {perWorkingDayState.attendanceStatus === 'manual' && (
+                                      <div>
+                                        <label className="text-sm font-medium">Сума (₴)</label>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          value={perWorkingDayState.manualAmount}
+                                          onChange={(e) => onPerWorkingDayStateChange({
+                                            ...perWorkingDayState,
+                                            manualAmount: e.target.value,
+                                          })}
+                                          placeholder="0"
+                                          className="mt-1"
+                                        />
+                                      </div>
+                                    )}
+                                    
+                                    <div>
+                                      <label className="text-sm font-medium">Бонус (₴)</label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={perWorkingDayState.bonus}
+                                        onChange={(e) => onPerWorkingDayStateChange({
+                                          ...perWorkingDayState,
+                                          bonus: e.target.value,
+                                        })}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                    
+                                    <div>
+                                      <label className="text-sm font-medium">Примітка для бонусу</label>
+                                      <Textarea
+                                        value={perWorkingDayState.bonusNotes}
+                                        onChange={(e) => onPerWorkingDayStateChange({
+                                          ...perWorkingDayState,
+                                          bonusNotes: e.target.value,
+                                        })}
+                                        placeholder="Примітка..."
+                                        rows={2}
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                    
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={perWorkingDayState.attendanceStatus === null || (perWorkingDayState.attendanceStatus === 'manual' && (!perWorkingDayState.manualAmount || isNaN(parseFloat(perWorkingDayState.manualAmount))))}
                                       >
                                         Зберегти
                                       </Button>
@@ -1492,6 +1731,126 @@ function FinancialCalendarTable({
                                         onClick={onSave}
                                         className="flex-1"
                                         disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : rateType === 'per_working_day' ? (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium mb-2 block">Статус присутності</label>
+                                      <div className="space-y-2">
+                                        <div className="flex items-center space-x-2">
+                                          <input
+                                            type="radio"
+                                            id={`present-empty-${dateStr}`}
+                                            name={`attendance-empty-${dateStr}`}
+                                            checked={perWorkingDayState.attendanceStatus === 'present'}
+                                            onChange={() => onPerWorkingDayStateChange({
+                                              ...perWorkingDayState,
+                                              attendanceStatus: 'present',
+                                            })}
+                                            className="h-4 w-4"
+                                          />
+                                          <label htmlFor={`present-empty-${dateStr}`} className="text-sm">
+                                            Присутній
+                                          </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <input
+                                            type="radio"
+                                            id={`absent-empty-${dateStr}`}
+                                            name={`attendance-empty-${dateStr}`}
+                                            checked={perWorkingDayState.attendanceStatus === 'absent'}
+                                            onChange={() => onPerWorkingDayStateChange({
+                                              ...perWorkingDayState,
+                                              attendanceStatus: 'absent',
+                                            })}
+                                            className="h-4 w-4"
+                                          />
+                                          <label htmlFor={`absent-empty-${dateStr}`} className="text-sm">
+                                            Відсутній
+                                          </label>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <input
+                                            type="radio"
+                                            id={`manual-empty-${dateStr}`}
+                                            name={`attendance-empty-${dateStr}`}
+                                            checked={perWorkingDayState.attendanceStatus === 'manual'}
+                                            onChange={() => onPerWorkingDayStateChange({
+                                              ...perWorkingDayState,
+                                              attendanceStatus: 'manual',
+                                            })}
+                                            className="h-4 w-4"
+                                          />
+                                          <label htmlFor={`manual-empty-${dateStr}`} className="text-sm">
+                                            Ручне введення
+                                          </label>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    {perWorkingDayState.attendanceStatus === 'manual' && (
+                                      <div>
+                                        <label className="text-sm font-medium">Сума (₴)</label>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          value={perWorkingDayState.manualAmount}
+                                          onChange={(e) => onPerWorkingDayStateChange({
+                                            ...perWorkingDayState,
+                                            manualAmount: e.target.value,
+                                          })}
+                                          placeholder="0"
+                                          className="mt-1"
+                                        />
+                                      </div>
+                                    )}
+                                    
+                                    <div>
+                                      <label className="text-sm font-medium">Бонус (₴)</label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={perWorkingDayState.bonus}
+                                        onChange={(e) => onPerWorkingDayStateChange({
+                                          ...perWorkingDayState,
+                                          bonus: e.target.value,
+                                        })}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                    
+                                    <div>
+                                      <label className="text-sm font-medium">Примітка для бонусу</label>
+                                      <Textarea
+                                        value={perWorkingDayState.bonusNotes}
+                                        onChange={(e) => onPerWorkingDayStateChange({
+                                          ...perWorkingDayState,
+                                          bonusNotes: e.target.value,
+                                        })}
+                                        placeholder="Примітка..."
+                                        rows={2}
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                    
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={perWorkingDayState.attendanceStatus === null || (perWorkingDayState.attendanceStatus === 'manual' && (!perWorkingDayState.manualAmount || isNaN(parseFloat(perWorkingDayState.manualAmount))))}
                                       >
                                         Зберегти
                                       </Button>

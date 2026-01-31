@@ -33,6 +33,8 @@ export interface StaffJournalEntry {
   deductions_applied: DeductionApplied[];
   is_manual_override: boolean;
   notes: string | null;
+  bonus: number | null;
+  bonus_notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -59,7 +61,7 @@ export interface StaffManualRateHistory {
   id: string;
   staff_id: string;
   activity_id: string | null;
-  manual_rate_type: 'hourly' | 'per_session';
+  manual_rate_type: 'hourly' | 'per_session' | 'per_working_day';
   manual_rate_value: number;
   effective_from: string;
   effective_to: string | null;
@@ -341,6 +343,8 @@ export function useStaffJournalEntries(staffId: string | undefined, month?: numb
       return (data as any[]).map(entry => ({
         ...entry,
         deductions_applied: entry.deductions_applied || [],
+        bonus: entry.bonus ?? null,
+        bonus_notes: entry.bonus_notes ?? null,
       })) as StaffJournalEntry[];
     },
     enabled: !!staffId,
@@ -376,6 +380,8 @@ export function useAllStaffJournalEntries(month: number, year: number) {
             ...entry,
             staff: entry.staff || null,
             activity: entry.activity || null,
+            bonus: entry.bonus ?? null,
+            bonus_notes: entry.bonus_notes ?? null,
           };
         }
         return null;
@@ -432,6 +438,8 @@ export function useUpsertStaffJournalEntry() {
             deductions_applied: entry.deductions_applied || [],
             is_manual_override: entry.is_manual_override,
             notes: entry.notes,
+            bonus: entry.bonus ?? null,
+            bonus_notes: entry.bonus_notes ?? null,
             updated_at: new Date().toISOString(),
           })
           .eq('id', existing.id)
@@ -454,6 +462,8 @@ export function useUpsertStaffJournalEntry() {
               deductions_applied: entry.deductions_applied || [],
               is_manual_override: entry.is_manual_override,
               notes: entry.notes,
+              bonus: entry.bonus ?? null,
+              bonus_notes: entry.bonus_notes ?? null,
             })
             .select()
             .single();
@@ -478,6 +488,8 @@ export function useUpsertStaffJournalEntry() {
             deductions_applied: entry.deductions_applied || [],
             is_manual_override: entry.is_manual_override,
             notes: entry.notes,
+            bonus: entry.bonus ?? null,
+            bonus_notes: entry.bonus_notes ?? null,
           })
           .select()
           .single();

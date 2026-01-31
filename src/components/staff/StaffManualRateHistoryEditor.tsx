@@ -127,7 +127,7 @@ export function StaffManualRateHistoryEditor({
               <Label htmlFor={`entry-type-${index}`}>Тип ставки</Label>
               <Select
                 value={entry.manual_rate_type}
-                onValueChange={(value) => handleChange(index, 'manual_rate_type', value as 'hourly' | 'per_session')}
+                onValueChange={(value) => handleChange(index, 'manual_rate_type', value as 'hourly' | 'per_session' | 'per_working_day')}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -135,13 +135,14 @@ export function StaffManualRateHistoryEditor({
                 <SelectContent>
                   <SelectItem value="hourly">Почасово</SelectItem>
                   <SelectItem value="per_session">За заняття</SelectItem>
+                  <SelectItem value="per_working_day">Ставка за раб. дні</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="col-span-3">
               <Label htmlFor={`entry-value-${index}`}>
-                Значення ({entry.manual_rate_type === 'hourly' ? '₴/год' : '₴/заняття'})
+                Значення ({entry.manual_rate_type === 'hourly' ? '₴/год' : entry.manual_rate_type === 'per_session' ? '₴/заняття' : '₴/місяць'})
               </Label>
               <Input
                 id={`entry-value-${index}`}
