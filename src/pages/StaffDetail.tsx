@@ -375,7 +375,7 @@ export default function StaffDetail() {
     );
     
     // Get manual rate for this date and activity
-    const currentRate = getStaffManualRateForDate(manualRateHistory, date, activityId);
+    const currentRate = getStaffManualRateForDate(manualRateHistory, date, realActivityId);
     const rateType = currentRate?.manual_rate_type || null;
     
     if (rateType === 'hourly' && existing?.hours_worked !== null && existing?.hours_worked !== undefined) {
@@ -398,14 +398,17 @@ export default function StaffDetail() {
   const handleSaveManualEntry = () => {
     if (!editingCell || !id) return;
 
+    // Convert empty string to null for activities without activity_id
+    const realActivityId = editingCell.activityId === '' ? null : editingCell.activityId;
+
     // Get manual rate for this date and activity
-    const currentRate = getStaffManualRateForDate(manualRateHistory, editingCell.date, editingCell.activityId);
+    const currentRate = getStaffManualRateForDate(manualRateHistory, editingCell.date, realActivityId);
     const rateType = currentRate?.manual_rate_type || null;
     const rateValue = currentRate?.manual_rate_value || 0;
 
-    // Find existing entry to get its ID
+    // Find existing entry to get its ID - check both manual and auto entries
     const existing = journalEntries.find(
-      (entry) => entry.activity_id === editingCell.activityId && entry.date === editingCell.date
+      (entry) => (entry.activity_id === realActivityId || (entry.activity_id === null && realActivityId === null)) && entry.date === editingCell.date
     );
 
     if (rateType === 'hourly') {
@@ -423,7 +426,7 @@ export default function StaffDetail() {
       upsertJournalEntry.mutate({
         id: existing?.id,
         staff_id: id,
-        activity_id: editingCell.activityId,
+        activity_id: realActivityId,
         date: editingCell.date,
         amount,
         base_amount: rateValue,
@@ -449,7 +452,7 @@ export default function StaffDetail() {
       upsertJournalEntry.mutate({
         id: existing?.id,
         staff_id: id,
-        activity_id: editingCell.activityId,
+        activity_id: realActivityId,
         date: editingCell.date,
         amount,
         base_amount: rateValue,
@@ -472,7 +475,7 @@ export default function StaffDetail() {
       upsertJournalEntry.mutate({
         id: existing?.id,
         staff_id: id,
-        activity_id: editingCell.activityId,
+        activity_id: realActivityId,
         date: editingCell.date,
         amount,
         base_amount: amount,
@@ -1167,6 +1170,9 @@ function FinancialCalendarTable({
       const mode = parts[1];
       const isManual = mode === 'manual';
       const isGroup = parts[2] === 'group';
+      
+      // Extract real activity ID (remove mode and type suffixes)
+      const realActivityId = activityId === 'none' ? null : activityId;
       const groupLessonId = isGroup ? parts[3] : null;
       
       const activity = activities.find(a => a.id === activityId);
@@ -1186,9 +1192,11 @@ function FinancialCalendarTable({
 
       return {
         id: rowKey,
+        realActivityId: realActivityId, // Real UUID for API calls
         name,
         source: 'staff-expenses' as const,
         isGroup, // Для сортировки
+        isManual, // Track if this is manual entry
       };
     });
 
@@ -1255,14 +1263,17 @@ function FinancialCalendarTable({
                     const hasDetails = details.length > 0;
                     
                     // Find entry to check if it's manually edited
+                    // Use realActivityId and match is_manual_override based on activity.isManual
                     const entry = journalEntries.find(
-                      (e) => e.activity_id === activity.id && e.date === dateStr
+                      (e) => e.activity_id === activity.realActivityId && 
+                             e.date === dateStr &&
+                             (e.is_manual_override === true) === activity.isManual
                     );
                     const isManuallyEdited = entry?.is_manual_override === true;
                     
                     // Get hours or sessions for display
                     const hours = entry?.hours_worked;
-                    const currentRate = getStaffManualRateForDate(manualRateHistory, dateStr, activity.id);
+                    const currentRate = getStaffManualRateForDate(manualRateHistory, dateStr, activity.realActivityId);
                     const rateType = currentRate?.manual_rate_type || null;
                     const rateValue = currentRate?.manual_rate_value || 0;
                     let sessions: number | null = null;
@@ -1270,7 +1281,7 @@ function FinancialCalendarTable({
                       sessions = entry.amount / rateValue;
                     }
                     
-                    const isEditing = editingCell?.activityId === activity.id && editingCell?.date === dateStr;
+                    const isEditing = editingCell?.activityId === activity.realActivityId && editingCell?.date === dateStr;
                     const isWeekendDay = isWeekend(date);
                     
                     return (
@@ -1431,7 +1442,7 @@ function FinancialCalendarTable({
                           <Popover open={isEditing} onOpenChange={(open) => !open && onCancel()}>
                             <PopoverTrigger asChild>
                               <button
-                                onClick={() => onCellClick(activity.id, dateStr)}
+                                onClick={() => onCellClick(activity.realActivityId || '', dateStr)}
                                 className={cn(
                                   "w-full h-8 text-xs rounded hover:bg-muted transition-colors text-muted-foreground",
                                   isWeekendDay && WEEKEND_BG_COLOR
