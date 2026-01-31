@@ -677,7 +677,8 @@ export function useCreateStaffManualRateHistory() {
   
   return useMutation({
     mutationFn: async (entry: StaffManualRateHistoryInsert) => {
-      // Check if entry with same effective_from already exists (UNIQUE constraint)
+      // Check if entry with same effective_from and activity_id already exists (UNIQUE constraint)
+      // The constraint is now (staff_id, activity_id, effective_from), so we need to check for exact match
       let existingQuery = supabase
         .from('staff_manual_rate_history' as any)
         .select('id, effective_to')
@@ -692,7 +693,7 @@ export function useCreateStaffManualRateHistory() {
 
       if (findExistingError) throw findExistingError;
 
-      // If entry with same effective_from exists, update it instead of creating new
+      // If entry with same effective_from and activity_id exists, update it instead of creating new
       if (existingEntry && (existingEntry as any).id) {
         const { data: updatedData, error: updateError } = await supabase
           .from('staff_manual_rate_history' as any)
