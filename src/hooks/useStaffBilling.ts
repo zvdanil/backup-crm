@@ -677,7 +677,39 @@ export function useCreateStaffManualRateHistory() {
   
   return useMutation({
     mutationFn: async (entry: StaffManualRateHistoryInsert) => {
-      // Close previous entry if exists
+      // Check if entry with same effective_from already exists (UNIQUE constraint)
+      let existingQuery = supabase
+        .from('staff_manual_rate_history' as any)
+        .select('id, effective_to')
+        .eq('staff_id', entry.staff_id)
+        .eq('effective_from', entry.effective_from);
+
+      existingQuery = entry.activity_id === null
+        ? existingQuery.is('activity_id', null)
+        : existingQuery.eq('activity_id', entry.activity_id);
+
+      const { data: existingEntry, error: findExistingError } = await existingQuery.maybeSingle();
+
+      if (findExistingError) throw findExistingError;
+
+      // If entry with same effective_from exists, update it instead of creating new
+      if (existingEntry && (existingEntry as any).id) {
+        const { data: updatedData, error: updateError } = await supabase
+          .from('staff_manual_rate_history' as any)
+          .update({
+            manual_rate_type: entry.manual_rate_type,
+            manual_rate_value: entry.manual_rate_value,
+            effective_to: entry.effective_to,
+          })
+          .eq('id', (existingEntry as any).id)
+          .select()
+          .single();
+        
+        if (updateError) throw updateError;
+        return (updatedData as any) as StaffManualRateHistory;
+      }
+
+      // Close previous active entry if exists
       let previousQuery = supabase
         .from('staff_manual_rate_history' as any)
         .select('id')
