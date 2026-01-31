@@ -19,7 +19,12 @@ import { useGroups } from '@/hooks/useGroups';
 import { useSetAttendance, useAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
 import { useUpsertFinanceTransaction, useDeleteFinanceTransaction } from '@/hooks/useFinanceTransactions';
 import { supabase } from '@/integrations/supabase/client';
-import { calculateDailyAccrual } from '@/lib/gardenAttendance';
+import { calculateDailyAccrual, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
+import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate } from '@/hooks/useStaffBilling';
+import { calculateMonthlyStaffAccruals, type AttendanceRecord } from '@/lib/salaryCalculator';
+import { applyDeductionsToAmount } from '@/lib/staffSalary';
+import { useStaff } from '@/hooks/useStaff';
+import { useStudents } from '@/hooks/useStudents';
 import { 
   getDaysInMonth, 
   formatShortDate, 
@@ -97,10 +102,16 @@ export default function GardenAttendanceJournal() {
   // Get all enrollments for students (for calculateDailyAccrual)
   const { data: allEnrollments = [] } = useEnrollments({ activeOnly: true });
 
+  // Get staff and students for staff journal entries calculation
+  const { data: staff = [] } = useStaff();
+  const { data: students = [] } = useStudents();
+
   const setAttendance = useSetAttendance();
   const deleteAttendance = useDeleteAttendance();
   const upsertTransaction = useUpsertFinanceTransaction();
   const deleteTransaction = useDeleteFinanceTransaction();
+  const upsertStaffJournalEntry = useUpsertStaffJournalEntry();
+  const deleteStaffJournalEntry = useDeleteStaffJournalEntry();
 
   const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
@@ -347,6 +358,210 @@ export default function GardenAttendanceJournal() {
     </colgroup>
   ), [days]);
 
+  // Staff map for deductions
+  const staffMap = useMemo(() => {
+    const map = new Map<string, (typeof staff)[number]>();
+    staff.forEach((member) => {
+      map.set(member.id, member);
+    });
+    return map;
+  }, [staff]);
+
+  // Sync staff journal entries for all base tariff activities
+  const syncStaffJournalEntriesForBaseTariffs = useCallback(async () => {
+    if (!controllerActivity || !controllerActivityId) {
+      console.warn('[Garden Attendance] Controller activity not found for staff journal sync');
+      return;
+    }
+
+    const config = (controllerActivity.config as GardenAttendanceConfig) || {};
+    const baseTariffIds = config.base_tariff_ids || [];
+
+    if (baseTariffIds.length === 0) {
+      console.log('[Garden Attendance] No base tariff activities configured');
+      return;
+    }
+
+    console.log('[Garden Attendance] Syncing staff journal entries for base tariffs:', baseTariffIds);
+
+    const dateStrings = days.map((day) => formatDateString(day));
+
+    // Process each base tariff activity
+    for (const baseTariffActivityId of baseTariffIds) {
+      try {
+        // 1. Get billing rules for this base tariff activity
+        const { data: billingRules = [], error: billingError } = await supabase
+          .from('staff_billing_rules')
+          .select('*')
+          .or(`activity_id.eq.${baseTariffActivityId},activity_id.is.null`)
+          .order('effective_from', { ascending: false });
+
+        if (billingError) {
+          console.error(`[Garden Attendance] Error fetching billing rules for activity ${baseTariffActivityId}:`, billingError);
+          continue;
+        }
+
+        if (billingRules.length === 0) {
+          console.log(`[Garden Attendance] No billing rules found for activity ${baseTariffActivityId}`);
+          continue;
+        }
+
+        // 2. Create function to get billing rule for date
+        const getBillingRuleForDate = (date: string) => {
+          const dateObj = new Date(date);
+          const relevantRules = billingRules.filter((rule: any) => {
+            if (rule.activity_id !== null && rule.activity_id !== baseTariffActivityId) {
+              return false;
+            }
+            const fromDate = new Date(rule.effective_from);
+            const toDate = rule.effective_to ? new Date(rule.effective_to) : null;
+            return dateObj >= fromDate && (!toDate || dateObj < toDate);
+          });
+
+          if (relevantRules.length === 0) return null;
+
+          // Priority: specific rule for activity, then global rule
+          const specificRule = relevantRules.find((r: any) => r.activity_id === baseTariffActivityId);
+          if (specificRule) {
+            return getStaffBillingRuleForDate([specificRule], date, baseTariffActivityId);
+          }
+
+          const globalRule = relevantRules.find((r: any) => r.activity_id === null);
+          if (globalRule) {
+            return getStaffBillingRuleForDate([globalRule], date, baseTariffActivityId);
+          }
+
+          return null;
+        };
+
+        // 3. Get enrollments for this base tariff activity
+        const baseTariffEnrollments = allEnrollments.filter(
+          (e) => e.activity_id === baseTariffActivityId && e.is_active
+        );
+
+        if (baseTariffEnrollments.length === 0) {
+          console.log(`[Garden Attendance] No active enrollments found for activity ${baseTariffActivityId}`);
+          continue;
+        }
+
+        // 4. Build attendance records for this base tariff activity
+        const attendanceRecords: AttendanceRecord[] = [];
+        const enrollmentIds = new Set(baseTariffEnrollments.map((e) => e.id));
+
+        // Get all attendance records for the month
+        const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`;
+        
+        const { data: monthAttendanceData = [], error: attendanceError } = await supabase
+          .from('attendance')
+          .select('*')
+          .in('enrollment_id', Array.from(enrollmentIds))
+          .gte('date', monthStart)
+          .lte('date', monthEnd);
+
+        if (attendanceError) {
+          console.error(`[Garden Attendance] Error fetching attendance for activity ${baseTariffActivityId}:`, attendanceError);
+          continue;
+        }
+
+        // Convert attendance data to AttendanceRecord format
+        monthAttendanceData.forEach((att: any) => {
+          const enrollment = baseTariffEnrollments.find((e) => e.id === att.enrollment_id);
+          if (!enrollment) return;
+
+          const studentId = enrollment.student_id;
+          const studentName = enrollment.students?.full_name || '';
+
+          if (att.status === 'present' && studentId) {
+            attendanceRecords.push({
+              date: att.date,
+              enrollment_id: att.enrollment_id,
+              student_id: studentId,
+              student_name: studentName,
+              status: 'present',
+              value: att.value ?? att.charged_amount ?? 0,
+            });
+          }
+        });
+
+        // 5. Calculate accruals
+        const accruals = calculateMonthlyStaffAccruals({
+          attendanceRecords,
+          getRuleForDate: getBillingRuleForDate,
+        });
+
+        // 6. Collect all staff IDs that have billing rules or accruals
+        const staffIds = new Set<string>();
+        billingRules.forEach((rule: any) => {
+          if (rule.activity_id === null || rule.activity_id === baseTariffActivityId) {
+            staffIds.add(rule.staff_id);
+          }
+        });
+        accruals.forEach((_, staffId) => staffIds.add(staffId));
+
+        // 7. Create/update/delete staff journal entries
+        const promises: Promise<any>[] = [];
+        staffIds.forEach((staffId) => {
+          dateStrings.forEach((date) => {
+            const dayAccrual = accruals.get(staffId)?.get(date);
+            if (dayAccrual && dayAccrual.amount > 0) {
+              const staffMember = staffMap.get(staffId);
+              const { finalAmount, deductionsApplied } = applyDeductionsToAmount(
+                dayAccrual.amount,
+                (staffMember?.deductions as any) || []
+              );
+
+              promises.push(
+                upsertStaffJournalEntry.mutateAsync({
+                  staff_id: staffId,
+                  activity_id: baseTariffActivityId,
+                  date,
+                  amount: finalAmount,
+                  base_amount: dayAccrual.amount,
+                  deductions_applied: deductionsApplied,
+                  is_manual_override: false,
+                  notes: dayAccrual.notes.join('; ') || null,
+                })
+              );
+            } else {
+              // Delete entry if no accrual
+              promises.push(
+                deleteStaffJournalEntry.mutateAsync({
+                  staff_id: staffId,
+                  activity_id: baseTariffActivityId,
+                  date,
+                  is_manual_override: false,
+                })
+              );
+            }
+          });
+        });
+
+        if (promises.length > 0) {
+          await Promise.allSettled(promises);
+          console.log(`[Garden Attendance] Synced ${promises.length} staff journal entries for activity ${baseTariffActivityId}`);
+        }
+      } catch (error) {
+        console.error(`[Garden Attendance] Error syncing staff journal entries for activity ${baseTariffActivityId}:`, error);
+      }
+    }
+
+    // Invalidate staff journal entries cache
+    queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'] });
+    queryClient.invalidateQueries({ queryKey: ['staff-expenses'] });
+  }, [
+    controllerActivity,
+    controllerActivityId,
+    allEnrollments,
+    days,
+    year,
+    month,
+    staffMap,
+    upsertStaffJournalEntry,
+    deleteStaffJournalEntry,
+    queryClient,
+  ]);
+
   // Handle status change
   const handleStatusChange = useCallback(async (
     enrollmentId: string,
@@ -428,6 +643,9 @@ export default function GardenAttendanceJournal() {
         
         // Then delete attendance record
         await deleteAttendance.mutateAsync({ enrollmentId, date });
+
+        // Sync staff journal entries after deletion to remove corresponding entries
+        await syncStaffJournalEntriesForBaseTariffs();
       } catch (error) {
         console.error('Error deleting attendance and transactions:', error);
       }
@@ -510,6 +728,10 @@ export default function GardenAttendanceJournal() {
             }
           }
         }
+
+        // Sync staff journal entries for all base tariff activities
+        // This must be called after attendance and finance_transactions are created/updated
+        await syncStaffJournalEntriesForBaseTariffs();
       } catch (error) {
         console.error('Error setting attendance:', error);
         throw error; // Пробрасываем ошибку, чтобы не продолжать выполнение
@@ -526,6 +748,8 @@ export default function GardenAttendanceJournal() {
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'] }),
+      queryClient.invalidateQueries({ queryKey: ['staff-expenses'] }),
     ]);
     
     // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
@@ -543,7 +767,7 @@ export default function GardenAttendanceJournal() {
       refetchedQueries: results.length,
       timestamp: new Date().toISOString(),
     });
-  }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient]);
+  }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient, syncStaffJournalEntriesForBaseTariffs]);
 
 
   const handlePrevMonth = () => {
