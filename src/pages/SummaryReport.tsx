@@ -238,11 +238,11 @@ export default function SummaryReport() {
                         reportData.incomeDetails.map((detail) => (
                           <TableRow key={`${detail.activity_id}-${detail.account_id || 'null'}`}>
                             <TableCell>
-                              {activities.find(a => a.id === detail.activity_id)?.name || 'Невідома активність'}
+                              {detail.activity_name}
                             </TableCell>
                             <TableCell>
-                              {detail.account_id 
-                                ? accounts.find(a => a.id === detail.account_id)?.name || 'Невідомий рахунок'
+                              {detail.account_name 
+                                ? detail.account_name
                                 : <Badge variant="outline">Без рахунку</Badge>
                               }
                             </TableCell>
@@ -312,8 +312,8 @@ export default function SummaryReport() {
                               {detail.staff_name}
                             </TableCell>
                             <TableCell>
-                              {detail.activity_id 
-                                ? activities.find(a => a.id === detail.activity_id)?.name || 'Невідома активність'
+                              {detail.activity_name 
+                                ? detail.activity_name
                                 : <Badge variant="outline">Без активності</Badge>
                               }
                             </TableCell>
@@ -386,14 +386,14 @@ export default function SummaryReport() {
                               )}
                             </TableCell>
                             <TableCell>
-                              {detail.activity_id 
-                                ? activities.find(a => a.id === detail.activity_id)?.name || 'Невідома активність'
+                              {detail.activity_name 
+                                ? detail.activity_name
                                 : <Badge variant="outline">Без активності</Badge>
                               }
                             </TableCell>
                             <TableCell>
-                              {detail.account_id 
-                                ? accounts.find(a => a.id === detail.account_id)?.name || 'Невідомий рахунок'
+                              {detail.account_name 
+                                ? detail.account_name
                                 : <Badge variant="outline">Без рахунку</Badge>
                               }
                             </TableCell>

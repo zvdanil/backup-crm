@@ -6,7 +6,9 @@ export interface SummaryReportData {
   incomeTotal: number;
   incomeDetails: Array<{
     activity_id: string;
+    activity_name: string;
     account_id: string | null;
+    account_name: string | null;
     amount: number;
     count: number;
   }>;
@@ -15,6 +17,7 @@ export interface SummaryReportData {
     staff_id: string;
     staff_name: string;
     activity_id: string | null;
+    activity_name: string | null;
     amount: number;
     count: number;
   }>;
@@ -23,7 +26,9 @@ export interface SummaryReportData {
     category_id: string | null;
     category_name: string | null;
     activity_id: string | null;
+    activity_name: string | null;
     account_id: string | null;
+    account_name: string | null;
     amount: number;
     count: number;
   }>;
@@ -72,6 +77,10 @@ export function useSummaryReportData({
             id,
             name,
             category
+          ),
+          payment_accounts (
+            id,
+            name
           )
         `)
         .eq('type', 'income')
@@ -86,6 +95,10 @@ export function useSummaryReportData({
           staff (
             id,
             full_name
+          ),
+          activities (
+            id,
+            name
           )
         `);
 
@@ -104,6 +117,10 @@ export function useSummaryReportData({
             id,
             name,
             category
+          ),
+          payment_accounts (
+            id,
+            name
           )
         `)
         .in('type', ['expense', 'household']);
@@ -150,15 +167,27 @@ export function useSummaryReportData({
       if (expensesResult.error) throw expensesResult.error;
 
       // Process income data
-      const incomeMap = new Map<string, { amount: number; count: number }>();
+      const incomeMap = new Map<string, { 
+        amount: number; 
+        count: number; 
+        activity_name: string;
+        account_name: string | null;
+      }>();
       let incomeTotal = 0;
 
       (incomeResult.data || []).forEach((item: any) => {
         const key = `${item.activity_id || 'null'}-${item.account_id || 'null'}`;
-        const existing = incomeMap.get(key) || { amount: 0, count: 0 };
+        const existing = incomeMap.get(key) || { 
+          amount: 0, 
+          count: 0,
+          activity_name: item.activities?.name || 'Невідома активність',
+          account_name: item.payment_accounts?.name || null,
+        };
         incomeMap.set(key, {
           amount: existing.amount + (item.amount || 0),
           count: existing.count + 1,
+          activity_name: item.activities?.name || existing.activity_name,
+          account_name: item.payment_accounts?.name || existing.account_name,
         });
         incomeTotal += item.amount || 0;
       });
@@ -167,23 +196,36 @@ export function useSummaryReportData({
         const [activity_id, account_id] = key.split('-');
         return {
           activity_id,
+          activity_name: value.activity_name,
           account_id: account_id === 'null' ? null : account_id,
+          account_name: value.account_name,
           amount: value.amount,
           count: value.count,
         };
       });
 
       // Process salary data
-      const salaryMap = new Map<string, { amount: number; count: number; staff_name: string }>();
+      const salaryMap = new Map<string, { 
+        amount: number; 
+        count: number; 
+        staff_name: string;
+        activity_name: string | null;
+      }>();
       let salaryTotal = 0;
 
       (salaryResult.data || []).forEach((item: any) => {
         const key = `${item.staff_id}-${item.activity_id || 'none'}`;
-        const existing = salaryMap.get(key) || { amount: 0, count: 0, staff_name: item.staff?.full_name || 'Невідомий' };
+        const existing = salaryMap.get(key) || { 
+          amount: 0, 
+          count: 0, 
+          staff_name: item.staff?.full_name || 'Невідомий',
+          activity_name: item.activities?.name || null,
+        };
         salaryMap.set(key, {
           amount: existing.amount + (item.amount || 0),
           count: existing.count + 1,
-          staff_name: item.staff?.full_name || 'Невідомий',
+          staff_name: item.staff?.full_name || existing.staff_name,
+          activity_name: item.activities?.name || existing.activity_name,
         });
         salaryTotal += item.amount || 0;
       });
@@ -194,13 +236,20 @@ export function useSummaryReportData({
           staff_id,
           staff_name: value.staff_name,
           activity_id: activity_id === 'none' ? null : activity_id,
+          activity_name: value.activity_name,
           amount: value.amount,
           count: value.count,
         };
       });
 
       // Process expenses data
-      const expensesMap = new Map<string, { amount: number; count: number; category_name: string | null }>();
+      const expensesMap = new Map<string, { 
+        amount: number; 
+        count: number; 
+        category_name: string | null;
+        activity_name: string | null;
+        account_name: string | null;
+      }>();
       let expensesTotal = 0;
 
       (expensesResult.data || []).forEach((item: any) => {
@@ -209,12 +258,16 @@ export function useSummaryReportData({
         const existing = expensesMap.get(key) || { 
           amount: 0, 
           count: 0, 
-          category_name: item.expense_categories?.name || null 
+          category_name: item.expense_categories?.name || null,
+          activity_name: item.activities?.name || null,
+          account_name: item.payment_accounts?.name || null,
         };
         expensesMap.set(key, {
           amount: existing.amount + (item.amount || 0),
           count: existing.count + 1,
-          category_name: item.expense_categories?.name || null,
+          category_name: item.expense_categories?.name || existing.category_name,
+          activity_name: item.activities?.name || existing.activity_name,
+          account_name: item.payment_accounts?.name || existing.account_name,
         });
         expensesTotal += item.amount || 0;
       });
@@ -225,7 +278,9 @@ export function useSummaryReportData({
           category_id: category_id === 'none' ? null : category_id,
           category_name: value.category_name,
           activity_id: activity_id === 'none' ? null : activity_id,
+          activity_name: value.activity_name,
           account_id: account_id === 'null' ? null : account_id,
+          account_name: value.account_name,
           amount: value.amount,
           count: value.count,
         };
