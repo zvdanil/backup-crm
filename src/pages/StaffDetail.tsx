@@ -625,6 +625,16 @@ export default function StaffDetail() {
                         auditMode={auditMode}
                         onPayoutCellClick={handlePayoutCellClick}
                         groupLessonsMap={groupLessonsMap}
+                        manualRateHistory={manualRateHistory}
+                        editingCell={editingCell}
+                        manualValue={manualValue}
+                        onCellClick={handleJournalEntryCellClick}
+                        onSave={handleSaveManualEntry}
+                        onCancel={() => {
+                          setEditingCell(null);
+                          setManualValue('');
+                        }}
+                        onManualValueChange={setManualValue}
                       />
                     </div>
                   </TabsContent>
