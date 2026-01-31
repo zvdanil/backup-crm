@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 
 export interface StaffBillingRule {
   id: string;
@@ -326,8 +327,8 @@ export function useStaffJournalEntries(staffId: string | undefined, month?: numb
         .eq('staff_id', staffId);
       
       if (month !== undefined && year !== undefined) {
-        const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-        const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+        const startDate = getMonthStartDate(year, month);
+        const endDate = getMonthEndDate(year, month);
         query = query.gte('date', startDate).lte('date', endDate);
       }
       
@@ -351,8 +352,8 @@ export function useAllStaffJournalEntries(month: number, year: number) {
   return useQuery({
     queryKey: ['staff-journal-entries-all', month, year],
     queryFn: async () => {
-      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(year, month);
+      const endDate = getMonthEndDate(year, month);
       
       const { data, error } = await supabase
         .from('staff_journal_entries' as any)

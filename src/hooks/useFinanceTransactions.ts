@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { getMonthStartDate, getMonthEndDate, formatLocalDate } from '@/lib/attendance';
 
 export type TransactionType = 'income' | 'expense' | 'payment' | 'salary' | 'household' | 'advance_payment';
 
@@ -48,8 +49,8 @@ export function useFinanceTransactions(filters?: {
         query = query.eq('type', filters.type);
       }
       if (filters?.month !== undefined && filters?.year !== undefined) {
-        const startDate = new Date(filters.year, filters.month, 1).toISOString().split('T')[0];
-        const endDate = new Date(filters.year, filters.month + 1, 0).toISOString().split('T')[0];
+        const startDate = getMonthStartDate(filters.year, filters.month);
+        const endDate = getMonthEndDate(filters.year, filters.month);
         query = query.gte('date', startDate).lte('date', endDate);
       }
 
@@ -268,8 +269,8 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
       const targetMonth = month !== undefined ? month : now.getMonth();
       const targetYear = year !== undefined ? year : now.getFullYear();
       
-      const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
-      const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(targetYear, targetMonth);
+      const endDate = getMonthEndDate(targetYear, targetMonth);
 
       // Get payments
       // Strictly filter by student_id and activity_id - exclude null values
@@ -387,8 +388,8 @@ export function useStudentActivityMonthlyBalance(
       const targetMonth = month !== undefined ? month : now.getMonth();
       const targetYear = year !== undefined ? year : now.getFullYear();
 
-      const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
-      const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(targetYear, targetMonth);
+      const endDate = getMonthEndDate(targetYear, targetMonth);
 
       const { data: payments, error: paymentsError } = await supabase
         .from('finance_transactions')
@@ -459,11 +460,11 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
         if (cumulative) {
           // Для кумулятивного баланса: от начала до конца выбранного месяца
           startDate = undefined; // Начало всех времен
-          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+          endDate = getMonthEndDate(year, month);
         } else {
           // Для месячного баланса: только выбранный месяц
-          startDate = new Date(year, month, 1).toISOString().split('T')[0];
-          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+          startDate = getMonthStartDate(year, month);
+          endDate = getMonthEndDate(year, month);
         }
       }
 
@@ -786,8 +787,8 @@ async function calculateMonthlyAccountBalances(
   excludeActivityIds: string[] = [],
   foodTariffIds: string[] = []
 ): Promise<StudentAccountBalance[]> {
-  const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-  const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+  const startDate = getMonthStartDate(year, month);
+  const endDate = getMonthEndDate(year, month);
 
   const { data: enrollments, error: enrollmentsError } = await supabase
     .from('enrollments')
@@ -1095,8 +1096,8 @@ export function useStudentAccountBalances(
               }
             }
             
-            startDate = new Date(startYear, startMonth, 1).toISOString().split('T')[0];
-            endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+            startDate = getMonthStartDate(startYear, startMonth);
+            endDate = getMonthEndDate(year, month);
           } else {
             // Если нет enrollments, возвращаем пустой массив
             return [];
@@ -1104,8 +1105,8 @@ export function useStudentAccountBalances(
         } else {
           // Для месячного баланса: только выбранный месяц
           monthsToCalculate.push({ month, year });
-          startDate = new Date(year, month, 1).toISOString().split('T')[0];
-          endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+          startDate = getMonthStartDate(year, month);
+          endDate = getMonthEndDate(year, month);
         }
       } else {
         // Если месяц не указан, возвращаем пустой массив
@@ -1287,8 +1288,8 @@ export function useStudentAccountBalances(
           
           // Рассчитываем баланс до начала выбранного месяца
           const previousMonthEnd = new Date(year, month, 0, 23, 59, 59, 999);
-          const previousStartDate = new Date(startYear, startMonth, 1).toISOString().split('T')[0];
-          const previousEndDate = previousMonthEnd.toISOString().split('T')[0];
+          const previousStartDate = getMonthStartDate(startYear, startMonth);
+          const previousEndDate = formatLocalDate(previousMonthEnd);
           
           // Формируем список месяцев до выбранного месяца
           const previousMonthsToCalculate: Array<{ month: number; year: number }> = [];
@@ -1524,8 +1525,8 @@ export function useActivityIncomeTransaction(
       const targetMonth = month !== undefined ? month : now.getMonth();
       const targetYear = year !== undefined ? year : now.getFullYear();
       
-      const startDate = new Date(targetYear, targetMonth, 1).toISOString().split('T')[0];
-      const endDate = new Date(targetYear, targetMonth + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(targetYear, targetMonth);
+      const endDate = getMonthEndDate(targetYear, targetMonth);
       
       // First, try to find transaction for the specific month
       let { data, error } = await supabase

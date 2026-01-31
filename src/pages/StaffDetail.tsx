@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StaffForm } from '@/components/staff/StaffForm';
 import { useStaffMember, useUpdateStaff } from '@/hooks/useStaff';
-import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString, WEEKEND_BG_COLOR } from '@/lib/attendance';
+import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString, WEEKEND_BG_COLOR, getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 import { StaffBillingEditorNew } from '@/components/staff/StaffBillingEditorNew';
 import { StaffManualRateHistoryEditor } from '@/components/staff/StaffManualRateHistoryEditor';
 import { DeductionsEditor } from '@/components/staff/DeductionsEditor';
@@ -213,8 +213,8 @@ export default function StaffDetail() {
   };
 
   const monthSummary = useMemo(() => {
-    const startDate = new Date(calendarYear, calendarMonth, 1).toISOString().split('T')[0];
-    const endDate = new Date(calendarYear, calendarMonth + 1, 0).toISOString().split('T')[0];
+    const startDate = getMonthStartDate(calendarYear, calendarMonth);
+    const endDate = getMonthEndDate(calendarYear, calendarMonth);
     const accrued = journalEntries.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
     const paid = payouts
       .filter((payout) => payout.payout_date >= startDate && payout.payout_date <= endDate)
@@ -985,8 +985,8 @@ function FinancialCalendarTable({
     const amountMap = new Map<string, number>();
     const notesMap = new Map<string, Array<{ note: string; date: string; amount: number }>>(); // date -> array of { note, date, amount }
     
-    const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-    const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+    const startDate = getMonthStartDate(year, month);
+    const endDate = getMonthEndDate(year, month);
     
     payouts.forEach(payout => {
       if (payout.payout_date >= startDate && payout.payout_date <= endDate) {

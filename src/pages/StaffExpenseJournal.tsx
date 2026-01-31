@@ -88,8 +88,8 @@ export default function StaffExpenseJournal() {
   const { data: staffPayouts = [] } = useQuery({
     queryKey: ['staff-payouts-all', month, year],
     queryFn: async () => {
-      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(year, month);
+      const endDate = getMonthEndDate(year, month);
       const { data, error } = await supabase
         .from('staff_payouts' as any)
         .select('id, staff_id, payout_date, amount')

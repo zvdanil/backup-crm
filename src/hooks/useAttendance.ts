@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import type { AttendanceStatus } from '@/lib/attendance';
+import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 
 export interface Attendance {
   id: string;
@@ -28,8 +29,8 @@ export function useAttendance(filters: { activityId?: string; month?: number; ye
         return [];
       }
 
-      const startDate = new Date(filters.year, filters.month, 1).toISOString().split('T')[0];
-      const endDate = new Date(filters.year, filters.month + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(filters.year, filters.month);
+      const endDate = getMonthEndDate(filters.year, filters.month);
 
       let query = supabase
         .from('attendance')
@@ -369,8 +370,8 @@ export function useDashboardStats() {
     queryKey: ['dashboard', 'stats'],
     queryFn: async () => {
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+      const startOfMonth = getMonthStartDate(now.getFullYear(), now.getMonth());
+      const endOfMonth = getMonthEndDate(now.getFullYear(), now.getMonth());
 
       const [studentsResult, activitiesResult, attendanceResult, enrollmentsResult] = await Promise.all([
         supabase.from('students').select('id', { count: 'exact' }).eq('status', 'active'),

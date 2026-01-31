@@ -70,8 +70,8 @@ export default function StaffPayrollRegistry() {
   const { data: journalEntriesFiltered = [] } = useQuery({
     queryKey: ['staff-journal-entries-filtered', filterMonth, filterYear],
     queryFn: async () => {
-      const startDate = new Date(filterYear, filterMonth, 1).toISOString().split('T')[0];
-      const endDate = new Date(filterYear, filterMonth + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(filterYear, filterMonth);
+      const endDate = getMonthEndDate(filterYear, filterMonth);
       
       const { data, error } = await supabase
         .from('staff_journal_entries' as any)
@@ -92,8 +92,8 @@ export default function StaffPayrollRegistry() {
   const { data: payoutsFiltered = [] } = useQuery({
     queryKey: ['staff-payouts-filtered', filterMonth, filterYear],
     queryFn: async () => {
-      const startDate = new Date(filterYear, filterMonth, 1).toISOString().split('T')[0];
-      const endDate = new Date(filterYear, filterMonth + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(filterYear, filterMonth);
+      const endDate = getMonthEndDate(filterYear, filterMonth);
       
       const { data, error } = await supabase
         .from('staff_payouts' as any)
