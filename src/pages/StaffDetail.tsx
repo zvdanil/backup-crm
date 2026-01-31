@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Pencil, User, Wallet, Calendar, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -101,6 +101,7 @@ export default function StaffDetail() {
   // State for editing journal entries in financial calendar
   const [editingCell, setEditingCell] = useState<{ activityId: string; date: string } | null>(null);
   const [popoverOpenKey, setPopoverOpenKey] = useState<string | null>(null); // Key: "activityId:date"
+  const popoverActivityIdRef = useRef<string | null>(null); // Store realActivityId when popover opens to prevent race conditions
   const [manualValue, setManualValue] = useState<string>('');
   // State for per_working_day popup
   const [perWorkingDayState, setPerWorkingDayState] = useState<{
@@ -220,6 +221,7 @@ export default function StaffDetail() {
     // Close popover when changing month
     setEditingCell(null);
     setPopoverOpenKey(null);
+    popoverActivityIdRef.current = null;
     if (calendarMonth === 0) {
       setCalendarMonth(11);
       setCalendarYear(calendarYear - 1);
@@ -232,6 +234,7 @@ export default function StaffDetail() {
     // Close popover when changing month
     setEditingCell(null);
     setPopoverOpenKey(null);
+    popoverActivityIdRef.current = null;
     if (calendarMonth === 11) {
       setCalendarMonth(0);
       setCalendarYear(calendarYear + 1);
@@ -397,8 +400,15 @@ export default function StaffDetail() {
       return;
     }
     
+    // Normalize null/undefined to empty string for consistent key generation
+    const normalizedActivityId = realActivityId ?? '';
+    
+    // Store realActivityId in ref to prevent race conditions during re-renders
+    popoverActivityIdRef.current = realActivityId;
+    
+    // Set state synchronously first to open popover immediately
     setEditingCell({ activityId, date });
-    setPopoverOpenKey(`${realActivityId}:${date}`);
+    setPopoverOpenKey(`${normalizedActivityId}:${date}`);
     
     // Find existing entry - check both manual and auto entries
     const existing = journalEntries.find(
@@ -502,6 +512,7 @@ export default function StaffDetail() {
         onSuccess: () => {
           setEditingCell(null);
           setPopoverOpenKey(null);
+          popoverActivityIdRef.current = null;
           setManualValue('');
         }
       });
@@ -579,6 +590,7 @@ export default function StaffDetail() {
         onSuccess: () => {
           setEditingCell(null);
           setPopoverOpenKey(null);
+          popoverActivityIdRef.current = null;
           setManualValue('');
         }
       });
@@ -604,6 +616,7 @@ export default function StaffDetail() {
         onSuccess: () => {
           setEditingCell(null);
           setPopoverOpenKey(null);
+          popoverActivityIdRef.current = null;
           setManualValue('');
         }
       });
@@ -880,6 +893,7 @@ export default function StaffDetail() {
                         onCancel={() => {
                           setEditingCell(null);
                           setPopoverOpenKey(null);
+                          popoverActivityIdRef.current = null;
                           setManualValue('');
                           setPerWorkingDayState({
                             attendanceStatus: null,
@@ -1508,7 +1522,14 @@ function FinancialCalendarTable({
                     // Compare with realActivityId (convert null to empty string for comparison)
                     const editingActivityId = editingCell?.activityId === '' ? null : editingCell?.activityId;
                     const isEditing = editingActivityId === activity.realActivityId && editingCell?.date === dateStr;
-                    const currentPopoverKey = `${activity.realActivityId}:${dateStr}`;
+                    
+                    // Normalize activity.realActivityId to prevent undefined/null mismatch
+                    // Use ref value if available (set when popover opened) to prevent race conditions
+                    const normalizedRealActivityId = popoverActivityIdRef.current !== null 
+                      ? popoverActivityIdRef.current 
+                      : (activity.realActivityId ?? null);
+                    const normalizedForKey = normalizedRealActivityId ?? '';
+                    const currentPopoverKey = `${normalizedForKey}:${dateStr}`;
                     const isPopoverOpen = popoverOpenKey === currentPopoverKey;
                     const isWeekendDay = isWeekend(date);
                     
