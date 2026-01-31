@@ -1273,6 +1273,7 @@ function FinancialCalendarTable({
                              (e.is_manual_override === true) === activity.isManual
                     );
                     const isManuallyEdited = entry?.is_manual_override === true;
+                    const hasEntry = entry !== undefined; // Check if entry exists (even with 0 amount)
                     
                     // Get hours or sessions for display
                     const hours = entry?.hours_worked;
@@ -1297,7 +1298,7 @@ function FinancialCalendarTable({
                           isWeekendDay && WEEKEND_BG_COLOR
                         )}
                       >
-                        {amount > 0 ? (
+                        {hasEntry || amount > 0 ? (
                           <Popover open={isEditing} onOpenChange={(open) => !open && onCancel()}>
                             <PopoverTrigger asChild>
                               <button
