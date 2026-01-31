@@ -367,11 +367,14 @@ export default function StaffDetail() {
   const handleJournalEntryCellClick = (activityId: string, date: string) => {
     if (!id) return;
     
+    // Convert empty string to null for activities without activity_id
+    const realActivityId = activityId === '' ? null : activityId;
+    
     setEditingCell({ activityId, date });
     
-    // Find existing entry
+    // Find existing entry - check both manual and auto entries
     const existing = journalEntries.find(
-      (entry) => entry.activity_id === activityId && entry.date === date
+      (entry) => (entry.activity_id === realActivityId || (entry.activity_id === null && realActivityId === null)) && entry.date === date
     );
     
     // Get manual rate for this date and activity
