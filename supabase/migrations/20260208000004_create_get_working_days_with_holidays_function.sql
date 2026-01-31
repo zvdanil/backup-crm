@@ -8,16 +8,16 @@ CREATE OR REPLACE FUNCTION public.get_working_days_in_month_with_holidays(
 RETURNS INTEGER AS $$
 DECLARE
     working_days INTEGER := 0;
-    current_date DATE;
+    curr_date DATE;
     end_date DATE;
     day_of_week INTEGER;
     is_holiday BOOLEAN;
 BEGIN
-    current_date := DATE(year_val, month_val, 1);
+    curr_date := DATE(year_val, month_val, 1);
     end_date := (DATE(year_val, month_val, 1) + INTERVAL '1 month' - INTERVAL '1 day')::DATE;
     
-    WHILE current_date <= end_date LOOP
-        day_of_week := EXTRACT(DOW FROM current_date);
+    WHILE curr_date <= end_date LOOP
+        day_of_week := EXTRACT(DOW FROM curr_date);
         
         -- Check if day is Monday (1) to Friday (5)
         IF day_of_week BETWEEN 1 AND 5 THEN
@@ -25,7 +25,7 @@ BEGIN
             -- Check for exact date match
             SELECT EXISTS(
                 SELECT 1 FROM public.holidays 
-                WHERE date = current_date
+                WHERE date = curr_date
             ) INTO is_holiday;
             
             -- If not found, check for recurring holidays (same month and day, any year)
@@ -34,7 +34,7 @@ BEGIN
                     SELECT 1 FROM public.holidays 
                     WHERE is_recurring = true
                     AND EXTRACT(MONTH FROM date) = month_val
-                    AND EXTRACT(DAY FROM date) = EXTRACT(DAY FROM current_date)
+                    AND EXTRACT(DAY FROM date) = EXTRACT(DAY FROM curr_date)
                 ) INTO is_holiday;
             END IF;
             
@@ -44,7 +44,7 @@ BEGIN
             END IF;
         END IF;
         
-        current_date := current_date + INTERVAL '1 day';
+        curr_date := curr_date + INTERVAL '1 day';
     END LOOP;
     
     RETURN working_days;

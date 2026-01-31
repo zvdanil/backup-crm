@@ -1230,8 +1230,32 @@ function FinancialCalendarTable({
       activityMap.set(dateStr, currentAmount + (Number(entry.amount) || 0));
     });
 
+    // Add empty entries for per_working_day rates that don't have journal entries yet
+    const startDate = getMonthStartDate(year, month);
+    const endDate = getMonthEndDate(year, month);
+    
+    manualRateHistory.forEach((rate) => {
+      if (rate.manual_rate_type === 'per_working_day') {
+        const effectiveFrom = new Date(rate.effective_from);
+        const effectiveTo = rate.effective_to ? new Date(rate.effective_to) : null;
+        const monthStart = new Date(startDate);
+        const monthEnd = new Date(endDate);
+        
+        // Check if rate is active for this month
+        if (effectiveFrom <= monthEnd && (!effectiveTo || effectiveTo >= monthStart)) {
+          const activityId = rate.activity_id || 'none';
+          const rowKey = `${activityId}:manual:regular`;
+          
+          // Create empty map for this row if it doesn't exist
+          if (!map.has(rowKey)) {
+            map.set(rowKey, new Map());
+          }
+        }
+      }
+    });
+
     return map;
-  }, [journalEntries]);
+  }, [journalEntries, manualRateHistory, year, month]);
 
   const entryDetailsByRow = useMemo(() => {
     const map = new Map<string, Map<string, any[]>>();
@@ -1284,7 +1308,17 @@ function FinancialCalendarTable({
   
   // Build rows for auto/manual entries per activity, with separate rows for group lessons
   const activityRows = useMemo(() => {
-    const rows = Array.from(entriesByRow.keys()).map((rowKey) => {
+    const rowsMap = new Map<string, {
+      id: string;
+      realActivityId: string | null;
+      name: string;
+      source: 'staff-expenses';
+      isGroup: boolean;
+      isManual: boolean;
+    }>();
+
+    // First, add rows from existing journal entries
+    Array.from(entriesByRow.keys()).forEach((rowKey) => {
       const parts = rowKey.split(':');
       const activityId = parts[0];
       const mode = parts[1];
@@ -1310,15 +1344,52 @@ function FinancialCalendarTable({
         name = `${baseName} — ${isManual ? 'ручні' : 'авто'}`;
       }
 
-      return {
+      rowsMap.set(rowKey, {
         id: rowKey,
-        realActivityId: realActivityId, // Real UUID for API calls
+        realActivityId: realActivityId,
         name,
         source: 'staff-expenses' as const,
-        isGroup, // Для сортировки
-        isManual, // Track if this is manual entry
-      };
+        isGroup,
+        isManual,
+      });
     });
+
+    // Add rows for per_working_day rates that don't have entries yet
+    const startDate = getMonthStartDate(year, month);
+    const endDate = getMonthEndDate(year, month);
+    
+    manualRateHistory.forEach((rate) => {
+      if (rate.manual_rate_type === 'per_working_day') {
+        const effectiveFrom = new Date(rate.effective_from);
+        const effectiveTo = rate.effective_to ? new Date(rate.effective_to) : null;
+        const monthStart = new Date(startDate);
+        const monthEnd = new Date(endDate);
+        
+        // Check if rate is active for this month
+        if (effectiveFrom <= monthEnd && (!effectiveTo || effectiveTo >= monthStart)) {
+          const activityId = rate.activity_id || 'none';
+          const rowKey = `${activityId}:manual:regular`;
+          
+          // Only add if row doesn't exist yet
+          if (!rowsMap.has(rowKey)) {
+            const activity = activities.find(a => a.id === activityId);
+            const baseName = activity ? activity.name : 'Всі активності';
+            const name = `${baseName} — ручні`;
+            
+            rowsMap.set(rowKey, {
+              id: rowKey,
+              realActivityId: rate.activity_id,
+              name,
+              source: 'staff-expenses' as const,
+              isGroup: false,
+              isManual: true,
+            });
+          }
+        }
+      }
+    });
+
+    const rows = Array.from(rowsMap.values());
 
     // Сортируем: сначала обычные, потом групповые, внутри каждой группы - по алфавиту
     rows.sort((a, b) => {
@@ -1328,7 +1399,7 @@ function FinancialCalendarTable({
       return a.name.localeCompare(b.name, 'uk-UA');
     });
     return rows;
-  }, [entriesByRow, activities, groupLessonsMap]);
+  }, [entriesByRow, activities, groupLessonsMap, manualRateHistory, year, month]);
   
   const getDateString = (date: Date) => {
     return formatDateString(date);
