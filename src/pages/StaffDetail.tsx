@@ -100,6 +100,7 @@ export default function StaffDetail() {
   
   // State for editing journal entries in financial calendar
   const [editingCell, setEditingCell] = useState<{ activityId: string; date: string } | null>(null);
+  const [popoverOpenKey, setPopoverOpenKey] = useState<string | null>(null); // Key: "activityId:date"
   const [manualValue, setManualValue] = useState<string>('');
   // State for per_working_day popup
   const [perWorkingDayState, setPerWorkingDayState] = useState<{
@@ -216,6 +217,9 @@ export default function StaffDetail() {
   
   // Financial Calendar handlers
   const handlePrevMonth = () => {
+    // Close popover when changing month
+    setEditingCell(null);
+    setPopoverOpenKey(null);
     if (calendarMonth === 0) {
       setCalendarMonth(11);
       setCalendarYear(calendarYear - 1);
@@ -225,6 +229,9 @@ export default function StaffDetail() {
   };
   
   const handleNextMonth = () => {
+    // Close popover when changing month
+    setEditingCell(null);
+    setPopoverOpenKey(null);
     if (calendarMonth === 11) {
       setCalendarMonth(0);
       setCalendarYear(calendarYear + 1);
@@ -383,7 +390,15 @@ export default function StaffDetail() {
     // Convert empty string to null for activities without activity_id
     const realActivityId = activityId === '' ? null : activityId;
     
+    // Check if date is in current month/year
+    const dateObj = new Date(date);
+    if (dateObj.getMonth() !== calendarMonth || dateObj.getFullYear() !== calendarYear) {
+      // Date is not in current month, don't open popover
+      return;
+    }
+    
     setEditingCell({ activityId, date });
+    setPopoverOpenKey(`${realActivityId}:${date}`);
     
     // Find existing entry - check both manual and auto entries
     const existing = journalEntries.find(
@@ -483,10 +498,13 @@ export default function StaffDetail() {
         deductions_applied: [],
         is_manual_override: true,
         notes: `${hours} год. × ${rateValue} ₴`,
+      }, {
+        onSuccess: () => {
+          setEditingCell(null);
+          setPopoverOpenKey(null);
+          setManualValue('');
+        }
       });
-
-      setEditingCell(null);
-      setManualValue('');
     } else if (rateType === 'per_working_day') {
       // Per working day: calculate amount based on attendance status, add bonus
       if (!editingCell || !id) return;
@@ -557,10 +575,13 @@ export default function StaffDetail() {
         deductions_applied: [],
         is_manual_override: true,
         notes: `${sessions} зан. × ${rateValue} ₴`,
+      }, {
+        onSuccess: () => {
+          setEditingCell(null);
+          setPopoverOpenKey(null);
+          setManualValue('');
+        }
       });
-
-      setEditingCell(null);
-      setManualValue('');
     } else {
       // Fixed amount: input amount directly
       if (!manualValue || manualValue.trim() === '') {
@@ -579,10 +600,13 @@ export default function StaffDetail() {
         base_amount: amount,
         deductions_applied: [],
         is_manual_override: true,
+      }, {
+        onSuccess: () => {
+          setEditingCell(null);
+          setPopoverOpenKey(null);
+          setManualValue('');
+        }
       });
-
-      setEditingCell(null);
-      setManualValue('');
     }
   };
 
@@ -855,6 +879,7 @@ export default function StaffDetail() {
                         onSave={handleSaveManualEntry}
                         onCancel={() => {
                           setEditingCell(null);
+                          setPopoverOpenKey(null);
                           setManualValue('');
                           setPerWorkingDayState({
                             attendanceStatus: null,
@@ -866,6 +891,8 @@ export default function StaffDetail() {
                         onManualValueChange={setManualValue}
                         perWorkingDayState={perWorkingDayState}
                         onPerWorkingDayStateChange={setPerWorkingDayState}
+                        popoverOpenKey={popoverOpenKey}
+                        setPopoverOpenKey={setPopoverOpenKey}
                       />
                     </div>
                   </TabsContent>
@@ -1179,6 +1206,8 @@ interface FinancialCalendarTableProps {
     bonus: string;
     bonusNotes: string;
   }) => void;
+  popoverOpenKey: string | null;
+  setPopoverOpenKey: (key: string | null) => void;
 }
 
 function FinancialCalendarTable({ 
@@ -1200,6 +1229,8 @@ function FinancialCalendarTable({
   onManualValueChange,
   perWorkingDayState,
   onPerWorkingDayStateChange,
+  popoverOpenKey,
+  setPopoverOpenKey,
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const salaryActivityId = useMemo(
@@ -1477,6 +1508,8 @@ function FinancialCalendarTable({
                     // Compare with realActivityId (convert null to empty string for comparison)
                     const editingActivityId = editingCell?.activityId === '' ? null : editingCell?.activityId;
                     const isEditing = editingActivityId === activity.realActivityId && editingCell?.date === dateStr;
+                    const currentPopoverKey = `${activity.realActivityId}:${dateStr}`;
+                    const isPopoverOpen = popoverOpenKey === currentPopoverKey;
                     const isWeekendDay = isWeekend(date);
                     
                     return (
@@ -1488,7 +1521,13 @@ function FinancialCalendarTable({
                         )}
                       >
                         {hasEntry || amount > 0 ? (
-                          <Popover open={isEditing} onOpenChange={(open) => !open && onCancel()}>
+                          <Popover open={isPopoverOpen || isEditing} onOpenChange={(open) => {
+                            if (!open) {
+                              onCancel();
+                            } else if (isEditing && !isPopoverOpen) {
+                              setPopoverOpenKey(currentPopoverKey);
+                            }
+                          }}>
                             <PopoverTrigger asChild>
                               <button
                                 onClick={() => onCellClick(activity.realActivityId || '', dateStr)}
@@ -1507,8 +1546,8 @@ function FinancialCalendarTable({
                                 {sessions !== null && sessions !== undefined && (
                                   <div className="text-[10px] text-muted-foreground/80">
                                     {sessions.toFixed(0)} зан.
-                                  </div>
-                                )}
+                                          </div>
+                                        )}
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-64">
@@ -1516,7 +1555,7 @@ function FinancialCalendarTable({
                                 <div className="pb-2 border-b">
                                   <h3 className="text-sm font-semibold">Нарахування для {activity.name}</h3>
                                   <p className="text-xs text-muted-foreground mt-1">на {formatDate(dateStr)}</p>
-                                </div>
+                                      </div>
                                 
                                 {rateType === 'hourly' ? (
                                   <>
@@ -1539,7 +1578,7 @@ function FinancialCalendarTable({
                                           Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
                                         </p>
                                       )}
-                                    </div>
+                                  </div>
                                     <div className="flex gap-2">
                                       <Button
                                         size="sm"
@@ -1644,7 +1683,7 @@ function FinancialCalendarTable({
                                         placeholder="0"
                                         className="mt-1"
                                       />
-                                    </div>
+                          </div>
                                     
                                     <div>
                                       <label className="text-sm font-medium">Примітка для бонусу</label>
@@ -1755,7 +1794,13 @@ function FinancialCalendarTable({
                             </PopoverContent>
                           </Popover>
                         ) : (
-                          <Popover open={isEditing} onOpenChange={(open) => !open && onCancel()}>
+                          <Popover open={isPopoverOpen || isEditing} onOpenChange={(open) => {
+                            if (!open) {
+                              onCancel();
+                            } else if (isEditing && !isPopoverOpen) {
+                              setPopoverOpenKey(currentPopoverKey);
+                            }
+                          }}>
                             <PopoverTrigger asChild>
                               <button
                                 onClick={() => onCellClick(activity.realActivityId || '', dateStr)}
