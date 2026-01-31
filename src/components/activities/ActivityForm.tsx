@@ -48,6 +48,7 @@ const activitySchema = z.object({
   payment_mode: z.string().optional(),
   auto_journal: z.boolean().optional(),
   show_in_children: z.boolean().optional(),
+  show_in_journals: z.boolean().optional(),
   billing_rules: z.any().optional(),
   effective_from: z.string().optional(),
   config: z.any().optional(),
@@ -100,6 +101,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       payment_mode: 'default',
       auto_journal: false,
       show_in_children: true,
+      show_in_journals: true,
       billing_rules: null,
       effective_from: new Date().toISOString().split('T')[0],
     },
@@ -134,6 +136,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
         payment_mode: initialData?.payment_mode || 'default',
         auto_journal: initialData?.auto_journal || false,
         show_in_children: initialData?.show_in_children ?? true,
+        show_in_journals: initialData?.show_in_journals ?? true,
         billing_rules: initialData?.billing_rules || null,
         effective_from: defaultEffectiveFrom,
         config: initialConfig,
@@ -159,6 +162,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       payment_mode: data.payment_mode || null,
       auto_journal: data.auto_journal || false,
       show_in_children: data.show_in_children ?? true,
+      show_in_journals: data.show_in_journals ?? true,
       billing_rules: billingRules,
       config: Object.keys(config).length > 0 ? config : null,
       // default_price та payment_type не передаються - тепер використовується billing_rules
@@ -336,6 +340,20 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
               id="show_in_children"
               checked={watch('show_in_children') ?? true}
               onCheckedChange={(checked) => setValue('show_in_children', checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between space-x-2">
+            <div className="space-y-0.5">
+              <Label htmlFor="show_in_journals">Відображати в журналах</Label>
+              <p className="text-xs text-muted-foreground">
+                Показувати активність у списку журналів з пункту меню "Додаткові заняття"
+              </p>
+            </div>
+            <Switch
+              id="show_in_journals"
+              checked={watch('show_in_journals') ?? true}
+              onCheckedChange={(checked) => setValue('show_in_journals', checked)}
             />
           </div>
 

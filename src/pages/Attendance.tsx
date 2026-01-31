@@ -15,7 +15,10 @@ const RECENT_JOURNALS_KEY = 'recentAttendanceJournals';
 
 export default function Attendance() {
   const { data: activities = [], isLoading } = useActivities();
-  const activeActivities = useMemo(() => activities.filter(a => a.is_active), [activities]);
+  const activeActivities = useMemo(() => 
+    activities.filter(a => a.is_active && a.show_in_journals), 
+    [activities]
+  );
   const [selectedActivityId, setSelectedActivityId] = useState<string>('');
   const [recentActivityIds, setRecentActivityIds] = useState<string[]>([]);
 

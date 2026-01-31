@@ -55,6 +55,7 @@ export interface Activity {
   color: string;
   is_active: boolean;
   show_in_children: boolean;
+  show_in_journals: boolean;
   category: ActivityCategory;
   account_id: string | null;
   balance_display_mode: 'subscription' | 'recalculation' | 'subscription_and_recalculation' | null;
