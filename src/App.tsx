@@ -26,6 +26,7 @@ import Login from "./pages/Login";
 import ParentPortal from "./pages/ParentPortal";
 import ParentStudentDetail from "./pages/ParentStudentDetail";
 import PendingActivation from "./pages/PendingActivation";
+import SummaryReport from "./pages/SummaryReport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -190,6 +191,14 @@ const AppRoutes = () => {
           element={(
             <ProtectedRoute allowedRoles={['owner', 'admin']}>
               <Users />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/summary-report"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'accountant', 'viewer']}>
+              <SummaryReport />
             </ProtectedRoute>
           )}
         />

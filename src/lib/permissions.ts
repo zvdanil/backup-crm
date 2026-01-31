@@ -13,7 +13,8 @@ export type AppSection =
   | 'staff'
   | 'staff_expenses'
   | 'staff_payroll'
-  | 'users';
+  | 'users'
+  | 'summary_report';
 
 const roleAccess: Record<UserRole, AppSection[]> = {
   owner: [
@@ -30,6 +31,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'staff_expenses',
     'staff_payroll',
     'users',
+    'summary_report',
   ],
   admin: [
     'dashboard',
@@ -45,6 +47,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'staff_expenses',
     'staff_payroll',
     'users',
+    'summary_report',
   ],
   manager: [
     'students',
@@ -68,6 +71,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'staff',
     'staff_expenses',
     'staff_payroll',
+    'summary_report',
   ],
   viewer: [
     'dashboard',
@@ -81,6 +85,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'staff',
     'staff_expenses',
     'staff_payroll',
+    'summary_report',
   ],
   parent: [],
   newregistration: [],

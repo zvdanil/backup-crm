@@ -39,6 +39,7 @@ const referenceItems = [
   { name: 'Рахунки', href: '/accounts', icon: Landmark, section: 'accounts' },
   { name: 'Групи', href: '/groups', icon: UsersRound, section: 'groups' },
   { name: 'Персонал', href: '/staff', icon: UserCog, section: 'staff' },
+  { name: 'Сводний звіт', href: '/summary-report', icon: ClipboardList, section: 'summary_report' },
 ];
 
 // Основные пункты меню (остаются в верхнем меню)
