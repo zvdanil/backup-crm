@@ -363,6 +363,128 @@ export default function StaffDetail() {
     return payouts.filter((payout) => payout.payout_date === selectedPayoutDate);
   }, [payouts, selectedPayoutDate]);
 
+  // Handle cell click for editing journal entries
+  const handleJournalEntryCellClick = (activityId: string, date: string) => {
+    if (!id) return;
+    
+    setEditingCell({ activityId, date });
+    
+    // Find existing entry
+    const existing = journalEntries.find(
+      (entry) => entry.activity_id === activityId && entry.date === date
+    );
+    
+    // Get manual rate for this date and activity
+    const currentRate = getStaffManualRateForDate(manualRateHistory, date, activityId);
+    const rateType = currentRate?.manual_rate_type || null;
+    
+    if (rateType === 'hourly' && existing?.hours_worked !== null && existing?.hours_worked !== undefined) {
+      setManualValue(existing.hours_worked.toString());
+    } else if (rateType === 'per_session') {
+      // For per_session, calculate number of sessions from amount and rate
+      const rateValue = currentRate?.manual_rate_value || 0;
+      if (existing && rateValue > 0) {
+        const sessions = existing.amount / rateValue;
+        setManualValue(sessions.toString());
+      } else {
+        setManualValue(existing?.amount.toString() || '');
+      }
+    } else {
+      setManualValue(existing?.amount.toString() || '');
+    }
+  };
+
+  // Handle save manual entry
+  const handleSaveManualEntry = () => {
+    if (!editingCell || !id) return;
+
+    // Get manual rate for this date and activity
+    const currentRate = getStaffManualRateForDate(manualRateHistory, editingCell.date, editingCell.activityId);
+    const rateType = currentRate?.manual_rate_type || null;
+    const rateValue = currentRate?.manual_rate_value || 0;
+
+    // Find existing entry to get its ID
+    const existing = journalEntries.find(
+      (entry) => entry.activity_id === editingCell.activityId && entry.date === editingCell.date
+    );
+
+    if (rateType === 'hourly') {
+      // Hourly: input hours, amount = hours * rate
+      if (!manualValue || manualValue.trim() === '') {
+        // If empty, set to 0
+        setManualValue('0');
+      }
+      
+      const hours = parseFloat(manualValue || '0');
+      if (isNaN(hours) || hours < 0) return;
+
+      const amount = hours * rateValue;
+
+      upsertJournalEntry.mutate({
+        id: existing?.id,
+        staff_id: id,
+        activity_id: editingCell.activityId,
+        date: editingCell.date,
+        amount,
+        base_amount: rateValue,
+        hours_worked: hours,
+        deductions_applied: [],
+        is_manual_override: true,
+        notes: `${hours} год. × ${rateValue} ₴`,
+      });
+
+      setEditingCell(null);
+      setManualValue('');
+    } else if (rateType === 'per_session') {
+      // Per session: input sessions, amount = sessions * rate
+      if (!manualValue || manualValue.trim() === '') {
+        setManualValue('0');
+      }
+      
+      const sessions = parseFloat(manualValue || '0');
+      if (isNaN(sessions) || sessions < 0) return;
+
+      const amount = sessions * rateValue;
+
+      upsertJournalEntry.mutate({
+        id: existing?.id,
+        staff_id: id,
+        activity_id: editingCell.activityId,
+        date: editingCell.date,
+        amount,
+        base_amount: rateValue,
+        deductions_applied: [],
+        is_manual_override: true,
+        notes: `${sessions} зан. × ${rateValue} ₴`,
+      });
+
+      setEditingCell(null);
+      setManualValue('');
+    } else {
+      // Fixed amount: input amount directly
+      if (!manualValue || manualValue.trim() === '') {
+        setManualValue('0');
+      }
+      
+      const amount = parseFloat(manualValue || '0');
+      if (isNaN(amount) || amount < 0) return;
+
+      upsertJournalEntry.mutate({
+        id: existing?.id,
+        staff_id: id,
+        activity_id: editingCell.activityId,
+        date: editingCell.date,
+        amount,
+        base_amount: amount,
+        deductions_applied: [],
+        is_manual_override: true,
+      });
+
+      setEditingCell(null);
+      setManualValue('');
+    }
+  };
+
   if (staffLoading) {
     return (
       <div className="flex items-center justify-center h-64">
