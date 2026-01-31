@@ -370,7 +370,6 @@ export default function GardenAttendanceJournal() {
   // Sync staff journal entries for all base tariff activities
   const syncStaffJournalEntriesForBaseTariffs = useCallback(async () => {
     if (!controllerActivity || !controllerActivityId) {
-      console.warn('[Garden Attendance] Controller activity not found for staff journal sync');
       return;
     }
 
@@ -378,11 +377,8 @@ export default function GardenAttendanceJournal() {
     const baseTariffIds = config.base_tariff_ids || [];
 
     if (baseTariffIds.length === 0) {
-      console.log('[Garden Attendance] No base tariff activities configured');
       return;
     }
-
-    console.log('[Garden Attendance] Syncing staff journal entries for base tariffs:', baseTariffIds);
 
     const dateStrings = days.map((day) => formatDateString(day));
 
@@ -397,7 +393,6 @@ export default function GardenAttendanceJournal() {
           .order('effective_from', { ascending: false });
 
         if (billingError) {
-          console.error(`[Garden Attendance] Error fetching billing rules for activity ${baseTariffActivityId}:`, billingError);
           continue;
         }
 
@@ -408,23 +403,8 @@ export default function GardenAttendanceJournal() {
         }));
 
         if (billingRules.length === 0) {
-          console.log(`[Garden Attendance] No billing rules found for activity ${baseTariffActivityId}`);
           continue;
         }
-
-        console.log(`[Garden Attendance] Found ${billingRules.length} billing rules for activity ${baseTariffActivityId}`);
-        billingRules.forEach((r: any) => {
-          console.log(`[Garden Attendance] Billing rule:`, {
-            id: r.id,
-            staff_id: r.staff_id,
-            activity_id: r.activity_id,
-            rate_type: r.rate_type,
-            rate_value_from_db: r.rate_value,
-            rate_mapped: r.rate,
-            effective_from: r.effective_from,
-            effective_to: r.effective_to
-          });
-        });
 
         // 2. Create function to get billing rule for date
         const getBillingRuleForDate = (date: string) => {
@@ -439,7 +419,6 @@ export default function GardenAttendanceJournal() {
           });
 
           if (relevantRules.length === 0) {
-            console.log(`[Garden Attendance] No relevant billing rules found for date ${date} and activity ${baseTariffActivityId}`);
             return null;
           }
 
@@ -451,16 +430,7 @@ export default function GardenAttendanceJournal() {
               ...specificRule,
               rate: specificRule.rate_value ?? specificRule.rate ?? 0,
             };
-            const rule = getStaffBillingRuleForDate([staffBillingRule], date, baseTariffActivityId);
-            if (rule) {
-              console.log(`[Garden Attendance] Found specific billing rule for date ${date}:`, { 
-                staff_id: rule.staff_id, 
-                rate_type: rule.rate_type, 
-                rate: rule.rate,
-                rate_value_from_db: specificRule.rate_value
-              });
-            }
-            return rule;
+            return getStaffBillingRuleForDate([staffBillingRule], date, baseTariffActivityId);
           }
 
           const globalRule = relevantRules.find((r: any) => r.activity_id === null);
@@ -470,19 +440,9 @@ export default function GardenAttendanceJournal() {
               ...globalRule,
               rate: globalRule.rate_value ?? globalRule.rate ?? 0,
             };
-            const rule = getStaffBillingRuleForDate([staffBillingRule], date, baseTariffActivityId);
-            if (rule) {
-              console.log(`[Garden Attendance] Found global billing rule for date ${date}:`, { 
-                staff_id: rule.staff_id, 
-                rate_type: rule.rate_type, 
-                rate: rule.rate,
-                rate_value_from_db: globalRule.rate_value
-              });
-            }
-            return rule;
+            return getStaffBillingRuleForDate([staffBillingRule], date, baseTariffActivityId);
           }
 
-          console.log(`[Garden Attendance] No valid billing rule found for date ${date} and activity ${baseTariffActivityId}`);
           return null;
         };
 
@@ -492,7 +452,6 @@ export default function GardenAttendanceJournal() {
         );
 
         if (baseTariffEnrollments.length === 0) {
-          console.log(`[Garden Attendance] No active enrollments found for activity ${baseTariffActivityId}`);
           continue;
         }
 
@@ -531,11 +490,9 @@ export default function GardenAttendanceJournal() {
           .lte('date', monthEnd);
 
         if (attendanceError) {
-          console.error(`[Garden Attendance] Error fetching attendance for activity ${baseTariffActivityId}:`, attendanceError);
           continue;
         }
 
-        console.log(`[Garden Attendance] Found ${monthAttendanceData.length} attendance records for controller activity, checking for base tariff students...`);
 
         // Convert attendance data to AttendanceRecord format
         // Link attendance (for controller activity) to base tariff enrollments through student_id
@@ -569,40 +526,14 @@ export default function GardenAttendanceJournal() {
           }
         });
 
-        console.log(`[Garden Attendance] Built ${attendanceRecords.length} attendance records for base tariff activity ${baseTariffActivityId}`);
-
         if (attendanceRecords.length === 0) {
-          console.log(`[Garden Attendance] No attendance records found for base tariff activity ${baseTariffActivityId}, skipping accrual calculation`);
           continue;
         }
 
         // 5. Calculate accruals
-        console.log(`[Garden Attendance] Calculating accruals for ${attendanceRecords.length} records...`);
-        
-        // Test getBillingRuleForDate with a sample date
-        const testDate = attendanceRecords[0]?.date;
-        if (testDate) {
-          const testRule = getBillingRuleForDate(testDate);
-          console.log(`[Garden Attendance] Test rule for date ${testDate}:`, testRule ? {
-            staff_id: testRule.staff_id,
-            rate_type: testRule.rate_type,
-            rate: testRule.rate
-          } : 'null');
-        }
-        
         const accruals = calculateMonthlyStaffAccruals({
           attendanceRecords,
           getRuleForDate: getBillingRuleForDate,
-        });
-
-        console.log(`[Garden Attendance] Calculated accruals for ${accruals.size} staff members`);
-        
-        // Log accruals details
-        accruals.forEach((staffAccruals, staffId) => {
-          console.log(`[Garden Attendance] Staff ${staffId} accruals:`, {
-            dates: Array.from(staffAccruals.keys()),
-            totalAmount: Array.from(staffAccruals.values()).reduce((sum, acc) => sum + acc.amount, 0)
-          });
         });
 
         // 6. Collect all staff IDs that have billing rules or accruals
@@ -654,10 +585,9 @@ export default function GardenAttendanceJournal() {
 
         if (promises.length > 0) {
           await Promise.allSettled(promises);
-          console.log(`[Garden Attendance] Synced ${promises.length} staff journal entries for activity ${baseTariffActivityId}`);
         }
       } catch (error) {
-        console.error(`[Garden Attendance] Error syncing staff journal entries for activity ${baseTariffActivityId}:`, error);
+        // Silently continue to next activity
       }
     }
 
@@ -727,7 +657,6 @@ export default function GardenAttendanceJournal() {
           .map((item) => ({ activityId: item.activityId, amount: item.dailyTariff }));
       } else {
         // If config not found or base tariff not found, log warning but continue
-        console.warn(`[Garden Attendance] Could not calculate accrual for student ${studentId} on ${date}. Config or base tariff not found.`);
       }
     }
 
@@ -846,13 +775,7 @@ export default function GardenAttendanceJournal() {
 
         // Sync staff journal entries for all base tariff activities
         // This must be called after attendance and finance_transactions are created/updated
-        console.log('[Garden Attendance] Calling syncStaffJournalEntriesForBaseTariffs after attendance update...');
-        try {
-          await syncStaffJournalEntriesForBaseTariffs();
-          console.log('[Garden Attendance] syncStaffJournalEntriesForBaseTariffs completed successfully');
-        } catch (syncError) {
-          console.error('[Garden Attendance] Error in syncStaffJournalEntriesForBaseTariffs:', syncError);
-        }
+        await syncStaffJournalEntriesForBaseTariffs();
       } catch (error) {
         console.error('Error setting attendance:', error);
         throw error; // Пробрасываем ошибку, чтобы не продолжать выполнение
@@ -863,7 +786,6 @@ export default function GardenAttendanceJournal() {
     // Ждем немного, чтобы убедиться, что все мутации завершились
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    console.log('[Garden Attendance] Invalidating queries after status change...');
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['attendance'] }),
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
@@ -874,19 +796,10 @@ export default function GardenAttendanceJournal() {
     ]);
     
     // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
-    console.log('[Garden Attendance] Refetching dashboard queries...');
-    const refetchResult = await queryClient.refetchQueries({ 
+    await queryClient.refetchQueries({ 
       queryKey: ['dashboard'], 
       exact: false,
       type: 'all', // Перезапрашиваем все, включая неактивные
-    });
-    
-    // refetchQueries возвращает Promise, который резолвится в массив результатов
-    const results = Array.isArray(refetchResult) ? refetchResult : [];
-    
-    console.log('[Garden Attendance] Dashboard refetch result', {
-      refetchedQueries: results.length,
-      timestamp: new Date().toISOString(),
     });
   }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient, syncStaffJournalEntriesForBaseTariffs]);
 
