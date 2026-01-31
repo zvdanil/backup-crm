@@ -20,7 +20,7 @@ import { useSetAttendance, useAttendance, useDeleteAttendance } from '@/hooks/us
 import { useUpsertFinanceTransaction, useDeleteFinanceTransaction } from '@/hooks/useFinanceTransactions';
 import { supabase } from '@/integrations/supabase/client';
 import { calculateDailyAccrual, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
-import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate } from '@/hooks/useStaffBilling';
+import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate, type StaffBillingRule } from '@/hooks/useStaffBilling';
 import { calculateMonthlyStaffAccruals, type AttendanceRecord } from '@/lib/salaryCalculator';
 import { applyDeductionsToAmount } from '@/lib/staffSalary';
 import { useStaff } from '@/hooks/useStaff';
@@ -390,7 +390,7 @@ export default function GardenAttendanceJournal() {
     for (const baseTariffActivityId of baseTariffIds) {
       try {
         // 1. Get billing rules for this base tariff activity
-        const { data: billingRules = [], error: billingError } = await supabase
+        const { data: billingRulesRaw = [], error: billingError } = await supabase
           .from('staff_billing_rules')
           .select('*')
           .or(`activity_id.eq.${baseTariffActivityId},activity_id.is.null`)
@@ -401,14 +401,30 @@ export default function GardenAttendanceJournal() {
           continue;
         }
 
+        // Map rate_value to rate (same as in useStaffBilling hooks)
+        const billingRules = billingRulesRaw.map((rule: any) => ({
+          ...rule,
+          rate: rule.rate_value ?? rule.rate ?? 0,
+        }));
+
         if (billingRules.length === 0) {
           console.log(`[Garden Attendance] No billing rules found for activity ${baseTariffActivityId}`);
           continue;
         }
 
-        console.log(`[Garden Attendance] Found ${billingRules.length} billing rules for activity ${baseTariffActivityId}:`, 
-          billingRules.map((r: any) => ({ staff_id: r.staff_id, activity_id: r.activity_id, rate_type: r.rate_type, rate: r.rate_value || r.rate }))
-        );
+        console.log(`[Garden Attendance] Found ${billingRules.length} billing rules for activity ${baseTariffActivityId}`);
+        billingRules.forEach((r: any) => {
+          console.log(`[Garden Attendance] Billing rule:`, {
+            id: r.id,
+            staff_id: r.staff_id,
+            activity_id: r.activity_id,
+            rate_type: r.rate_type,
+            rate_value_from_db: r.rate_value,
+            rate_mapped: r.rate,
+            effective_from: r.effective_from,
+            effective_to: r.effective_to
+          });
+        });
 
         // 2. Create function to get billing rule for date
         const getBillingRuleForDate = (date: string) => {
@@ -430,18 +446,38 @@ export default function GardenAttendanceJournal() {
           // Priority: specific rule for activity, then global rule
           const specificRule = relevantRules.find((r: any) => r.activity_id === baseTariffActivityId);
           if (specificRule) {
-            const rule = getStaffBillingRuleForDate([specificRule], date, baseTariffActivityId);
+            // Convert to StaffBillingRule format for getStaffBillingRuleForDate
+            const staffBillingRule: StaffBillingRule = {
+              ...specificRule,
+              rate: specificRule.rate_value ?? specificRule.rate ?? 0,
+            };
+            const rule = getStaffBillingRuleForDate([staffBillingRule], date, baseTariffActivityId);
             if (rule) {
-              console.log(`[Garden Attendance] Found specific billing rule for date ${date}:`, { staff_id: rule.staff_id, rate_type: rule.rate_type, rate: rule.rate });
+              console.log(`[Garden Attendance] Found specific billing rule for date ${date}:`, { 
+                staff_id: rule.staff_id, 
+                rate_type: rule.rate_type, 
+                rate: rule.rate,
+                rate_value_from_db: specificRule.rate_value
+              });
             }
             return rule;
           }
 
           const globalRule = relevantRules.find((r: any) => r.activity_id === null);
           if (globalRule) {
-            const rule = getStaffBillingRuleForDate([globalRule], date, baseTariffActivityId);
+            // Convert to StaffBillingRule format for getStaffBillingRuleForDate
+            const staffBillingRule: StaffBillingRule = {
+              ...globalRule,
+              rate: globalRule.rate_value ?? globalRule.rate ?? 0,
+            };
+            const rule = getStaffBillingRuleForDate([staffBillingRule], date, baseTariffActivityId);
             if (rule) {
-              console.log(`[Garden Attendance] Found global billing rule for date ${date}:`, { staff_id: rule.staff_id, rate_type: rule.rate_type, rate: rule.rate });
+              console.log(`[Garden Attendance] Found global billing rule for date ${date}:`, { 
+                staff_id: rule.staff_id, 
+                rate_type: rule.rate_type, 
+                rate: rule.rate,
+                rate_value_from_db: globalRule.rate_value
+              });
             }
             return rule;
           }
@@ -542,12 +578,32 @@ export default function GardenAttendanceJournal() {
 
         // 5. Calculate accruals
         console.log(`[Garden Attendance] Calculating accruals for ${attendanceRecords.length} records...`);
+        
+        // Test getBillingRuleForDate with a sample date
+        const testDate = attendanceRecords[0]?.date;
+        if (testDate) {
+          const testRule = getBillingRuleForDate(testDate);
+          console.log(`[Garden Attendance] Test rule for date ${testDate}:`, testRule ? {
+            staff_id: testRule.staff_id,
+            rate_type: testRule.rate_type,
+            rate: testRule.rate
+          } : 'null');
+        }
+        
         const accruals = calculateMonthlyStaffAccruals({
           attendanceRecords,
           getRuleForDate: getBillingRuleForDate,
         });
 
         console.log(`[Garden Attendance] Calculated accruals for ${accruals.size} staff members`);
+        
+        // Log accruals details
+        accruals.forEach((staffAccruals, staffId) => {
+          console.log(`[Garden Attendance] Staff ${staffId} accruals:`, {
+            dates: Array.from(staffAccruals.keys()),
+            totalAmount: Array.from(staffAccruals.values()).reduce((sum, acc) => sum + acc.amount, 0)
+          });
+        });
 
         // 6. Collect all staff IDs that have billing rules or accruals
         const staffIds = new Set<string>();
