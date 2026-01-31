@@ -1296,7 +1296,7 @@ function FinancialCalendarTable({
                           <Popover open={isEditing} onOpenChange={(open) => !open && onCancel()}>
                             <PopoverTrigger asChild>
                               <button
-                                onClick={() => onCellClick(activity.id, dateStr)}
+                                onClick={() => onCellClick(activity.realActivityId || '', dateStr)}
                                 className={cn(
                                   "w-full h-8 text-xs rounded hover:bg-muted transition-colors flex flex-col items-center justify-center",
                                   isManuallyEdited ? "bg-orange-100 text-orange-700 font-medium dark:bg-orange-900/20 dark:text-orange-400" : "bg-primary/10 text-primary font-medium"
