@@ -269,7 +269,8 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
             </p>
           </div>
 
-          <div className="space-y-2">
+          {/* Hidden fields - not used in current model */}
+          {/* <div className="space-y-2">
             <Label htmlFor="teacher_payment_percent">Оплата педагогу (%)</Label>
             <Input
               id="teacher_payment_percent"
@@ -308,7 +309,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
                 <SelectItem value="per_session">За заняття</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </div> */}
 
           <div className="flex items-center justify-between space-x-2">
             <div className="space-y-0.5">
