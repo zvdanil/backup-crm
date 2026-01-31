@@ -21,7 +21,9 @@ import {
   useCreateStaffPayout,
   useUpdateStaffPayout,
   useDeleteStaffPayout,
+  useUpsertStaffJournalEntry,
   getStaffBillingRuleForDate,
+  getStaffManualRateForDate,
   type StaffBillingRule,
   type StaffManualRateHistory,
   type Deduction,
@@ -43,6 +45,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -89,9 +92,15 @@ export default function StaffDetail() {
   const { data: payouts = [] } = useStaffPayouts(id);
   const { data: activities = [] } = useActivities();
   const { data: allGroupLessons = [] } = useGroupLessons(); // Получаем все групповые занятия для получения названий
+  const { data: manualRateHistory = [] } = useStaffManualRateHistory(id);
   const createPayout = useCreateStaffPayout();
   const updatePayout = useUpdateStaffPayout();
   const deletePayout = useDeleteStaffPayout();
+  const upsertJournalEntry = useUpsertStaffJournalEntry();
+  
+  // State for editing journal entries in financial calendar
+  const [editingCell, setEditingCell] = useState<{ activityId: string; date: string } | null>(null);
+  const [manualValue, setManualValue] = useState<string>('');
   
   const payoutSchema = z.object({
     amount: z.number().min(0.01, 'Сума має бути більше 0'),
@@ -911,6 +920,13 @@ interface FinancialCalendarTableProps {
   auditMode: boolean;
   onPayoutCellClick: (date: string) => void;
   groupLessonsMap: Map<string, string>;
+  manualRateHistory: StaffManualRateHistory[];
+  editingCell: { activityId: string; date: string } | null;
+  manualValue: string;
+  onCellClick: (activityId: string, date: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onManualValueChange: (value: string) => void;
 }
 
 function FinancialCalendarTable({ 
@@ -923,6 +939,13 @@ function FinancialCalendarTable({
   auditMode,
   onPayoutCellClick,
   groupLessonsMap,
+  manualRateHistory,
+  editingCell,
+  manualValue,
+  onCellClick,
+  onSave,
+  onCancel,
+  onManualValueChange,
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const salaryActivityId = useMemo(
@@ -1099,46 +1122,317 @@ function FinancialCalendarTable({
                     const amount = activityEntries.get(dateStr) || 0;
                     const details = entryDetailsByRow.get(activity.id)?.get(dateStr) || [];
                     const hasDetails = details.length > 0;
+                    
+                    // Find entry to check if it's manually edited
+                    const entry = journalEntries.find(
+                      (e) => e.activity_id === activity.id && e.date === dateStr
+                    );
+                    const isManuallyEdited = entry?.is_manual_override === true;
+                    
+                    // Get hours or sessions for display
+                    const hours = entry?.hours_worked;
+                    const currentRate = getStaffManualRateForDate(manualRateHistory, dateStr, activity.id);
+                    const rateType = currentRate?.manual_rate_type || null;
+                    const rateValue = currentRate?.manual_rate_value || 0;
+                    let sessions: number | null = null;
+                    if (rateType === 'per_session' && rateValue > 0 && entry) {
+                      sessions = entry.amount / rateValue;
+                    }
+                    
+                    const isEditing = editingCell?.activityId === activity.id && editingCell?.date === dateStr;
+                    const isWeekendDay = isWeekend(date);
+                    
                     return (
                       <TableCell 
                         key={dateStr} 
                         className={cn(
-                          "text-center",
-                          isWeekend(date) && WEEKEND_BG_COLOR
+                          "text-center p-0.5",
+                          isWeekendDay && WEEKEND_BG_COLOR
                         )}
                       >
                         {amount > 0 ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <Link
-                              to={buildAuditLink('staff-expenses', dateStr)}
-                              className="text-primary hover:underline"
-                            >
-                              {formatCurrency(amount)}
-                            </Link>
-                            {auditMode && hasDetails && (
-                              <Tooltip>
-                                <TooltipTrigger className="text-xs text-muted-foreground">i</TooltipTrigger>
-                                <TooltipContent>
-                                  <div className="space-y-1 text-xs">
-                                    {details.map((entry, idx) => (
-                                      <div key={`${entry.id}-${idx}`}>
-                                        <div>{formatCurrency(entry.amount || 0)}</div>
-                                        {entry.notes && (
-                                          <div className="text-muted-foreground">{entry.notes}</div>
-                                        )}
-                                        {entry.deductions_applied?.length > 0 && (
-                                          <div className="text-muted-foreground">
-                                            Комісії: -{formatCurrency(entry.deductions_applied.reduce((sum: number, d: any) => sum + (d.amount || 0), 0))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))}
+                          <Popover open={isEditing} onOpenChange={(open) => !open && onCancel()}>
+                            <PopoverTrigger asChild>
+                              <button
+                                onClick={() => onCellClick(activity.id, dateStr)}
+                                className={cn(
+                                  "w-full h-8 text-xs rounded hover:bg-muted transition-colors flex flex-col items-center justify-center",
+                                  isManuallyEdited ? "bg-orange-100 text-orange-700 font-medium dark:bg-orange-900/20 dark:text-orange-400" : "bg-primary/10 text-primary font-medium"
+                                )}
+                              >
+                                <div>{formatCurrency(amount)}</div>
+                                {hours !== null && hours !== undefined && (
+                                  <div className="text-[10px] text-muted-foreground/80">
+                                    {hours.toFixed(1)} год.
                                   </div>
-                                </TooltipContent>
-                              </Tooltip>
-                            )}
-                          </div>
-                        ) : '—'}
+                                )}
+                                {sessions !== null && sessions !== undefined && (
+                                  <div className="text-[10px] text-muted-foreground/80">
+                                    {sessions.toFixed(0)} зан.
+                                  </div>
+                                )}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64">
+                              <div className="space-y-3">
+                                <div className="pb-2 border-b">
+                                  <h3 className="text-sm font-semibold">Нарахування для {activity.name}</h3>
+                                  <p className="text-xs text-muted-foreground mt-1">на {formatDate(dateStr)}</p>
+                                </div>
+                                
+                                {rateType === 'hourly' ? (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium">Кількість годин</label>
+                                      <Input
+                                        type="number"
+                                        step="0.5"
+                                        min="0"
+                                        value={manualValue}
+                                        onChange={(e) => onManualValueChange(e.target.value)}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Ставка: {rateValue} ₴/год
+                                      </p>
+                                      {manualValue && !isNaN(parseFloat(manualValue)) && (
+                                        <p className="text-xs font-medium text-primary mt-1">
+                                          Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : rateType === 'per_session' ? (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium">Кількість занять</label>
+                                      <Input
+                                        type="number"
+                                        step="1"
+                                        min="0"
+                                        value={manualValue}
+                                        onChange={(e) => onManualValueChange(e.target.value)}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Ставка: {formatCurrency(rateValue)} / заняття
+                                      </p>
+                                      {manualValue && !isNaN(parseFloat(manualValue)) && (
+                                        <p className="text-xs font-medium text-primary mt-1">
+                                          Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium">Сума (₴)</label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={manualValue}
+                                        onChange={(e) => onManualValueChange(e.target.value)}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        ) : (
+                          <Popover open={isEditing} onOpenChange={(open) => !open && onCancel()}>
+                            <PopoverTrigger asChild>
+                              <button
+                                onClick={() => onCellClick(activity.id, dateStr)}
+                                className={cn(
+                                  "w-full h-8 text-xs rounded hover:bg-muted transition-colors text-muted-foreground",
+                                  isWeekendDay && WEEKEND_BG_COLOR
+                                )}
+                              >
+                                —
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64">
+                              <div className="space-y-3">
+                                <div className="pb-2 border-b">
+                                  <h3 className="text-sm font-semibold">Нарахування для {activity.name}</h3>
+                                  <p className="text-xs text-muted-foreground mt-1">на {formatDate(dateStr)}</p>
+                                </div>
+                                
+                                {rateType === 'hourly' ? (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium">Кількість годин</label>
+                                      <Input
+                                        type="number"
+                                        step="0.5"
+                                        min="0"
+                                        value={manualValue}
+                                        onChange={(e) => onManualValueChange(e.target.value)}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Ставка: {rateValue} ₴/год
+                                      </p>
+                                      {manualValue && !isNaN(parseFloat(manualValue)) && (
+                                        <p className="text-xs font-medium text-primary mt-1">
+                                          Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : rateType === 'per_session' ? (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium">Кількість занять</label>
+                                      <Input
+                                        type="number"
+                                        step="1"
+                                        min="0"
+                                        value={manualValue}
+                                        onChange={(e) => onManualValueChange(e.target.value)}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Ставка: {formatCurrency(rateValue)} / заняття
+                                      </p>
+                                      {manualValue && !isNaN(parseFloat(manualValue)) && (
+                                        <p className="text-xs font-medium text-primary mt-1">
+                                          Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={manualValue === '' || manualValue === null || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div>
+                                      <label className="text-sm font-medium">Сума (₴)</label>
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        value={manualValue}
+                                        onChange={(e) => onManualValueChange(e.target.value)}
+                                        placeholder="0"
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Button
+                                        size="sm"
+                                        onClick={onSave}
+                                        className="flex-1"
+                                        disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                                      >
+                                        Зберегти
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={onCancel}
+                                      >
+                                        Скасувати
+                                      </Button>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        )}
                       </TableCell>
                     );
                   })}
