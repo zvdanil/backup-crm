@@ -928,10 +928,22 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         
         if (customStatus) {
           // Рахуємо кількість відвідувань з цим статусом за місяць ДО поточної дати
+          // ВАЖЛИВО: використовуємо attendanceData з бази + оптимістичні оновлення
           const dateParts = date.split('-').map(Number);
           const dateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
           const monthStart = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
           
+          // Спочатку рахуємо з attendanceData (завантажені з бази)
+          attendanceData.forEach((att: any) => {
+            if (att.enrollment_id !== enrollmentId) return;
+            if (att.status !== status) return;
+            const attDate = new Date(att.date);
+            if (attDate >= monthStart && attDate < dateObj) {
+              visitCountBefore++;
+            }
+          });
+          
+          // Потім додаємо оптимістичні оновлення з attendanceMap (які ще не збережені в базі)
           attendanceMap.forEach((att, key) => {
             // Перевіряємо що це той самий enrollment
             if (!key.startsWith(`${enrollmentId}-`)) return;
@@ -940,7 +952,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             // Перевіряємо що дата в межах місяця і ДО поточної
             const attDateParts = key.split('-').slice(1).join('-').split('-').map(Number);
             const attDate = new Date(attDateParts[0], attDateParts[1] - 1, attDateParts[2]);
-            if (attDate >= monthStart && attDate < dateObj) {
+            // Перевіряємо що ця запис ще не врахована в attendanceData
+            const alreadyCounted = attendanceData.some((attData: any) => 
+              attData.enrollment_id === enrollmentId && 
+              attData.date === key.split('-').slice(1).join('-') &&
+              attData.status === status
+            );
+            if (!alreadyCounted && attDate >= monthStart && attDate < dateObj) {
               visitCountBefore++;
             }
           });
