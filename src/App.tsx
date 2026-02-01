@@ -12,6 +12,7 @@ import StudentDetail from "./pages/StudentDetail";
 import Activities from "./pages/Activities";
 import ActivityExpenseJournal from "./pages/ActivityExpenseJournal";
 import Accounts from "./pages/Accounts";
+import AccountDetail from "./pages/AccountDetail";
 import Attendance from "./pages/Attendance";
 import GroupLessonsJournal from "./pages/GroupLessonsJournal";
 import Groups from "./pages/Groups";
@@ -111,6 +112,14 @@ const AppRoutes = () => {
           element={(
             <ProtectedRoute allowedRoles={['owner', 'admin', 'accountant']}>
               <Accounts />
+            </ProtectedRoute>
+          )}
+        />
+        <Route
+          path="/accounts/:id"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'accountant']}>
+              <AccountDetail />
             </ProtectedRoute>
           )}
         />
