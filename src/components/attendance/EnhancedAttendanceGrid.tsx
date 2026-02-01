@@ -1037,11 +1037,6 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     setIsRecalculating(true);
     
     try {
-      // Отримуємо billing_rules для поточної дати
-      const billingRulesForDate = priceHistory 
-        ? getBillingRulesForDate(activity, priceHistory, formatDateString(new Date()))
-        : activity.billing_rules;
-      
       // Групуємо attendance по enrollment_id
       const attendanceByEnrollment = new Map<string, Array<{ date: string; status: AttendanceStatus | null; key: string }>>();
       
@@ -1077,6 +1072,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         for (const record of sortedRecords) {
           if (!record.status) continue;
           
+          // Отримуємо billing_rules ДЛЯ ДАТИ ВІДМІТКИ (з урахуванням історії)
+          const billingRulesForDate = priceHistory 
+            ? getBillingRulesForDate(activity, priceHistory, record.date)
+            : activity.billing_rules;
+          
           // Перевіряємо чи це subscription_with_logic
           const customStatus = billingRulesForDate?.custom_statuses?.find(
             (cs: any) => cs.id === record.status && cs.is_active !== false && cs.type === 'subscription_with_logic'
@@ -1088,7 +1088,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             visitCountByStatus.set(record.status, visitCountBefore + 1);
           }
           
-          // Розраховуємо нове value
+          // Розраховуємо нове value на основі ПОТОЧНИХ правил для цієї дати
           const newValue = calculateValueFromBillingRules(
             record.date,
             record.status,
