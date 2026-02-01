@@ -33,6 +33,8 @@ import {
   WEEKEND_BG_COLOR,
   formatDateString,
   filterDaysByPeriod,
+  getMonthStartDate,
+  getMonthEndDate,
   type PeriodFilter
 } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
@@ -531,9 +533,16 @@ export default function GardenAttendanceJournal() {
         }
 
         // 5. Calculate accruals
+        const fixedRules = billingRules.filter(
+          (rule: any) => rule.rate_type === 'fixed' && (rule.activity_id === null || rule.activity_id === baseTariffActivityId)
+        );
+        
         const accruals = calculateMonthlyStaffAccruals({
           attendanceRecords,
           getRuleForDate: getBillingRuleForDate,
+          monthStartDate: monthStart,
+          monthEndDate: monthEnd,
+          fixedRules,
         });
 
         // 6. Collect all staff IDs that have billing rules or accruals

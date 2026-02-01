@@ -40,6 +40,8 @@ import {
   calculateHourlyValueFromRule,
   formatDateString,
   filterDaysByPeriod,
+  getMonthStartDate,
+  getMonthEndDate,
   type PeriodFilter
 } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
@@ -355,9 +357,18 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const syncStaffJournalEntriesForMonth = useCallback(async (recordsOverride?: AttendanceRecord[]) => {
     const records = recordsOverride ?? buildAttendanceRecordsFromMap();
+    const monthStartDate = getMonthStartDate(year, month);
+    const monthEndDate = getMonthEndDate(year, month);
+    const fixedRules = allStaffBillingRules.filter(
+      rule => rule.rate_type === 'fixed' && (rule.activity_id === null || rule.activity_id === activityId)
+    );
+    
     const accruals = calculateMonthlyStaffAccruals({
       attendanceRecords: records,
       getRuleForDate: getBillingRuleForDate,
+      monthStartDate,
+      monthEndDate,
+      fixedRules,
     });
 
     const dateStrings = days.map((day) => formatDateString(day));
@@ -410,7 +421,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     if (promises.length > 0) {
       await Promise.allSettled(promises);
     }
-  }, [activityId, allStaffBillingRules, buildAttendanceRecordsFromMap, days, deleteStaffJournalEntry, getBillingRuleForDate, staffMap, upsertStaffJournalEntry]);
+  }, [activityId, allStaffBillingRules, buildAttendanceRecordsFromMap, days, deleteStaffJournalEntry, getBillingRuleForDate, staffMap, upsertStaffJournalEntry, year, month]);
 
   // Отримуємо billing rules для активності на дату
   const getActivityBillingRulesForDate = useCallback((date: string) => {
@@ -695,11 +706,20 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const monthlyAccruals = useMemo(() => {
     const records = buildAttendanceRecordsFromMap();
+    const monthStartDate = getMonthStartDate(year, month);
+    const monthEndDate = getMonthEndDate(year, month);
+    const fixedRules = allStaffBillingRules.filter(
+      rule => rule.rate_type === 'fixed' && (rule.activity_id === null || rule.activity_id === activityId)
+    );
+    
     return calculateMonthlyStaffAccruals({
       attendanceRecords: records,
       getRuleForDate: getBillingRuleForDate,
+      monthStartDate,
+      monthEndDate,
+      fixedRules,
     });
-  }, [buildAttendanceRecordsFromMap, getBillingRuleForDate]);
+  }, [buildAttendanceRecordsFromMap, getBillingRuleForDate, year, month, allStaffBillingRules, activityId]);
 
   // Оплата педагогу за день - сума нарахувань за правилами
   const teacherPayments = useMemo(() => {

@@ -49,8 +49,11 @@ const addAccrual = (
 export function calculateMonthlyStaffAccruals(params: {
   attendanceRecords: AttendanceRecord[];
   getRuleForDate: RuleForDate;
+  monthStartDate?: string; // 'YYYY-MM-DD' format, 1st day of month
+  monthEndDate?: string;   // 'YYYY-MM-DD' format, last day of month
+  fixedRules?: StaffBillingRule[]; // Fixed rules for the activity
 }): Map<string, Map<string, DailyAccrual>> {
-  const { attendanceRecords, getRuleForDate } = params;
+  const { attendanceRecords, getRuleForDate, monthStartDate, monthEndDate, fixedRules } = params;
 
   const presentRecords = attendanceRecords.filter((record) => record.status === 'present');
   const recordsByDate = new Map<string, AttendanceRecord[]>();
@@ -63,18 +66,60 @@ export function calculateMonthlyStaffAccruals(params: {
   const sortedDates = Array.from(recordsByDate.keys()).sort();
   const accruals = new Map<string, Map<string, DailyAccrual>>();
 
-  // Fixed: once per month on first present day where rule is fixed
-  for (const date of sortedDates) {
-    const rule = getRuleForDate(date);
-    if (rule && rule.rate_type === 'fixed') {
-      addAccrual(
-        accruals,
-        rule.staff_id,
-        date,
-        normalizeValue(rule.rate),
-        [`Фікс: ${formatMonthLabel(date)}`]
-      );
-      break;
+  // Fixed: accrue on 1st day of month OR on effective_from date if assigned mid-month
+  // No longer depends on attendance marks
+  if (fixedRules && fixedRules.length > 0 && monthStartDate && monthEndDate) {
+    const processedStaff = new Set<string>(); // One fixed accrual per staff per month
+    
+    fixedRules
+      .filter(rule => rule.rate_type === 'fixed')
+      .forEach(rule => {
+        // Skip if already processed this staff member
+        if (processedStaff.has(rule.staff_id)) return;
+        
+        const effectiveFrom = rule.effective_from;
+        const effectiveTo = rule.effective_to;
+        
+        // Check if rule is active during this month
+        // Rule ended before month started
+        if (effectiveTo && effectiveTo < monthStartDate) return;
+        // Rule starts after month ends
+        if (effectiveFrom > monthEndDate) return;
+        
+        // Determine accrual date:
+        // - If rule was active before month started → 1st day of month
+        // - If rule starts during the month → effective_from date
+        let accrualDate: string;
+        if (effectiveFrom <= monthStartDate) {
+          accrualDate = monthStartDate;
+        } else {
+          accrualDate = effectiveFrom;
+        }
+        
+        addAccrual(
+          accruals,
+          rule.staff_id,
+          accrualDate,
+          normalizeValue(rule.rate),
+          [`Фікс: ${formatMonthLabel(accrualDate)}`]
+        );
+        
+        processedStaff.add(rule.staff_id);
+      });
+  } else {
+    // Fallback to old behavior if new params not provided (backward compatibility)
+    for (const date of sortedDates) {
+      const rule = getRuleForDate(date);
+      if (rule && rule.rate_type === 'fixed') {
+        addAccrual(
+          accruals,
+          rule.staff_id,
+          date,
+          normalizeValue(rule.rate),
+          [`Фікс: ${formatMonthLabel(date)}`]
+        );
+        break;
+      }
     }
   }
 
