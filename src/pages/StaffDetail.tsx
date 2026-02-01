@@ -466,20 +466,52 @@ export default function StaffDetail() {
   const handleSaveManualEntry = () => {
     if (!editingCell || !id) return;
 
-    // Extract realActivityId from rowKey (editingCell.activityId is now rowKey)
+    // Extract realActivityId and mode from rowKey (editingCell.activityId is now rowKey)
     const parts = editingCell.activityId.split(':');
     const activityIdPart = parts[0]; // "abc123" or "none"
+    const mode = parts[1]; // "auto" or "manual"
     const realActivityId = activityIdPart === 'none' ? null : activityIdPart;
+    const isEditingAutoEntry = mode === 'auto';
 
     // Get manual rate for this date and activity
     const currentRate = getStaffManualRateForDate(manualRateHistory, editingCell.date, realActivityId);
     const rateType = currentRate?.manual_rate_type || null;
     const rateValue = currentRate?.manual_rate_value || 0;
 
-    // Find existing entry to get its ID - check both manual and auto entries
-    const existing = journalEntries.find(
-      (entry) => (entry.activity_id === realActivityId || (entry.activity_id === null && realActivityId === null)) && entry.date === editingCell.date
+    // Find existing auto entry (to zero out if editing auto row)
+    const existingAutoEntry = journalEntries.find(
+      (entry) => (entry.activity_id === realActivityId || (entry.activity_id === null && realActivityId === null)) 
+        && entry.date === editingCell.date 
+        && entry.is_manual_override === false
     );
+    
+    // Find existing manual entry (to update)
+    const existingManualEntry = journalEntries.find(
+      (entry) => (entry.activity_id === realActivityId || (entry.activity_id === null && realActivityId === null)) 
+        && entry.date === editingCell.date 
+        && entry.is_manual_override === true
+    );
+    
+    // Use manual entry for update, or auto entry if editing auto row and no manual exists
+    const existing = existingManualEntry || (isEditingAutoEntry ? null : existingAutoEntry);
+    
+    // Function to zero out auto entry when creating manual override
+    const zeroOutAutoEntry = () => {
+      if (isEditingAutoEntry && existingAutoEntry && existingAutoEntry.amount !== 0) {
+        upsertJournalEntry.mutate({
+          id: existingAutoEntry.id,
+          staff_id: id,
+          activity_id: realActivityId,
+          date: editingCell.date,
+          amount: 0,
+          base_amount: existingAutoEntry.base_amount,
+          hours_worked: 0,
+          deductions_applied: existingAutoEntry.deductions_applied || [],
+          is_manual_override: false, // Keep as auto entry
+          notes: 'Обнулено (є ручне коригування)',
+        });
+      }
+    };
 
     if (rateType === 'hourly') {
       // Hourly: input hours, amount = hours * rate
@@ -506,6 +538,7 @@ export default function StaffDetail() {
         notes: `${hours} год. × ${rateValue} ₴`,
       }, {
         onSuccess: () => {
+          zeroOutAutoEntry();
           setEditingCell(null);
           setPopoverOpenKey(null);
           setManualValue('');
@@ -550,14 +583,18 @@ export default function StaffDetail() {
             : `Ручне введення (${formatCurrency(baseAmount)})`,
           bonus: bonus !== 0 ? bonus : null,
           bonus_notes: perWorkingDayState.bonusNotes || null,
-        });
-        
-        setEditingCell(null);
-        setPerWorkingDayState({
-          attendanceStatus: null,
-          manualAmount: '',
-          bonus: '',
-          bonusNotes: '',
+        }, {
+          onSuccess: () => {
+            zeroOutAutoEntry();
+            setEditingCell(null);
+            setPopoverOpenKey(null);
+            setPerWorkingDayState({
+              attendanceStatus: null,
+              manualAmount: '',
+              bonus: '',
+              bonusNotes: '',
+            });
+          }
         });
       });
     } else if (rateType === 'per_session') {
@@ -583,6 +620,7 @@ export default function StaffDetail() {
         notes: `${sessions} зан. × ${rateValue} ₴`,
       }, {
         onSuccess: () => {
+          zeroOutAutoEntry();
           setEditingCell(null);
           setPopoverOpenKey(null);
           setManualValue('');
@@ -608,6 +646,7 @@ export default function StaffDetail() {
         is_manual_override: true,
       }, {
         onSuccess: () => {
+          zeroOutAutoEntry();
           setEditingCell(null);
           setPopoverOpenKey(null);
           setManualValue('');
