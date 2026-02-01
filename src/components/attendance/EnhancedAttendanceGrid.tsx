@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -1028,6 +1029,121 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     setSelectedGroups(newSelected);
   };
 
+  // Функція для пересчёту всіх відміток за місяць
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  
+  const handleRecalculateMonth = async () => {
+    if (!activity || isRecalculating) return;
+    
+    setIsRecalculating(true);
+    
+    try {
+      // Отримуємо billing_rules для поточної дати
+      const billingRulesForDate = priceHistory 
+        ? getBillingRulesForDate(activity, priceHistory, formatDateString(new Date()))
+        : activity.billing_rules;
+      
+      // Групуємо attendance по enrollment_id
+      const attendanceByEnrollment = new Map<string, Array<{ date: string; status: AttendanceStatus | null; key: string }>>();
+      
+      attendanceMap.forEach((att, key) => {
+        const parts = key.split('-');
+        const enrollmentId = parts[0];
+        const date = parts.slice(1).join('-');
+        
+        if (!attendanceByEnrollment.has(enrollmentId)) {
+          attendanceByEnrollment.set(enrollmentId, []);
+        }
+        attendanceByEnrollment.get(enrollmentId)!.push({
+          date,
+          status: att.status,
+          key,
+        });
+      });
+      
+      const updatePromises: Promise<any>[] = [];
+      
+      // Для кожного enrollment
+      for (const [enrollmentId, records] of attendanceByEnrollment) {
+        // Знаходимо enrollment для отримання custom_price та discount
+        const enrollment = filteredEnrollments.find(e => e.id === enrollmentId);
+        if (!enrollment) continue;
+        
+        // Сортуємо записи по даті
+        const sortedRecords = records.sort((a, b) => a.date.localeCompare(b.date));
+        
+        // Підраховуємо відвідування для subscription_with_logic по кожному статусу
+        const visitCountByStatus = new Map<string, number>();
+        
+        for (const record of sortedRecords) {
+          if (!record.status) continue;
+          
+          // Перевіряємо чи це subscription_with_logic
+          const customStatus = billingRulesForDate?.custom_statuses?.find(
+            (cs: any) => cs.id === record.status && cs.is_active !== false && cs.type === 'subscription_with_logic'
+          );
+          
+          let visitCountBefore = 0;
+          if (customStatus) {
+            visitCountBefore = visitCountByStatus.get(record.status) || 0;
+            visitCountByStatus.set(record.status, visitCountBefore + 1);
+          }
+          
+          // Розраховуємо нове value
+          const newValue = calculateValueFromBillingRules(
+            record.date,
+            record.status,
+            null,
+            enrollment.custom_price,
+            enrollment.discount_percent || 0,
+            billingRulesForDate || null,
+            visitCountBefore
+          );
+          
+          const chargedAmount = newValue !== null ? newValue : 0;
+          const existing = attendanceMap.get(record.key);
+          
+          // Оновлюємо тільки якщо значення змінилось
+          if (existing && (existing.value !== newValue || existing.amount !== chargedAmount)) {
+            updatePromises.push(
+              setAttendance.mutateAsync({
+                enrollment_id: enrollmentId,
+                date: record.date,
+                status: record.status,
+                charged_amount: chargedAmount,
+                value: newValue,
+                notes: existing.notes || null,
+                manual_value_edit: false,
+              })
+            );
+          }
+        }
+      }
+      
+      if (updatePromises.length > 0) {
+        await Promise.allSettled(updatePromises);
+        toast({
+          title: 'Перерахунок завершено',
+          description: `Оновлено ${updatePromises.length} записів`,
+        });
+      } else {
+        toast({
+          title: 'Перерахунок не потрібен',
+          description: 'Всі записи вже актуальні',
+        });
+      }
+    } catch (error) {
+      console.error('Error recalculating:', error);
+      toast({
+        title: 'Помилка перерахунку',
+        description: 'Спробуйте ще раз',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
+
   if (enrollments.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
@@ -1133,17 +1249,29 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         <h2 className="text-lg font-semibold flex-1 text-center">
           {MONTHS[month]} {year}
         </h2>
-        <div className="w-[140px]">
-          <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="day">День</SelectItem>
-              <SelectItem value="week">Тиждень</SelectItem>
-              <SelectItem value="month">Місяць</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-2">
+          <div className="w-[140px]">
+            <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">День</SelectItem>
+                <SelectItem value="week">Тиждень</SelectItem>
+                <SelectItem value="month">Місяць</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleRecalculateMonth}
+            disabled={isRecalculating}
+            title="Перерахувати всі відмітки за місяць"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${isRecalculating ? 'animate-spin' : ''}`} />
+            {isRecalculating ? 'Перерахунок...' : 'Перерахувати'}
+          </Button>
         </div>
         <Button variant="outline" size="icon" onClick={handleNextMonth}>
           <ChevronRight className="h-4 w-4" />
