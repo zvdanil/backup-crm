@@ -290,6 +290,20 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     return map;
   }, [staff]);
 
+  // Helper функция: проверяет, должен ли статус учитываться для расчёта ЗП
+  const isStatusForSalary = useCallback((status: AttendanceStatus | null): boolean => {
+    if (!status) return false;
+    if (status === 'present') return true;
+    // Проверяем кастомные статусы с use_for_salary: true
+    if (activity?.billing_rules?.custom_statuses) {
+      const customStatus = activity.billing_rules.custom_statuses.find(
+        (cs) => cs.id === status && cs.is_active !== false && cs.use_for_salary === true
+      );
+      return !!customStatus;
+    }
+    return false;
+  }, [activity]);
+
   const buildAttendanceRecordsFromMap = useCallback((mapOverride?: Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; notes: string | null; manual_value_edit: boolean }>) => {
     const map = mapOverride ?? attendanceMap;
     const records: AttendanceRecord[] = [];
@@ -303,13 +317,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = map.get(key);
 
-        if (attendance?.status === 'present' && studentId) {
+        // Учитываем 'present' ИЛИ кастомные статусы с use_for_salary: true
+        if (attendance?.status && isStatusForSalary(attendance.status) && studentId) {
           records.push({
             date: dateStr,
             enrollment_id: enrollment.id,
             student_id: studentId,
             student_name: studentName,
-            status: 'present',
+            status: attendance.status, // Сохраняем реальный статус (может быть 'present' или UUID)
             value: attendance.value ?? attendance.amount ?? 0,
           });
         }
@@ -317,7 +332,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     });
 
     return records;
-  }, [attendanceMap, days, filteredEnrollments]);
+  }, [attendanceMap, days, filteredEnrollments, isStatusForSalary]);
 
   // Створюємо мапу activity_id -> staff_id для швидкого пошуку вчителя за активністю
   // Функція для пошуку teacher_id через staff_billing_rules для конкретної активності та дати
@@ -698,14 +713,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = attendanceMap.get(key);
-        if (attendance?.status === 'present') {
+        // Учитываем 'present' ИЛИ кастомные статусы с use_for_salary: true для отображения в журнале
+        if (attendance?.status && isStatusForSalary(attendance.status)) {
           totals[groupId][dateStr] = (totals[groupId][dateStr] || 0) + 1;
         }
       });
     });
 
     return totals;
-  }, [visibleGroupRows, filteredEnrollments, days, attendanceMap]);
+  }, [visibleGroupRows, filteredEnrollments, days, attendanceMap, isStatusForSalary]);
 
   const monthlyAccruals = useMemo(() => {
     const records = buildAttendanceRecordsFromMap();
@@ -950,7 +966,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       // І перевіряємо попередній статус ДО збереження
       const existing = attendanceMap.get(`${enrollmentId}-${date}`);
       const isManualEdit = existing?.manual_value_edit || false;
-      const wasPresent = existing?.status === 'present';
+      const wasPresentForSalary = existing?.status ? isStatusForSalary(existing.status) : false;
       
       console.log('[Dashboard Debug] EnhancedAttendanceGrid.handleStatusChange calling mutateAsync', {
         enrollmentId,
