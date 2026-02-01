@@ -1,11 +1,13 @@
 import type { StaffBillingRule } from '@/hooks/useStaffBilling';
+import type { CustomAttendanceStatus } from '@/hooks/useActivities';
+import type { AttendanceStatus } from '@/lib/attendance';
 
 export interface AttendanceRecord {
   date: string;
   enrollment_id: string;
   student_id: string;
   student_name?: string | null;
-  status: 'present' | 'sick' | 'absent' | 'vacation' | null;
+  status: AttendanceStatus | null; // Может быть 'present', 'sick', 'absent', 'vacation' или UUID кастомного статуса
   value?: number | null;
 }
 
@@ -52,10 +54,20 @@ export function calculateMonthlyStaffAccruals(params: {
   monthStartDate?: string; // 'YYYY-MM-DD' format, 1st day of month
   monthEndDate?: string;   // 'YYYY-MM-DD' format, last day of month
   fixedRules?: StaffBillingRule[]; // Fixed rules for the activity
+  customStatuses?: CustomAttendanceStatus[]; // Кастомные статусы для проверки use_for_salary
 }): Map<string, Map<string, DailyAccrual>> {
-  const { attendanceRecords, getRuleForDate, monthStartDate, monthEndDate, fixedRules } = params;
+  const { attendanceRecords, getRuleForDate, monthStartDate, monthEndDate, fixedRules, customStatuses } = params;
 
-  const presentRecords = attendanceRecords.filter((record) => record.status === 'present');
+  // Фильтруем записи: 'present' ИЛИ кастомные статусы с use_for_salary: true
+  const presentRecords = attendanceRecords.filter((record) => {
+    if (record.status === 'present') return true;
+    if (!record.status || !customStatuses) return false;
+    // Проверяем кастомные статусы
+    const customStatus = customStatuses.find(
+      (cs) => cs.id === record.status && cs.is_active !== false && cs.use_for_salary === true
+    );
+    return !!customStatus;
+  });
   const recordsByDate = new Map<string, AttendanceRecord[]>();
   presentRecords.forEach((record) => {
     const list = recordsByDate.get(record.date) || [];

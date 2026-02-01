@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Checkbox } from '@/components/ui/checkbox';
 import type { BillingRules, BillingRule, BillingRuleType, CustomAttendanceStatus } from '@/hooks/useActivities';
 import { ATTENDANCE_LABELS, ATTENDANCE_FULL_LABELS } from '@/lib/attendance';
 import type { AttendanceStatus } from '@/lib/attendance';
@@ -401,6 +402,24 @@ export function BillingRulesEditor({
                       Може бути від'ємним (для відпрацювань/повернень)
                     </p>
                   </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`use-for-salary-${customStatus.id}`}
+                    checked={customStatus.use_for_salary || false}
+                    onCheckedChange={(checked) =>
+                      updateCustomStatus(customStatus.id, {
+                        use_for_salary: checked === true,
+                      })
+                    }
+                  />
+                  <Label
+                    htmlFor={`use-for-salary-${customStatus.id}`}
+                    className="text-xs font-normal cursor-pointer"
+                  >
+                    Використовувати для розрахунку ЗП педагогу
+                  </Label>
                 </div>
 
                 <p className="text-xs text-muted-foreground">

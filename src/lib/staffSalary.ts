@@ -92,7 +92,12 @@ export function calculateStaffSalary(input: SalaryCalculationInput): SalaryCalcu
       
       case 'per_session':
         // Fixed amount per session
-        if (attendanceStatus === 'present') {
+        // Проверяем: 'present' ИЛИ кастомный статус с use_for_salary: true
+        const isPresentForSalary = attendanceStatus === 'present' || 
+          (attendanceStatus && activityBillingRules?.custom_statuses?.some(
+            (cs) => cs.id === attendanceStatus && cs.is_active !== false && cs.use_for_salary === true
+          ));
+        if (isPresentForSalary) {
           baseAmount = staffBillingRule.rate;
         }
         break;

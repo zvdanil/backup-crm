@@ -34,6 +34,7 @@ export interface CustomAttendanceStatus {
   type: BillingRuleType;
   color: string; // Hex цвет (например, "#FF5733")
   is_active: boolean;
+  use_for_salary?: boolean; // Использовать для расчёта ЗП педагогу (по умолчанию false)
   // Поля для subscription_with_logic
   lesson_limit?: number; // Ліміт занять
   return_percent?: number; // Відсоток повернення (%)

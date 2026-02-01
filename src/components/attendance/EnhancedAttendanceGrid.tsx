@@ -371,6 +371,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       monthStartDate,
       monthEndDate,
       fixedRules,
+      customStatuses: activity?.billing_rules?.custom_statuses,
     });
 
     const dateStrings = days.map((day) => formatDateString(day));
@@ -720,6 +721,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       monthStartDate,
       monthEndDate,
       fixedRules,
+      customStatuses: activity?.billing_rules?.custom_statuses,
     });
   }, [buildAttendanceRecordsFromMap, getBillingRuleForDate, year, month, allStaffBillingRules, activityId]);
 
@@ -1032,17 +1034,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   // Функція для пересчёту всіх відміток за місяць
   const handleRecalculateMonth = async () => {
-    console.log('handleRecalculateMonth called', { 
-      activity: activity?.id, 
-      isRecalculating,
-      attendanceMapSize: attendanceMap.size,
-      priceHistory: priceHistory?.length,
-    });
-    
-    if (!activity || isRecalculating) {
-      console.log('Early return:', { activity: !!activity, isRecalculating });
-      return;
-    }
+    if (!activity || isRecalculating) return;
     
     setIsRecalculating(true);
     
@@ -1051,7 +1043,6 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       const attendanceByEnrollment = new Map<string, Array<{ date: string; status: AttendanceStatus | null; key: string }>>();
       
       attendanceMap.forEach((att, key) => {
-        console.log('Processing attendance:', { key, status: att.status, amount: att.amount, value: att.value });
         const parts = key.split('-');
         const enrollmentId = parts[0];
         const date = parts.slice(1).join('-');
@@ -1112,19 +1103,6 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           
           const chargedAmount = newValue !== null ? newValue : 0;
           const existing = attendanceMap.get(record.key);
-          
-          // DEBUG: Виводимо інформацію для діагностики
-          console.log('Recalculate check:', {
-            date: record.date,
-            status: record.status,
-            existingValue: existing?.value,
-            existingAmount: existing?.amount,
-            newValue,
-            chargedAmount,
-            billingRulesType: billingRulesForDate?.type,
-            customStatuses: billingRulesForDate?.custom_statuses?.map((cs: any) => ({ id: cs.id, name: cs.name, type: cs.type })),
-            visitCountBefore,
-          });
           
           // Оновлюємо тільки якщо значення змінилось
           if (existing && (existing.value !== newValue || existing.amount !== chargedAmount)) {

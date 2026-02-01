@@ -516,13 +516,20 @@ export default function GardenAttendanceJournal() {
           const studentId = baseTariffEnrollment.student_id;
           const studentName = baseTariffEnrollment.students?.full_name || att.enrollments?.students?.full_name || '';
 
-          if (att.status === 'present' && studentId) {
+          // Проверяем: 'present' ИЛИ кастомный статус с use_for_salary: true
+          const baseTariffActivity = activitiesMap.get(baseTariffActivityId);
+          const isPresentForSalary = att.status === 'present' || 
+            (att.status && baseTariffActivity?.billing_rules?.custom_statuses?.some(
+              (cs) => cs.id === att.status && cs.is_active !== false && cs.use_for_salary === true
+            ));
+
+          if (isPresentForSalary && studentId) {
             attendanceRecords.push({
               date: att.date,
               enrollment_id: baseTariffEnrollment.id, // Use base tariff enrollment_id
               student_id: studentId,
               student_name: studentName,
-              status: 'present',
+              status: att.status, // Сохраняем реальный статус (может быть 'present' или UUID)
               value: att.value ?? att.charged_amount ?? 0,
             });
           }
@@ -537,12 +544,14 @@ export default function GardenAttendanceJournal() {
           (rule: any) => rule.rate_type === 'fixed' && (rule.activity_id === null || rule.activity_id === baseTariffActivityId)
         );
         
+        const baseTariffActivity = activitiesMap.get(baseTariffActivityId);
         const accruals = calculateMonthlyStaffAccruals({
           attendanceRecords,
           getRuleForDate: getBillingRuleForDate,
           monthStartDate: monthStart,
           monthEndDate: monthEnd,
           fixedRules,
+          customStatuses: baseTariffActivity?.billing_rules?.custom_statuses,
         });
 
         // 6. Collect all staff IDs that have billing rules or accruals
