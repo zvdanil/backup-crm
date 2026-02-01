@@ -1102,6 +1102,19 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           const chargedAmount = newValue !== null ? newValue : 0;
           const existing = attendanceMap.get(record.key);
           
+          // DEBUG: Виводимо інформацію для діагностики
+          console.log('Recalculate check:', {
+            date: record.date,
+            status: record.status,
+            existingValue: existing?.value,
+            existingAmount: existing?.amount,
+            newValue,
+            chargedAmount,
+            billingRulesType: billingRulesForDate?.type,
+            customStatuses: billingRulesForDate?.custom_statuses?.map((cs: any) => ({ id: cs.id, name: cs.name, type: cs.type })),
+            visitCountBefore,
+          });
+          
           // Оновлюємо тільки якщо значення змінилось
           if (existing && (existing.value !== newValue || existing.amount !== chargedAmount)) {
             updatePromises.push(
