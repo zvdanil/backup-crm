@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Pencil, User, Wallet, Calendar, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -100,8 +100,7 @@ export default function StaffDetail() {
   
   // State for editing journal entries in financial calendar
   const [editingCell, setEditingCell] = useState<{ activityId: string; date: string } | null>(null);
-  const [popoverOpenKey, setPopoverOpenKey] = useState<string | null>(null); // Key: "activityId:date"
-  const popoverActivityIdRef = useRef<string | null>(null); // Store realActivityId when popover opens to prevent race conditions
+  const [popoverOpenKey, setPopoverOpenKey] = useState<string | null>(null); // Key: "rowKey:date"
   const [manualValue, setManualValue] = useState<string>('');
   // State for per_working_day popup
   const [perWorkingDayState, setPerWorkingDayState] = useState<{
@@ -221,7 +220,6 @@ export default function StaffDetail() {
     // Close popover when changing month
     setEditingCell(null);
     setPopoverOpenKey(null);
-    popoverActivityIdRef.current = null;
     if (calendarMonth === 0) {
       setCalendarMonth(11);
       setCalendarYear(calendarYear - 1);
@@ -234,7 +232,6 @@ export default function StaffDetail() {
     // Close popover when changing month
     setEditingCell(null);
     setPopoverOpenKey(null);
-    popoverActivityIdRef.current = null;
     if (calendarMonth === 11) {
       setCalendarMonth(0);
       setCalendarYear(calendarYear + 1);
@@ -387,11 +384,14 @@ export default function StaffDetail() {
   }, [payouts, selectedPayoutDate]);
 
   // Handle cell click for editing journal entries
-  const handleJournalEntryCellClick = async (activityId: string, date: string) => {
+  // rowKey format: "{activityId}:{mode}:{type}[:groupLessonId]" e.g. "abc123:auto:regular" or "none:manual:regular"
+  const handleJournalEntryCellClick = async (rowKey: string, date: string) => {
     if (!id) return;
     
-    // Convert empty string to null for activities without activity_id
-    const realActivityId = activityId === '' ? null : activityId;
+    // Extract realActivityId from rowKey
+    const parts = rowKey.split(':');
+    const activityIdPart = parts[0]; // "abc123" or "none"
+    const realActivityId = activityIdPart === 'none' ? null : activityIdPart;
     
     // Check if date is in current month/year
     const dateObj = new Date(date);
@@ -400,15 +400,9 @@ export default function StaffDetail() {
       return;
     }
     
-    // Normalize null/undefined to empty string for consistent key generation
-    const normalizedActivityId = realActivityId ?? '';
-    
-    // Store realActivityId in ref to prevent race conditions during re-renders
-    popoverActivityIdRef.current = realActivityId;
-    
-    // Set state synchronously first to open popover immediately
-    setEditingCell({ activityId, date });
-    setPopoverOpenKey(`${normalizedActivityId}:${date}`);
+    // Use rowKey as unique identifier for editing state and popover key
+    setEditingCell({ activityId: rowKey, date });
+    setPopoverOpenKey(`${rowKey}:${date}`);
     
     // Find existing entry - check both manual and auto entries
     const existing = journalEntries.find(
@@ -472,8 +466,10 @@ export default function StaffDetail() {
   const handleSaveManualEntry = () => {
     if (!editingCell || !id) return;
 
-    // Convert empty string to null for activities without activity_id
-    const realActivityId = editingCell.activityId === '' ? null : editingCell.activityId;
+    // Extract realActivityId from rowKey (editingCell.activityId is now rowKey)
+    const parts = editingCell.activityId.split(':');
+    const activityIdPart = parts[0]; // "abc123" or "none"
+    const realActivityId = activityIdPart === 'none' ? null : activityIdPart;
 
     // Get manual rate for this date and activity
     const currentRate = getStaffManualRateForDate(manualRateHistory, editingCell.date, realActivityId);
@@ -512,7 +508,6 @@ export default function StaffDetail() {
         onSuccess: () => {
           setEditingCell(null);
           setPopoverOpenKey(null);
-          popoverActivityIdRef.current = null;
           setManualValue('');
         }
       });
@@ -590,7 +585,6 @@ export default function StaffDetail() {
         onSuccess: () => {
           setEditingCell(null);
           setPopoverOpenKey(null);
-          popoverActivityIdRef.current = null;
           setManualValue('');
         }
       });
@@ -616,7 +610,6 @@ export default function StaffDetail() {
         onSuccess: () => {
           setEditingCell(null);
           setPopoverOpenKey(null);
-          popoverActivityIdRef.current = null;
           setManualValue('');
         }
       });
@@ -893,7 +886,6 @@ export default function StaffDetail() {
                         onCancel={() => {
                           setEditingCell(null);
                           setPopoverOpenKey(null);
-                          popoverActivityIdRef.current = null;
                           setManualValue('');
                           setPerWorkingDayState({
                             attendanceStatus: null,
@@ -907,7 +899,6 @@ export default function StaffDetail() {
                         onPerWorkingDayStateChange={setPerWorkingDayState}
                         popoverOpenKey={popoverOpenKey}
                         setPopoverOpenKey={setPopoverOpenKey}
-                        popoverActivityIdRef={popoverActivityIdRef}
                       />
                     </div>
                   </TabsContent>
@@ -1223,7 +1214,6 @@ interface FinancialCalendarTableProps {
   }) => void;
   popoverOpenKey: string | null;
   setPopoverOpenKey: (key: string | null) => void;
-  popoverActivityIdRef: React.RefObject<string | null>;
 }
 
 function FinancialCalendarTable({ 
@@ -1247,7 +1237,6 @@ function FinancialCalendarTable({
   onPerWorkingDayStateChange,
   popoverOpenKey,
   setPopoverOpenKey,
-  popoverActivityIdRef,
 }: FinancialCalendarTableProps) {
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const salaryActivityId = useMemo(
@@ -1522,17 +1511,11 @@ function FinancialCalendarTable({
                       sessions = entry.amount / rateValue;
                     }
                     
-                    // Compare with realActivityId (convert null to empty string for comparison)
-                    const editingActivityId = editingCell?.activityId === '' ? null : editingCell?.activityId;
-                    const isEditing = editingActivityId === activity.realActivityId && editingCell?.date === dateStr;
+                    // Compare with activity.id (rowKey) for unique identification
+                    const isEditing = editingCell?.activityId === activity.id && editingCell?.date === dateStr;
                     
-                    // Normalize activity.realActivityId to prevent undefined/null mismatch
-                    // Use ref value if available (set when popover opened) to prevent race conditions
-                    const normalizedRealActivityId = popoverActivityIdRef.current !== null 
-                      ? popoverActivityIdRef.current 
-                      : (activity.realActivityId ?? null);
-                    const normalizedForKey = normalizedRealActivityId ?? '';
-                    const currentPopoverKey = `${normalizedForKey}:${dateStr}`;
+                    // Use activity.id (rowKey) for popover key to ensure uniqueness
+                    const currentPopoverKey = `${activity.id}:${dateStr}`;
                     const isPopoverOpen = popoverOpenKey === currentPopoverKey;
                     const isWeekendDay = isWeekend(date);
                     
@@ -1554,7 +1537,7 @@ function FinancialCalendarTable({
                           }}>
                             <PopoverTrigger asChild>
                               <button
-                                onClick={() => onCellClick(activity.realActivityId || '', dateStr)}
+                                onClick={() => onCellClick(activity.id, dateStr)}
                                 className={cn(
                                   "w-full h-8 text-xs rounded hover:bg-muted transition-colors flex flex-col items-center justify-center",
                                   hasBonus ? "bg-green-100 text-green-700 font-medium dark:bg-green-900/20 dark:text-green-400" :
@@ -1827,7 +1810,7 @@ function FinancialCalendarTable({
                           }}>
                             <PopoverTrigger asChild>
                               <button
-                                onClick={() => onCellClick(activity.realActivityId || '', dateStr)}
+                                onClick={() => onCellClick(activity.id, dateStr)}
                                 className={cn(
                                   "w-full h-8 text-xs rounded hover:bg-muted transition-colors text-muted-foreground",
                                   isWeekendDay && WEEKEND_BG_COLOR
