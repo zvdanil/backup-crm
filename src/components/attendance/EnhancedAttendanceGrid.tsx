@@ -1032,7 +1032,17 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   // Функція для пересчёту всіх відміток за місяць
   const handleRecalculateMonth = async () => {
-    if (!activity || isRecalculating) return;
+    console.log('handleRecalculateMonth called', { 
+      activity: activity?.id, 
+      isRecalculating,
+      attendanceMapSize: attendanceMap.size,
+      priceHistory: priceHistory?.length,
+    });
+    
+    if (!activity || isRecalculating) {
+      console.log('Early return:', { activity: !!activity, isRecalculating });
+      return;
+    }
     
     setIsRecalculating(true);
     
@@ -1041,6 +1051,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       const attendanceByEnrollment = new Map<string, Array<{ date: string; status: AttendanceStatus | null; key: string }>>();
       
       attendanceMap.forEach((att, key) => {
+        console.log('Processing attendance:', { key, status: att.status, amount: att.amount, value: att.value });
         const parts = key.split('-');
         const enrollmentId = parts[0];
         const date = parts.slice(1).join('-');
