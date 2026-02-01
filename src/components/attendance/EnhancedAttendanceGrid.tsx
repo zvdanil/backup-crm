@@ -71,6 +71,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [discountPercent, setDiscountPercent] = useState('0');
+  const [isRecalculating, setIsRecalculating] = useState(false);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const totalsScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
@@ -1030,8 +1031,6 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   };
 
   // Функція для пересчёту всіх відміток за місяць
-  const [isRecalculating, setIsRecalculating] = useState(false);
-  
   const handleRecalculateMonth = async () => {
     if (!activity || isRecalculating) return;
     
