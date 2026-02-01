@@ -109,15 +109,24 @@ export function EnhancedAttendanceCell({
       ? getBillingRulesForDate(activity, priceHistory, date)
       : activity?.billing_rules;
 
-    // Розраховуємо value на основі billing_rules для статусу
-    const calculatedValue = calculateValueFromBillingRules(
-      date,
-      newStatus,
-      null, // Для статусу valueInput не потрібен
-      customPrice,
-      discountPercent,
-      billingRulesForDate || null
+    // Перевіряємо чи це subscription_with_logic
+    const customStatus = billingRulesForDate?.custom_statuses?.find(
+      (cs: any) => cs.id === newStatus && cs.is_active !== false && cs.type === 'subscription_with_logic'
     );
+    
+    // Для subscription_with_logic передаємо null — батьківський компонент розрахує з контекстом
+    let calculatedValue: number | null = null;
+    if (!customStatus) {
+      // Розраховуємо value на основі billing_rules для статусу
+      calculatedValue = calculateValueFromBillingRules(
+        date,
+        newStatus,
+        null, // Для статусу valueInput не потрібен
+        customPrice,
+        discountPercent,
+        billingRulesForDate || null
+      );
+    }
 
     // Передаємо статус, розраховане value та notes
     onChange(newStatus, calculatedValue, notes || null);

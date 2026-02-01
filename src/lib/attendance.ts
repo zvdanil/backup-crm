@@ -320,7 +320,8 @@ export function calculateValueFromBillingRules(
   valueInput: number | null,
   customPrice: number | null,
   discountPercent: number,
-  billingRules: any | null | undefined
+  billingRules: any | null | undefined,
+  visitCountBefore?: number // Для subscription_with_logic: количество посещений с этим статусом ДО текущей отметки
 ): number | null {
   // Priority 1: If custom_price is set, use it as fixed (allow 0)
   if (customPrice !== null && customPrice !== undefined) {
@@ -393,6 +394,55 @@ export function calculateValueFromBillingRules(
         baseValue = null;
       }
       break;
+
+    case 'subscription_with_logic': {
+      // Абонемент з логікою: залежить від кількості відвідувань
+      // Отримуємо параметри з customStatus (rule в цьому випадку містить тільки rate та type)
+      // Тому шукаємо customStatus в billingRules
+      const customStatus = billingRules?.custom_statuses?.find(
+        (cs: any) => cs.id === status && cs.is_active !== false && cs.type === 'subscription_with_logic'
+      );
+      
+      if (!customStatus) {
+        baseValue = null;
+        break;
+      }
+      
+      const lessonLimit = customStatus.lesson_limit || 0;
+      const returnPercent = customStatus.return_percent || 0;
+      const skipThresholdPercent = customStatus.skip_threshold_percent || 0;
+      const extraLessonRate = customStatus.extra_lesson_rate || 0;
+      const rate = customStatus.rate || 0;
+      
+      // Поріг пропуску = % від ліміту, при якому НЕ донараховується решта
+      // Тобто при (100% - skipThresholdPercent) донараховується решта
+      const threshold = lessonLimit > 0 
+        ? Math.ceil(lessonLimit * ((100 - skipThresholdPercent) / 100)) 
+        : 0;
+      
+      // Мінімальна сума = ставка * (1 - відсоток повернення / 100)
+      const minAmount = Math.max(0, rate * (1 - returnPercent / 100));
+      // Решта = різниця між повною ставкою та мінімумом
+      const remainingAmount = Math.max(0, rate - minAmount);
+      
+      const currentVisit = (visitCountBefore || 0) + 1; // Поточний візит (1-based)
+      
+      // Логіка нарахування:
+      if (currentVisit === 1) {
+        // Перше відвідування — нараховуємо мінімум
+        baseValue = minAmount;
+      } else if (currentVisit === threshold && threshold > 0 && lessonLimit > 0) {
+        // Досягли порогу — донараховуємо решту
+        baseValue = remainingAmount;
+      } else if (currentVisit > lessonLimit && lessonLimit > 0 && extraLessonRate > 0) {
+        // Понад ліміт — ставка за понадлімітне заняття
+        baseValue = extraLessonRate;
+      } else {
+        // Інші випадки — 0 (вже враховано в мінімумі або донарахуванні)
+        baseValue = 0;
+      }
+      break;
+    }
 
     default:
       baseValue = null;

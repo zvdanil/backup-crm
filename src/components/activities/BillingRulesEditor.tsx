@@ -20,6 +20,7 @@ const BILLING_RULE_TYPES: { value: BillingRuleType; label: string }[] = [
   { value: 'fixed', label: 'Разово (фіксована сума)' },
   { value: 'subscription', label: 'Абонемент (поділити на робочі дні)' },
   { value: 'hourly', label: 'Почасово (ставка × число з журналу)' },
+  { value: 'subscription_with_logic', label: 'Абонемент з логікою (ліміт, поріг, понадліміт)' },
 ];
 
 interface BillingRulesEditorProps {
@@ -408,7 +409,87 @@ export function BillingRulesEditor({
                     'Розрахунок: ставка ÷ кількість робочих днів у місяці'}
                   {customStatus.type === 'hourly' &&
                     'Розрахунок: ставка × число, введене в журналі'}
+                  {customStatus.type === 'subscription_with_logic' &&
+                    'Розрахунок: 1-е заняття = мінімум, поріг = донарахування, понадліміт = ставка за заняття'}
                 </p>
+
+                {/* Дополнительные поля для subscription_with_logic */}
+                {customStatus.type === 'subscription_with_logic' && (
+                  <div className="grid grid-cols-2 gap-3 mt-3 p-3 bg-muted/50 rounded-lg">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Ліміт занять</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={customStatus.lesson_limit || ''}
+                        onChange={(e) =>
+                          updateCustomStatus(customStatus.id, {
+                            lesson_limit: parseInt(e.target.value) || 0,
+                          })
+                        }
+                        placeholder="8"
+                        className="h-9"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">Відсоток повернення (%)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={customStatus.return_percent || ''}
+                        onChange={(e) =>
+                          updateCustomStatus(customStatus.id, {
+                            return_percent: parseFloat(e.target.value) || 0,
+                          })
+                        }
+                        placeholder="20"
+                        className="h-9"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        % від ставки, що повертається при недоборі
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">Поріг пропуску занять (%)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={customStatus.skip_threshold_percent || ''}
+                        onChange={(e) =>
+                          updateCustomStatus(customStatus.id, {
+                            skip_threshold_percent: parseFloat(e.target.value) || 0,
+                          })
+                        }
+                        placeholder="40"
+                        className="h-9"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        При проходженні (100% - поріг) донараховується решта
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">Ставка за понадлімітне заняття (₴)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={customStatus.extra_lesson_rate || ''}
+                        onChange={(e) =>
+                          updateCustomStatus(customStatus.id, {
+                            extra_lesson_rate: parseFloat(e.target.value) || 0,
+                          })
+                        }
+                        placeholder="150"
+                        className="h-9"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}

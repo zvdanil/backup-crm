@@ -900,6 +900,32 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           ? getBillingRulesForDate(activity, priceHistory, date)
           : activity?.billing_rules;
         
+        // Перевіряємо чи це subscription_with_logic
+        let visitCountBefore = 0;
+        const customStatus = billingRulesForDate?.custom_statuses?.find(
+          (cs: any) => cs.id === status && cs.is_active !== false && cs.type === 'subscription_with_logic'
+        );
+        
+        if (customStatus) {
+          // Рахуємо кількість відвідувань з цим статусом за місяць ДО поточної дати
+          const dateParts = date.split('-').map(Number);
+          const dateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+          const monthStart = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
+          
+          attendanceMap.forEach((att, key) => {
+            // Перевіряємо що це той самий enrollment
+            if (!key.startsWith(`${enrollmentId}-`)) return;
+            // Перевіряємо що статус співпадає
+            if (att.status !== status) return;
+            // Перевіряємо що дата в межах місяця і ДО поточної
+            const attDateParts = key.split('-').slice(1).join('-').split('-').map(Number);
+            const attDate = new Date(attDateParts[0], attDateParts[1] - 1, attDateParts[2]);
+            if (attDate >= monthStart && attDate < dateObj) {
+              visitCountBefore++;
+            }
+          });
+        }
+        
         // Розраховуємо value на основі billing_rules для статусу
         finalValue = calculateValueFromBillingRules(
           date,
@@ -907,7 +933,8 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           null, // Для статусу valueInput не потрібен
           customPrice,
           discountPercent,
-          billingRulesForDate || null
+          billingRulesForDate || null,
+          visitCountBefore
         );
       }
       

@@ -20,7 +20,7 @@ export const ACTIVITY_CATEGORY_COLORS: Record<ActivityCategory, string> = {
   salary: 'text-destructive',
 };
 
-export type BillingRuleType = 'fixed' | 'subscription' | 'hourly';
+export type BillingRuleType = 'fixed' | 'subscription' | 'hourly' | 'subscription_with_logic';
 
 export interface BillingRule {
   rate: number;
@@ -34,6 +34,11 @@ export interface CustomAttendanceStatus {
   type: BillingRuleType;
   color: string; // Hex цвет (например, "#FF5733")
   is_active: boolean;
+  // Поля для subscription_with_logic
+  lesson_limit?: number; // Ліміт занять
+  return_percent?: number; // Відсоток повернення (%)
+  skip_threshold_percent?: number; // Поріг пропуску занять (%)
+  extra_lesson_rate?: number; // Ставка за понадлімітне заняття (грн)
 }
 
 export interface BillingRules {
