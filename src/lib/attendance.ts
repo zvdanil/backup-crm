@@ -1,4 +1,39 @@
 /**
+ * Calculate manual rate amount for per_working_day
+ * Uses getWorkingDaysInMonthWithHolidays if available, otherwise falls back to getWorkingDaysInMonth
+ * @param rateValue - ставка за месяц
+ * @param year - год начисления
+ * @param month - месяц начисления (1-12)
+ * @param getWorkingDaysInMonthWithHolidaysFn - async функция для получения рабочих дней с учётом праздников (опционально)
+ * @returns Promise<number> сумма за 1 рабочий день
+ */
+export async function calculateManualRateAmount({
+  rateValue,
+  year,
+  month,
+  getWorkingDaysInMonthWithHolidaysFn
+}: {
+  rateValue: number;
+  year: number;
+  month: number; // 1-12
+  getWorkingDaysInMonthWithHolidaysFn?: (year: number, month: number) => Promise<number>;
+}): Promise<number> {
+  let workingDays = 0;
+  if (getWorkingDaysInMonthWithHolidaysFn) {
+    try {
+      workingDays = await getWorkingDaysInMonthWithHolidaysFn(year, month);
+    } catch (e) {
+      // fallback below
+    }
+  }
+  if (!workingDays) {
+    // month-1 because getWorkingDaysInMonth expects 0-based month
+    workingDays = getWorkingDaysInMonth(year, month - 1);
+  }
+  if (workingDays <= 0) return 0;
+  return Math.round((rateValue / workingDays) * 100) / 100;
+}
+/**
  * Attendance Status Types
  * Базовые статусы (фиксированные)
  */

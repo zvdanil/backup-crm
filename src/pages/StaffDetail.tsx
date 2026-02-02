@@ -7,6 +7,7 @@ import { StaffForm } from '@/components/staff/StaffForm';
 import { useStaffMember, useUpdateStaff } from '@/hooks/useStaff';
 import { formatCurrency, formatDate, getDaysInMonth, formatShortDate, getWeekdayShort, isWeekend, formatDateString, WEEKEND_BG_COLOR, getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 import { getWorkingDaysInMonthWithHolidays } from '@/hooks/useHolidays';
+import { calculateManualRateAmount } from '@/lib/attendance';
 import { StaffBillingEditorNew } from '@/components/staff/StaffBillingEditorNew';
 import { StaffManualRateHistoryEditor } from '@/components/staff/StaffManualRateHistoryEditor';
 import { DeductionsEditor } from '@/components/staff/DeductionsEditor';
@@ -418,16 +419,20 @@ export default function StaffDetail() {
       const dateObj = new Date(date);
       const year = dateObj.getFullYear();
       const month = dateObj.getMonth() + 1;
-      const workingDays = await getWorkingDaysInMonthWithHolidays(year, month);
       const rateValue = currentRate?.manual_rate_value || 0;
-      const dailyRate = workingDays > 0 ? rateValue / workingDays : 0;
-      
+      const dailyRate = await calculateManualRateAmount({
+        rateValue,
+        year,
+        month,
+        getWorkingDaysInMonthWithHolidaysFn: getWorkingDaysInMonthWithHolidays
+      });
+
       // Determine attendance status from existing entry
       let attendanceStatus: 'present' | 'absent' | 'manual' | null = null;
       let manualAmount = '';
       const bonus = existing?.bonus?.toString() || '';
       const bonusNotes = existing?.bonus_notes || '';
-      
+
       if (existing) {
         const baseAmount = existing.amount - (existing.bonus || 0);
         if (Math.abs(baseAmount - 0) < 0.01) {
@@ -439,7 +444,7 @@ export default function StaffDetail() {
           manualAmount = baseAmount.toString();
         }
       }
-      
+
       setPerWorkingDayState({
         attendanceStatus,
         manualAmount,
@@ -1657,6 +1662,7 @@ function FinancialCalendarTable({
                                             onChange={() => onPerWorkingDayStateChange({
                                               ...perWorkingDayState,
                                               attendanceStatus: 'present',
+                                              manualAmount: '', // сброс значения при выборе "Присутній"
                                             })}
                                             className="h-4 w-4"
                                           />
@@ -1673,6 +1679,7 @@ function FinancialCalendarTable({
                                             onChange={() => onPerWorkingDayStateChange({
                                               ...perWorkingDayState,
                                               attendanceStatus: 'absent',
+                                              manualAmount: '', // сброс значения при выборе "Відсутній"
                                             })}
                                             className="h-4 w-4"
                                           />
@@ -1689,6 +1696,7 @@ function FinancialCalendarTable({
                                             onChange={() => onPerWorkingDayStateChange({
                                               ...perWorkingDayState,
                                               attendanceStatus: 'manual',
+                                              // manualAmount не сбрасываем, пользователь может продолжить ввод
                                             })}
                                             className="h-4 w-4"
                                           />

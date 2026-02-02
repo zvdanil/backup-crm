@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { getMonthStartDate, getMonthEndDate, formatLocalDate } from '@/lib/attendance';
 
-export type TransactionType = 'income' | 'expense' | 'payment' | 'salary' | 'household' | 'advance_payment';
+export type TransactionType = 'income' | 'expense' | 'payment' | 'salary' | 'household';
 
 export interface FinanceTransaction {
   id: string;
@@ -91,10 +91,6 @@ export function useCreateFinanceTransaction() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] });
-      // Invalidate advance balances if transaction is for a student with account_id
-      if (data.student_id && data.account_id) {
-        queryClient.invalidateQueries({ queryKey: ['advance_balances'] });
-      }
       // Invalidate all dashboard queries (with year/month variations)
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false });
       // Invalidate student balance queries if transaction is for a student
@@ -239,10 +235,6 @@ export function useUpsertFinanceTransaction() {
       }
     },
     onSuccess: async (data) => {
-      // Invalidate advance balances if transaction is for a student with account_id
-      if (data?.student_id && data?.account_id) {
-        queryClient.invalidateQueries({ queryKey: ['advance_balances'] });
-      }
       // Принудительно инвалидируем и перезапрашиваем все связанные запросы
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
@@ -1497,7 +1489,6 @@ export function useDeletePaymentTransaction() {
       // Invalidate all related queries
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
-        queryClient.invalidateQueries({ queryKey: ['advance_balances'] }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
         queryClient.invalidateQueries({ queryKey: ['student_account_balances'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
