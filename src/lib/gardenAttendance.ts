@@ -105,7 +105,7 @@ export function calculateDailyAccrual(
     if (!baseActivity) return;
 
     let baseTariff = 0;
-    if (baseEnrollment.custom_price !== null && baseEnrollment.custom_price > 0) {
+    if (baseEnrollment.custom_price !== null && baseEnrollment.custom_price !== undefined) {
       const discountMultiplier = 1 - ((baseEnrollment.discount_percent || 0) / 100);
       baseTariff = baseEnrollment.custom_price * discountMultiplier;
     } else if (baseActivity.billing_rules && typeof baseActivity.billing_rules === 'object') {
@@ -144,7 +144,7 @@ export function calculateDailyAccrual(
     if (!foodActivity) return;
 
     let foodTariff = 0;
-    if (foodEnrollment.custom_price !== null && foodEnrollment.custom_price > 0) {
+    if (foodEnrollment.custom_price !== null && foodEnrollment.custom_price !== undefined) {
       const discountMultiplier = 1 - ((foodEnrollment.discount_percent || 0) / 100);
       foodTariff = foodEnrollment.custom_price * discountMultiplier;
     } else if (foodActivity.billing_rules && typeof foodActivity.billing_rules === 'object') {

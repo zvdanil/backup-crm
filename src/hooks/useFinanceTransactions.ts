@@ -2,6 +2,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { getMonthStartDate, getMonthEndDate, formatLocalDate } from '@/lib/attendance';
+import { getGardenAttendanceConfig, isGardenAttendanceController } from '@/lib/gardenAttendance';
+
+const supabaseAny = supabase as any;
 
 export type TransactionType = 'income' | 'expense' | 'payment' | 'salary' | 'household';
 
@@ -24,6 +27,35 @@ export interface FinanceTransaction {
 export type FinanceTransactionInsert = Omit<FinanceTransaction, 'id' | 'created_at' | 'updated_at'>;
 export type FinanceTransactionUpdate = Partial<FinanceTransactionInsert>;
 
+const ATTENDANCE_V1_INFO_INCOME_PREFIX = 'Нарахування за відвідування';
+
+function isAttendanceV1InfoIncome(
+  transaction: { description?: string | null; activity_id?: string | null },
+  baseTariffIdSet: Set<string>
+) {
+  if (!transaction?.activity_id) return false;
+  if (!baseTariffIdSet.has(transaction.activity_id)) return false;
+  return (transaction.description ?? '').startsWith(ATTENDANCE_V1_INFO_INCOME_PREFIX);
+}
+
+async function fetchAttendanceV1BaseTariffIds() {
+  const { data, error } = await supabase
+    .from('activities')
+    .select('id, config');
+
+  if (error) throw error;
+
+  const baseTariffIdSet = new Set<string>();
+
+  (data || []).forEach((activity: any) => {
+    if (!isGardenAttendanceController(activity)) return;
+    const config = getGardenAttendanceConfig(activity);
+    (config.base_tariff_ids || []).forEach((id) => baseTariffIdSet.add(id));
+  });
+
+  return baseTariffIdSet;
+}
+
 export function useFinanceTransactions(filters?: { 
   studentId?: string; 
   activityId?: string; 
@@ -34,7 +66,7 @@ export function useFinanceTransactions(filters?: {
   return useQuery({
     queryKey: ['finance_transactions', filters],
     queryFn: async () => {
-      let query = supabase
+      let query = supabaseAny
         .from('finance_transactions')
         .select('*')
         .order('date', { ascending: false });
@@ -66,7 +98,7 @@ export function useCreateFinanceTransaction() {
   
   return useMutation({
     mutationFn: async (transaction: FinanceTransactionInsert) => {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAny
         .from('finance_transactions')
         .insert(transaction)
         .select()
@@ -75,7 +107,7 @@ export function useCreateFinanceTransaction() {
       if (error) throw error;
 
       if (transaction.type === 'salary' && transaction.staff_id) {
-        const { error: payoutError } = await supabase
+        const { error: payoutError } = await supabaseAny
           .from('staff_payouts' as any)
           .insert({
             staff_id: transaction.staff_id,
@@ -123,7 +155,7 @@ export function useUpdateFinanceTransaction() {
   
   return useMutation({
     mutationFn: async ({ id, ...transaction }: { id: string } & FinanceTransactionUpdate) => {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAny
         .from('finance_transactions')
         .update(transaction)
         .eq('id', id)
@@ -148,7 +180,7 @@ export function useDeleteFinanceTransaction() {
   
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
+      const { error } = await supabaseAny
         .from('finance_transactions')
         .delete()
         .eq('id', id);
@@ -177,7 +209,7 @@ export function useUpsertFinanceTransaction() {
   return useMutation({
     mutationFn: async (transaction: FinanceTransactionInsert & { id?: string }) => {
       // Try to find existing transaction
-      let query = supabase
+      let query = supabaseAny
         .from('finance_transactions')
         .select('id')
         .eq('date', transaction.date)
@@ -203,7 +235,7 @@ export function useUpsertFinanceTransaction() {
       
       if (existing && existing.id) {
         // Update existing transaction
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAny
           .from('finance_transactions')
           .update({
             amount: transaction.amount,
@@ -220,7 +252,7 @@ export function useUpsertFinanceTransaction() {
       } else {
         // Create new transaction
         const { id, ...insertData } = transaction;
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAny
           .from('finance_transactions')
           .insert({
             ...insertData,
@@ -257,6 +289,7 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
   return useQuery({
     queryKey: ['student_activity_balance', studentId, activityId, month, year],
     queryFn: async () => {
+      const baseTariffIdSet = await fetchAttendanceV1BaseTariffIds();
       const now = new Date();
       const targetMonth = month !== undefined ? month : now.getMonth();
       const targetYear = year !== undefined ? year : now.getFullYear();
@@ -266,7 +299,7 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
 
       // Get payments
       // Strictly filter by student_id and activity_id - exclude null values
-      const { data: payments, error: paymentsError } = await supabase
+      const { data: payments, error: paymentsError } = await supabaseAny
         .from('finance_transactions')
         .select('amount')
         .eq('student_id', studentId)
@@ -281,9 +314,9 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
 
       // Get charges from finance_transactions (income type) - for Garden Attendance Journal base tariffs
       // Strictly filter by student_id and activity_id - exclude null values
-      const { data: incomeTransactions, error: incomeError } = await supabase
+      const { data: incomeTransactions, error: incomeError } = await supabaseAny
         .from('finance_transactions')
-        .select('amount')
+        .select('amount, description, activity_id')
         .eq('student_id', studentId)
         .not('student_id', 'is', null) // Explicitly exclude null
         .eq('activity_id', activityId)
@@ -296,7 +329,7 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
 
       // Get refunds from finance_transactions (expense type) - for Garden Attendance Journal food tariffs
       // Strictly filter by student_id and activity_id - exclude null values
-      const { data: expenseTransactions, error: expenseError } = await supabase
+      const { data: expenseTransactions, error: expenseError } = await supabaseAny
         .from('finance_transactions')
         .select('amount')
         .eq('student_id', studentId)
@@ -314,7 +347,10 @@ export function useStudentActivityBalance(studentId: string, activityId: string,
       
       // First, try to get charges from finance_transactions (for Garden Attendance Journal)
       if (incomeTransactions && incomeTransactions.length > 0) {
-        charges = incomeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const filteredIncome = incomeTransactions.filter(
+          (t) => !isAttendanceV1InfoIncome(t, baseTariffIdSet)
+        );
+        charges = filteredIncome.reduce((sum, t) => sum + (t.amount || 0), 0);
       }
       
       // Get refunds (expense transactions for food - this is a refund to client)
@@ -376,6 +412,7 @@ export function useStudentActivityMonthlyBalance(
   return useQuery({
     queryKey: ['student_activity_monthly_balance', studentId, activityId, baseMonthlyCharge, month, year],
     queryFn: async () => {
+      const baseTariffIdSet = await fetchAttendanceV1BaseTariffIds();
       const now = new Date();
       const targetMonth = month !== undefined ? month : now.getMonth();
       const targetYear = year !== undefined ? year : now.getFullYear();
@@ -383,7 +420,7 @@ export function useStudentActivityMonthlyBalance(
       const startDate = getMonthStartDate(targetYear, targetMonth);
       const endDate = getMonthEndDate(targetYear, targetMonth);
 
-      const { data: payments, error: paymentsError } = await supabase
+      const { data: payments, error: paymentsError } = await supabaseAny
         .from('finance_transactions')
         .select('amount')
         .eq('student_id', studentId)
@@ -396,9 +433,9 @@ export function useStudentActivityMonthlyBalance(
 
       if (paymentsError) throw paymentsError;
 
-      const { data: incomeTransactions, error: incomeError } = await supabase
+      const { data: incomeTransactions, error: incomeError } = await supabaseAny
         .from('finance_transactions')
-        .select('id, amount, date')
+        .select('id, amount, date, description, activity_id')
         .eq('student_id', studentId)
         .not('student_id', 'is', null)
         .eq('activity_id', activityId)
@@ -409,7 +446,7 @@ export function useStudentActivityMonthlyBalance(
 
       if (incomeError) throw incomeError;
 
-      const { data: expenseTransactions, error: expenseError } = await supabase
+      const { data: expenseTransactions, error: expenseError } = await supabaseAny
         .from('finance_transactions')
         .select('amount')
         .eq('student_id', studentId)
@@ -424,13 +461,19 @@ export function useStudentActivityMonthlyBalance(
 
       const totalPayments = payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
       const refunds = expenseTransactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+      const realIncomeTransactions = (incomeTransactions || []).filter(
+        (t) => !isAttendanceV1InfoIncome(t, baseTariffIdSet)
+      );
       
       // For subscription type: 
       // - If there's an income transaction, use its amount (actual charge)
       // - If no income transaction exists but baseMonthlyCharge > 0, use baseMonthlyCharge (for future months or pending charges)
       // - If no income transaction and baseMonthlyCharge = 0, charges = 0 (subscription was deleted/cancelled)
-      const hasIncomeTransaction = incomeTransactions && incomeTransactions.length > 0;
-      const charges = hasIncomeTransaction ? baseMonthlyCharge : (baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
+      const incomeTotal = realIncomeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+      const hasIncomeTransaction = realIncomeTransactions.length > 0;
+      // Если есть доходные транзакции, используем их сумму как реальные начисления
+      // Иначе используем базовую абонплату (для будущих месяцев/ожидаемых начислений)
+      const charges = hasIncomeTransaction ? incomeTotal : (baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
       const balance = totalPayments - charges + refunds;
 
       return { balance, payments: totalPayments, charges, refunds };
@@ -444,6 +487,7 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
   return useQuery({
     queryKey: ['student_total_balance', studentId, month, year, cumulative],
     queryFn: async () => {
+      const baseTariffIdSet = await fetchAttendanceV1BaseTariffIds();
       // Only calculate date range if month and year are provided
       let startDate: string | undefined;
       let endDate: string | undefined;
@@ -462,7 +506,7 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
 
       // Get all payments (for selected month or all time)
       // Strictly filter by student_id - exclude null values
-      const paymentsQuery = supabase
+      const paymentsQuery = supabaseAny
         .from('finance_transactions')
         .select('amount')
         .eq('student_id', studentId)
@@ -481,9 +525,9 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
 
       // Get all charges from finance_transactions (income type)
       // Strictly filter by student_id - exclude null values
-      const incomeQuery = supabase
+      const incomeQuery = supabaseAny
         .from('finance_transactions')
-        .select('amount')
+        .select('amount, description, activity_id')
         .eq('student_id', studentId)
         .not('student_id', 'is', null) // Explicitly exclude null
         .eq('type', 'income');
@@ -500,7 +544,7 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
 
       // Get all refunds from finance_transactions (expense type)
       // Strictly filter by student_id - exclude null values
-      const expenseQuery = supabase
+      const expenseQuery = supabaseAny
         .from('finance_transactions')
         .select('amount')
         .eq('student_id', studentId)
@@ -521,7 +565,10 @@ export function useStudentTotalBalance(studentId: string, month?: number, year?:
       let refunds = 0;
       
       if (incomeTransactions && incomeTransactions.length > 0) {
-        charges = incomeTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+        const filteredIncome = incomeTransactions.filter(
+          (t) => !isAttendanceV1InfoIncome(t, baseTariffIdSet)
+        );
+        charges = filteredIncome.reduce((sum, t) => sum + (t.amount || 0), 0);
       }
       
       if (expenseTransactions && expenseTransactions.length > 0) {
@@ -595,6 +642,7 @@ function calculateMonthlyBalanceFromData(
   activityAccountMap: Record<string, string | null>,
   activityDataMap: Record<string, { billing_rules: any; default_price: number; balance_display_mode: string | null }>,
   foodTariffIdSet: Set<string>,
+  attendanceV1BaseTariffIdSet: Set<string>,
   month: number,
   year: number
 ): StudentAccountBalance[] {
@@ -619,7 +667,9 @@ function calculateMonthlyBalanceFromData(
     if (trans.type === 'payment') {
       paymentsByActivity[trans.activity_id] = (paymentsByActivity[trans.activity_id] || 0) + (trans.amount || 0);
     } else if (trans.type === 'income') {
-      incomeByActivity[trans.activity_id] = (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
+      if (!isAttendanceV1InfoIncome(trans, attendanceV1BaseTariffIdSet)) {
+        incomeByActivity[trans.activity_id] = (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
+      }
     } else if (trans.type === 'expense') {
       expenseByActivity[trans.activity_id] = (expenseByActivity[trans.activity_id] || 0) + (trans.amount || 0);
     }
@@ -654,7 +704,7 @@ function calculateMonthlyBalanceFromData(
     if (!isActive) return;
 
     let baseMonthlyCharge = 0;
-    if (enrollment.custom_price !== null && enrollment.custom_price > 0) {
+    if (enrollment.custom_price !== null && enrollment.custom_price !== undefined) {
       const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
       baseMonthlyCharge = Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
     } else if (presentRule?.rate && presentRule.rate > 0) {
@@ -696,7 +746,11 @@ function calculateMonthlyBalanceFromData(
       const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
         enrollmentIsActiveMap.get(eId) ?? true
       );
-      if (hasFinanceTransactions || hasActiveEnrollments) {
+      if (income > 0) {
+        // Реальные начисления из транзакций
+        charges = income;
+      } else if (hasFinanceTransactions || hasActiveEnrollments) {
+        // Если транзакций нет, используем месячную абонплату как ожидаемое начисление
         charges = monthlyCharges;
       } else {
         charges = 0;
@@ -779,6 +833,7 @@ async function calculateMonthlyAccountBalances(
   excludeActivityIds: string[] = [],
   foodTariffIds: string[] = []
 ): Promise<StudentAccountBalance[]> {
+  const attendanceV1BaseTariffIdSet = await fetchAttendanceV1BaseTariffIds();
   const startDate = getMonthStartDate(year, month);
   const endDate = getMonthEndDate(year, month);
 
@@ -834,7 +889,7 @@ async function calculateMonthlyAccountBalances(
 
   let attendanceData: { enrollment_id: string; charged_amount: number | null }[] = [];
   if (enrollmentIds.length > 0) {
-    const { data: attendance, error: attendanceError } = await supabase
+    const { data: attendance, error: attendanceError } = await supabaseAny
       .from('attendance')
       .select('enrollment_id, charged_amount')
       .in('enrollment_id', enrollmentIds)
@@ -844,9 +899,9 @@ async function calculateMonthlyAccountBalances(
     attendanceData = attendance || [];
   }
 
-  const { data: transactions, error: transactionsError } = await supabase
+  const { data: transactions, error: transactionsError } = await supabaseAny
     .from('finance_transactions')
-    .select('activity_id, type, amount, account_id')
+    .select('activity_id, type, amount, account_id, description')
     .eq('student_id', studentId)
     .not('student_id', 'is', null)
     .in('type', ['payment', 'income', 'expense'])
@@ -873,7 +928,9 @@ async function calculateMonthlyAccountBalances(
     if (trans.type === 'payment') {
       paymentsByActivity[trans.activity_id] = (paymentsByActivity[trans.activity_id] || 0) + (trans.amount || 0);
     } else if (trans.type === 'income') {
-      incomeByActivity[trans.activity_id] = (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
+      if (!isAttendanceV1InfoIncome(trans, attendanceV1BaseTariffIdSet)) {
+        incomeByActivity[trans.activity_id] = (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
+      }
     } else if (trans.type === 'expense') {
       expenseByActivity[trans.activity_id] = (expenseByActivity[trans.activity_id] || 0) + (trans.amount || 0);
     }
@@ -926,7 +983,7 @@ async function calculateMonthlyAccountBalances(
     if (!isActive) return;
 
     let baseMonthlyCharge = 0;
-    if (enrollment.custom_price !== null && enrollment.custom_price > 0) {
+    if (enrollment.custom_price !== null && enrollment.custom_price !== undefined) {
       const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
       baseMonthlyCharge = Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
     } else if (presentRule?.rate && presentRule.rate > 0) {
@@ -968,7 +1025,11 @@ async function calculateMonthlyAccountBalances(
       const hasActiveEnrollments = enrollmentsForActivity.some(([eId, _]) => 
         enrollmentIsActiveMap.get(eId) ?? true
       );
-      if (hasFinanceTransactions || hasActiveEnrollments) {
+      if (income > 0) {
+        // Реальные начисления из транзакций
+        charges = income;
+      } else if (hasFinanceTransactions || hasActiveEnrollments) {
+        // Если транзакций нет, используем месячную абонплату как ожидаемое начисление
         charges = monthlyCharges;
       } else {
         charges = 0;
@@ -1054,10 +1115,11 @@ export function useStudentAccountBalances(
   return useQuery({
     queryKey: ['student_account_balances', studentId, month, year, excludeActivityIds, foodTariffIds, cumulative],
     queryFn: async () => {
+      const attendanceV1BaseTariffIdSet = await fetchAttendanceV1BaseTariffIds();
       // Определяем диапазон дат
       let startDate: string | undefined;
       let endDate: string | undefined;
-      let monthsToCalculate: Array<{ month: number; year: number }> = [];
+      const monthsToCalculate: Array<{ month: number; year: number }> = [];
 
       if (month !== undefined && year !== undefined) {
         if (cumulative) {
@@ -1106,7 +1168,7 @@ export function useStudentAccountBalances(
       }
 
       // Загружаем все данные одним запросом
-      const { data: enrollments, error: enrollmentsError } = await supabase
+      const { data: enrollments, error: enrollmentsError } = await supabaseAny
         .from('enrollments')
         .select('id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at')
         .eq('student_id', studentId);
@@ -1121,9 +1183,9 @@ export function useStudentAccountBalances(
       const enrollmentIds = allFilteredEnrollments.map((e: any) => e.id);
       
       // Загружаем все транзакции за период
-      const { data: transactions, error: transactionsError } = await supabase
+      const { data: transactions, error: transactionsError } = await supabaseAny
         .from('finance_transactions')
-        .select('activity_id, type, amount, account_id, date')
+        .select('activity_id, type, amount, account_id, date, description')
         .eq('student_id', studentId)
         .not('student_id', 'is', null)
         .in('type', ['payment', 'income', 'expense'])
@@ -1135,7 +1197,7 @@ export function useStudentAccountBalances(
       // Загружаем все attendance за период
       let attendanceData: { enrollment_id: string; charged_amount: number | null; date: string }[] = [];
       if (enrollmentIds.length > 0) {
-        const { data: attendance, error: attendanceError } = await supabase
+          const { data: attendance, error: attendanceError } = await supabaseAny
           .from('attendance')
           .select('enrollment_id, charged_amount, date')
           .in('enrollment_id', enrollmentIds)
@@ -1151,7 +1213,7 @@ export function useStudentAccountBalances(
       const activityAccountMap: Record<string, string | null> = {};
       const activityDataMap: Record<string, { billing_rules: any; default_price: number; balance_display_mode: string | null }> = {};
       if (activityIdList.length > 0) {
-        const { data: activities, error: activitiesError } = await supabase
+        const { data: activities, error: activitiesError } = await supabaseAny
           .from('activities')
           .select('id, account_id, billing_rules, default_price, balance_display_mode')
           .in('id', activityIdList);
@@ -1221,7 +1283,7 @@ export function useStudentAccountBalances(
         const isFutureMonth = y > currentYear || (y === currentYear && m > currentMonth);
 
         // Фильтруем enrollments для этого месяца
-        let filteredEnrollments = allFilteredEnrollments.filter((e: any) => {
+        const filteredEnrollments = allFilteredEnrollments.filter((e: any) => {
           if (isFutureMonth) {
             return e.is_active === true;
           } else {
@@ -1249,6 +1311,7 @@ export function useStudentAccountBalances(
           activityAccountMap,
           activityDataMap,
           foodTariffIdSet,
+          attendanceV1BaseTariffIdSet,
           m,
           y
         );
@@ -1295,9 +1358,9 @@ export function useStudentAccountBalances(
           
           if (previousMonthsToCalculate.length > 0) {
             // Загружаем транзакции до начала месяца
-            const { data: previousTransactions, error: previousTransactionsError } = await supabase
+            const { data: previousTransactions, error: previousTransactionsError } = await supabaseAny
               .from('finance_transactions')
-              .select('activity_id, type, amount, account_id, date')
+              .select('activity_id, type, amount, account_id, date, description')
               .eq('student_id', studentId)
               .not('student_id', 'is', null)
               .in('type', ['payment', 'income', 'expense'])
@@ -1351,7 +1414,7 @@ export function useStudentAccountBalances(
                 const isFutureMonth = y > currentYear || (y === currentYear && m > currentMonth);
                 
                 // Фильтруем enrollments для этого месяца
-                let filteredEnrollmentsForPrevious = allFilteredEnrollments.filter((e: any) => {
+                const filteredEnrollmentsForPrevious = allFilteredEnrollments.filter((e: any) => {
                   if (isFutureMonth) {
                     return e.is_active === true;
                   } else {
@@ -1379,6 +1442,7 @@ export function useStudentAccountBalances(
                   activityAccountMap,
                   activityDataMap,
                   foodTariffIdSet,
+                  attendanceV1BaseTariffIdSet,
                   m,
                   y
                 );
@@ -1520,7 +1584,7 @@ export function useActivityIncomeTransaction(
       const endDate = getMonthEndDate(targetYear, targetMonth);
       
       // First, try to find transaction for the specific month
-      let { data, error } = await supabase
+      const { data: initialData, error } = await supabaseAny
         .from('finance_transactions')
         .select('*')
         .eq('student_id', studentId)
@@ -1536,6 +1600,8 @@ export function useActivityIncomeTransaction(
         console.error('[useActivityIncomeTransaction] Error:', error);
         throw error;
       }
+
+      let data = initialData;
       
       // If not found for the specific month, try to find ANY income transaction for this activity
       // This handles cases where the transaction exists but might be in a different month
@@ -1543,7 +1609,7 @@ export function useActivityIncomeTransaction(
       // We search without date restrictions to find archived transactions that are still in balance calculations
       if (!data) {
         // Debug: Check if this is for "Прескул" activity
-        const { data: activityData } = await supabase
+        const { data: activityData } = await supabaseAny
           .from('activities')
           .select('name')
           .eq('id', activityId)
@@ -1560,7 +1626,7 @@ export function useActivityIncomeTransaction(
           });
         }
         
-        const { data: anyTransaction, error: anyError } = await supabase
+        const { data: anyTransaction, error: anyError } = await supabaseAny
           .from('finance_transactions')
           .select('*')
           .eq('student_id', studentId)
@@ -1592,7 +1658,7 @@ export function useActivityIncomeTransaction(
             console.log('[useActivityIncomeTransaction] Прескул: No transaction found at all for this activity');
             
             // Debug: Check if there are ANY transactions for this student and activity
-            const { data: allTransactions, error: allError } = await supabase
+            const { data: allTransactions, error: allError } = await supabaseAny
               .from('finance_transactions')
               .select('id, type, date, amount, student_id, activity_id')
               .eq('student_id', studentId)
@@ -1608,7 +1674,7 @@ export function useActivityIncomeTransaction(
               if (incomeTransactions.length > 0) {
                 console.log('[useActivityIncomeTransaction] Прескул: Found income transactions in all transactions, using first:', incomeTransactions[0]);
                 // Fetch full transaction data
-                const { data: fullTransaction } = await supabase
+                const { data: fullTransaction } = await supabaseAny
                   .from('finance_transactions')
                   .select('*')
                   .eq('id', incomeTransactions[0].id)
@@ -1636,7 +1702,7 @@ export function useDeleteIncomeTransaction() {
   return useMutation({
     mutationFn: async ({ transactionId, reason }: { transactionId: string; reason: string }) => {
       // Get transaction details before deletion for logging
-      const { data: transaction, error: fetchError } = await supabase
+      const { data: transaction, error: fetchError } = await supabaseAny
         .from('finance_transactions')
         .select('*')
         .eq('id', transactionId)
@@ -1647,7 +1713,7 @@ export function useDeleteIncomeTransaction() {
       if (!transaction) throw new Error('Transaction not found');
       
       // Delete the transaction
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await supabaseAny
         .from('finance_transactions')
         .delete()
         .eq('id', transactionId);

@@ -35,6 +35,9 @@ export function StudentActivityBalanceRow({
   const { data: accounts = [] } = usePaymentAccounts();
   const { role } = useAuth();
   const canDelete = role === 'owner' || role === 'admin';
+  const deleteIncome = useDeleteIncomeTransaction();
+  const createTransaction = useCreateFinanceTransaction();
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // Check if this is a food activity
   const isFoodActivity = useMemo(() => {
@@ -48,41 +51,28 @@ export function StudentActivityBalanceRow({
     return foodTariffIds.has(enrollment.activity_id);
   }, [allActivities, enrollment.activity_id]);
 
-  // Check if activities data is loaded (might be null for archived activities)
-  if (!enrollment.activities) {
-    return (
-      <div className="flex items-center justify-between p-3 border rounded-lg">
-        <span className="text-sm text-muted-foreground">Завантаження даних активності...</span>
-      </div>
-    );
-  }
-
-  const presentRule = enrollment.activities.billing_rules?.present;
-  const isMonthlyBilling = !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
-  
-  // Initialize deleteIncome hook early to avoid initialization errors
-  const deleteIncome = useDeleteIncomeTransaction();
-  const createTransaction = useCreateFinanceTransaction();
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const activities = enrollment.activities;
+  const presentRule = activities?.billing_rules?.present;
+  const isMonthlyBilling = !!activities && !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
 
   const accountLabel = useMemo(() => {
     // Приоритет: enrollment.account_id ?? activity.account_id
-    const accountId = enrollment.account_id || enrollment.activities.account_id;
+    const accountId = enrollment.account_id || activities?.account_id;
     if (!accountId) return 'Без рахунку';
     return accounts.find(account => account.id === accountId)?.name || 'Без рахунку';
-  }, [accounts, enrollment.account_id, enrollment.activities.account_id]);
+  }, [accounts, enrollment.account_id, activities?.account_id]);
 
   const baseMonthlyCharge = useMemo(() => {
     if (!isMonthlyBilling) return 0;
-    if (enrollment.custom_price !== null && enrollment.custom_price > 0) {
+    if (enrollment.custom_price !== null && enrollment.custom_price !== undefined) {
       const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
       return Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
     }
     if (presentRule?.rate && presentRule.rate > 0) {
       return presentRule.rate;
     }
-    return enrollment.activities.default_price || 0;
-  }, [isMonthlyBilling, enrollment.custom_price, enrollment.discount_percent, enrollment.activities.default_price, presentRule?.rate]);
+    return activities?.default_price || 0;
+  }, [isMonthlyBilling, enrollment.custom_price, enrollment.discount_percent, activities?.default_price, presentRule?.rate]);
 
   const monthlyBalanceQuery = useStudentActivityMonthlyBalance(
     studentId,
@@ -159,6 +149,15 @@ export function StudentActivityBalanceRow({
     return { balance, payments, charges, refunds };
   }, [displayMode, monthlyData, recalculationData, monthlyCharges, baseMonthlyCharge, incomeTransaction, enrollment.is_active]);
 
+  // Check if activities data is loaded (might be null for archived activities)
+  if (!activities) {
+    return (
+      <div className="flex items-center justify-between p-3 border rounded-lg">
+        <span className="text-sm text-muted-foreground">Завантаження даних активності...</span>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-between p-3 border rounded-lg">
@@ -206,9 +205,9 @@ export function StudentActivityBalanceRow({
   const hasSubscriptionCharge = isMonthlyBilling && (monthlyCharges > 0 || !!incomeTransaction);
   
   // Debug logging for "Прескул" activity
-  if (enrollment.activities.name === 'Прескул' || enrollment.activities.name?.includes('Прескул')) {
+  if (activities.name === 'Прескул' || activities.name?.includes('Прескул')) {
     console.log('[Прескул Debug]', {
-      activityName: enrollment.activities.name,
+      activityName: activities.name,
       isActive: enrollment.is_active,
       isMonthlyBilling,
       presentRuleType: presentRule?.type,
@@ -224,7 +223,7 @@ export function StudentActivityBalanceRow({
       baseMonthlyCharge,
       hasSubscriptionCharge,
       displayMode,
-      billingRules: enrollment.activities.billing_rules,
+      billingRules: activities.billing_rules,
     });
   }
   
@@ -244,7 +243,7 @@ export function StudentActivityBalanceRow({
       // If transaction doesn't exist, create it first
       if (!transactionId) {
         // Get account_id from enrollment or activity
-        const accountId = enrollment.account_id || enrollment.activities.account_id || null;
+        const accountId = enrollment.account_id || activities.account_id || null;
         
         // Create income transaction for subscription charge
         const startDate = new Date(year, month, 1).toISOString().split('T')[0];
@@ -253,9 +252,11 @@ export function StudentActivityBalanceRow({
           type: 'income',
           student_id: studentId,
           activity_id: enrollment.activity_id,
+          staff_id: null,
           amount: baseMonthlyCharge,
           date: startDate,
           description: `Абонплата за ${monthName}`,
+          category: null,
           account_id: accountId,
         });
         
@@ -291,10 +292,10 @@ export function StudentActivityBalanceRow({
         <div className="flex min-w-0 items-center gap-2">
           <span 
             className="w-3 h-3 rounded-full" 
-            style={{ backgroundColor: enrollment.activities.color }}
+            style={{ backgroundColor: activities.color }}
           />
           <span className="text-sm font-medium break-words">
-            {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
+            {isFoodActivity ? `+ ${activities.name}` : activities.name}
           </span>
           <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
             {accountLabel}
@@ -309,12 +310,13 @@ export function StudentActivityBalanceRow({
               {displayBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(displayBalance))}
             </div>
             <div className="text-xs text-muted-foreground whitespace-normal break-words">
-              {isFoodActivity ? (
-                <>Оплати: {formatCurrency(payments)} | Повернення: {formatCurrency(displayRefunds)}</>
-              ) : (
-                <>Оплати: {formatCurrency(payments)} | Витрати: {formatCurrency(displayCharges)}</>
-              )}
+              Оплачено: {formatCurrency(payments)} | Нараховано: {formatCurrency(displayCharges)}
             </div>
+            {isFoodActivity && displayRefunds > 0 && (
+              <div className="text-xs text-muted-foreground whitespace-normal break-words">
+                Повернення: {formatCurrency(displayRefunds)}
+              </div>
+            )}
           </div>
           {canDelete && hasSubscriptionCharge && (
             <Button

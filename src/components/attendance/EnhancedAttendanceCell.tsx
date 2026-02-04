@@ -22,7 +22,7 @@ import {
   type BaseAttendanceStatus
 } from '@/lib/attendance';
 import { X } from 'lucide-react';
-import type { Activity, ActivityPriceHistory, BillingRules, CustomAttendanceStatus } from '@/hooks/useActivities';
+import type { Activity, ActivityPriceHistory, BillingRule, BillingRules, CustomAttendanceStatus } from '@/hooks/useActivities';
 import { getBillingRulesForDate } from '@/hooks/useActivities';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -151,22 +151,8 @@ export function EnhancedAttendanceCell({
     setOptimisticStatus(null);
     setOptimisticValue(null);
     justAutoSetRef.current = false;
-    
-    // Якщо вводимо число - видаляємо статус
-    if (newValue !== '') {
-      const numValue = parseFloat(newValue);
-      if (!isNaN(numValue)) {
-        onChange(null, numValue);
-        setIsEditing(true);
-      } else {
-        // Якщо не число - очищаємо
-        onChange(null, null);
-      }
-    } else {
-      // Якщо поле порожнє - очищаємо все
-      onChange(null, null);
-      setIsEditing(true);
-    }
+    // Сохраняем только локально, в базу отправляем при blur/Enter
+    setIsEditing(true);
   };
 
   const handleInputBlur = () => {
@@ -178,6 +164,13 @@ export function EnhancedAttendanceCell({
     }
     if (inputValue === '' && !status) {
       onChange(null, null);
+    } else if (inputValue !== '') {
+      const numValue = parseFloat(inputValue);
+      if (!isNaN(numValue)) {
+        onChange(null, numValue);
+      } else if (!status) {
+        onChange(null, null);
+      }
     }
     setIsEditing(false);
     setWasClicked(false);

@@ -391,10 +391,10 @@ export function calculateValueFromBillingRules(
     return null;
   }
   
-  // Для базовых статусов проверяем, что rate > 0 (для обратной совместимости)
-  // Для кастомных статусов rate может быть отрицательным
+  // Для базовых статусов: rate должен быть числом (может быть отрицательным для отработки)
+  // Для кастомных статусов: rate может быть отрицательным
   const isBaseStatus = isBaseAttendanceStatus(status);
-  if (isBaseStatus && rule.rate <= 0) {
+  if (isBaseStatus && (rule.rate === null || rule.rate === undefined)) {
     return null;
   }
 
@@ -422,8 +422,8 @@ export function calculateValueFromBillingRules(
 
     case 'hourly':
       // Почасово: value = rate * [число, введене в журналі]
-      // Для hourly тип, valueInput повинен бути переданий окремо
-      if (valueInput !== null && valueInput > 0) {
+      // Для hourly тип, valueInput может быть любым числом (отработка/возврат)
+      if (valueInput !== null && !isNaN(valueInput)) {
         baseValue = Math.round(rule.rate * valueInput * 100) / 100;
       } else {
         baseValue = null;

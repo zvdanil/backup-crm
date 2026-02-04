@@ -194,7 +194,7 @@ export default function EnhancedDashboard() {
     }
     
     data.attendance.forEach((att) => {
-      const amount = att.value !== null && att.value !== undefined ? att.value : (att.charged_amount || 0);
+      const amount = att.charged_amount || 0;
       if (amount !== 0) {
         set.add(att.enrollment_id);
       }
@@ -208,9 +208,7 @@ export default function EnhancedDashboard() {
     );
     
     if (targetAttendance) {
-      const targetAmount = targetAttendance.value !== null && targetAttendance.value !== undefined 
-        ? targetAttendance.value 
-        : (targetAttendance.charged_amount || 0);
+      const targetAmount = targetAttendance.charged_amount || 0;
       console.log('[Dashboard Debug] enrollmentsWithAttendanceCharges: target entry found', {
         enrollmentId: targetEnrollmentId,
         date: targetDate,
@@ -408,10 +406,8 @@ export default function EnhancedDashboard() {
     const map: Record<string, Record<string, number>> = {};
     data.attendance.forEach((att) => {
       if (!map[att.enrollment_id]) map[att.enrollment_id] = {};
-      // Використовуємо value (якщо є) або charged_amount
-      const amount = att.value !== null && att.value !== undefined && att.value > 0 
-        ? att.value 
-        : (att.charged_amount || 0);
+      // Для фінансових сум використовуємо тільки charged_amount
+      const amount = att.charged_amount || 0;
       map[att.enrollment_id][att.date] = amount;
     });
     
@@ -536,10 +532,8 @@ export default function EnhancedDashboard() {
         }
         
         const category = enrollment.activities.category;
-        // Підсумовуємо value (якщо є) або charged_amount
-        const amount = att.value !== null && att.value !== undefined && att.value > 0 
-          ? att.value 
-          : (att.charged_amount || 0);
+        // Підсумовуємо тільки charged_amount (фінансовий підсумок)
+        const amount = att.charged_amount || 0;
         totals[category][att.date] = (totals[category][att.date] || 0) + amount;
       }
     });

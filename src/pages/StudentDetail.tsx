@@ -36,6 +36,8 @@ const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
   'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
 ];
+
+const supabaseAny = supabase as any;
 import {
   AlertDialog,
   AlertDialogAction,
@@ -232,7 +234,7 @@ export default function StudentDetail() {
       // Если изменился account_id, пересчитываем finance_transactions
       if (oldAccountId !== newAccountId) {
         // Находим все finance_transactions, связанные с этим enrollment
-        const { data: transactions, error: transactionsError } = await supabase
+        const { data: transactions, error: transactionsError } = await supabaseAny
           .from('finance_transactions')
           .select('id, account_id')
           .eq('student_id', editingEnrollment.student_id)
@@ -247,7 +249,7 @@ export default function StudentDetail() {
           // Обновляем account_id во всех связанных транзакциях
           if (transactions.length > 0) {
             const transactionIds = transactions.map(t => t.id);
-            await supabase
+            await supabaseAny
               .from('finance_transactions')
               .update({ account_id: targetAccountId })
               .in('id', transactionIds);
@@ -491,137 +493,106 @@ export default function StudentDetail() {
                 </div> */}
                 
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-border p-3">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="text-sm font-medium">Баланс по рахунках</div>
-                      <div className="text-xs text-muted-foreground">
-                        {MONTHS[balanceMonth]} {balanceYear}
-                      </div>
-                    </div>
-                    {accountBalancesLoading ? (
-                      <div className="text-sm text-muted-foreground">Завантаження...</div>
-                    ) : accountGroups.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">Немає нарахувань</div>
-                    ) : (
-                      <div className="space-y-2">
-                        {accountGroups.map((group) => {
-                          const accountBalance = accountBalanceMap.get(group.id);
-                          const amount = accountBalance?.balance || 0;
-                          const previousBalance = accountBalance?.previous_balance || 0;
-                          const totalBalance = previousBalance + amount;
-                          const totalToPay = totalBalance < 0 ? Math.abs(totalBalance) : 0;
-                          return (
-                            <div key={group.id} className="space-y-1">
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">{group.label}</span>
-                                {totalToPay > 0 ? (
+                  {accountBalancesLoading ? (
+                    <div className="text-sm text-muted-foreground">Завантаження...</div>
+                  ) : accountGroups.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">Немає нарахувань</div>
+                  ) : (
+                    <div className="space-y-4">
+                      {accountGroups.map((group) => {
+                        const accountBalance = accountBalanceMap.get(group.id);
+                        const previousBalance = accountBalance?.previous_balance || 0;
+                        const charges = accountBalance?.charges || 0;
+                        const payments = accountBalance?.payments || 0;
+                        const refunds = accountBalance?.refunds || 0;
+                        const endBalance = previousBalance + payments - charges + refunds;
+                        const startLabel = previousBalance < 0
+                          ? 'Борг на початок'
+                          : previousBalance > 0
+                            ? 'Залишок на початок'
+                            : 'Баланс на початок';
+                        return (
+                          <div key={group.id} className="rounded-lg border border-border p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                              <div className="text-sm font-semibold">{group.label}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {MONTHS[balanceMonth]} {balanceYear}
+                              </div>
+                            </div>
+
+                            <div className="space-y-2 text-sm mb-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">{startLabel}</span>
+                                <span
+                                  className={cn(
+                                    "font-semibold",
+                                    previousBalance < 0
+                                      ? "text-destructive"
+                                      : previousBalance > 0
+                                        ? "text-success"
+                                        : "text-muted-foreground"
+                                  )}
+                                >
+                                  {previousBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(previousBalance))}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Нараховано за місяць</span>
+                                <span className="font-medium">{formatCurrency(charges)}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Оплачено за місяць</span>
+                                <span className="font-medium">{formatCurrency(payments)}</span>
+                              </div>
+                              <div className="border-t border-border my-1"></div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-muted-foreground">Ітого</span>
+                                {endBalance < 0 ? (
                                   <span className="font-semibold text-destructive">
-                                    До сплати: {formatCurrency(totalToPay)}
+                                    До сплати: {formatCurrency(Math.abs(endBalance))}
                                   </span>
-                                ) : totalBalance > 0 ? (
+                                ) : endBalance > 0 ? (
                                   <span className="font-semibold text-success">
-                                    Переплата: +{formatCurrency(totalBalance)}
+                                    Переплата: +{formatCurrency(endBalance)}
                                   </span>
                                 ) : (
-                                  <span className="font-semibold text-success">
-                                    {formatCurrency(totalBalance)}
+                                  <span className="font-semibold text-muted-foreground">
+                                    {formatCurrency(0)}
                                   </span>
                                 )}
                               </div>
-                              {previousBalance !== 0 && (
-                                <div className="text-xs text-muted-foreground pl-2">
-                                  (на початок: {previousBalance >= 0 ? '+' : ''}{formatCurrency(previousBalance)} + за місяць: {amount >= 0 ? '+' : ''}{formatCurrency(amount)})
-                                </div>
-                              )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
 
-
-                  <div className="space-y-4">
-                    {accountGroups.map((group) => {
-                      const accountBalance = accountBalanceMap.get(group.id);
-                      const amount = accountBalance?.balance || 0;
-                      const previousBalance = accountBalance?.previous_balance || 0;
-                      // Итоговый баланс = прошлый баланс + баланс за месяц
-                      const totalBalance = previousBalance + amount;
-                      // До сплати: если баланс отрицательный (долг) - показываем сумму к оплате, иначе 0 (переплата)
-                      const totalToPay = totalBalance < 0 ? Math.abs(totalBalance) : 0;
-                      return (
-                        <div key={group.id} className="rounded-lg border border-border p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                            <div className="text-sm font-semibold">{group.label}</div>
-                            <div className={cn(
-                              "text-sm font-semibold",
-                              amount >= 0 ? "text-success" : "text-destructive"
-                            )}>
-                              {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
-                            </div>
-                          </div>
-                          
-                          {/* Отображение прошлого баланса и итоговой суммы */}
-                          <div className="space-y-1 mb-3">
-                            {previousBalance !== 0 && (
-                              <div className="text-xs text-muted-foreground">
-                                Баланс на початок: {previousBalance >= 0 ? '+' : ''}{formatCurrency(previousBalance)}
+                            {group.enrollments.length === 0 ? (
+                              <div className="text-sm text-muted-foreground">Немає рядків за вибраний період</div>
+                            ) : (
+                              <div className="space-y-3">
+                                {group.enrollments.map((enrollment) => (
+                                  <StudentActivityBalanceRow
+                                    key={enrollment.id}
+                                    studentId={id!}
+                                    enrollment={enrollment}
+                                    month={balanceMonth}
+                                    year={balanceYear}
+                                  />
+                                ))}
                               </div>
                             )}
-                            <div className="text-xs text-muted-foreground">
-                              Нараховано за місяць: {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
-                            </div>
-                            {(previousBalance !== 0 || amount !== 0) && (
-                              <>
-                                <div className="border-t border-border my-1"></div>
-                                <div className="text-xs text-muted-foreground mb-1">
-                                  Загальний баланс: {totalBalance >= 0 ? '+' : ''}{formatCurrency(totalBalance)}
+                            {group.id === 'none' && (accountBalanceMap.get('none')?.unassigned_payments || 0) > 0 && (
+                              <div className="mt-3 rounded-md border border-dashed border-muted-foreground/40 p-3">
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="text-muted-foreground">Оплата без активності</span>
+                                  <span className="font-semibold text-success">
+                                    +{formatCurrency(accountBalanceMap.get('none')?.unassigned_payments || 0)}
+                                  </span>
                                 </div>
-                                {totalToPay > 0 ? (
-                                  <div className={cn(
-                                    "text-sm font-bold text-destructive"
-                                  )}>
-                                    До сплати: {formatCurrency(totalToPay)}
-                                  </div>
-                                ) : totalBalance > 0 ? (
-                                  <div className="text-sm font-bold text-success">
-                                    Переплата: +{formatCurrency(totalBalance)}
-                                  </div>
-                                ) : null}
-                              </>
+                              </div>
                             )}
                           </div>
-                          
-                          {group.enrollments.length === 0 ? (
-                            <div className="text-sm text-muted-foreground">Немає рядків за вибраний період</div>
-                          ) : (
-                            <div className="space-y-3">
-                              {group.enrollments.map((enrollment) => (
-                                <StudentActivityBalanceRow
-                                  key={enrollment.id}
-                                  studentId={id!}
-                                  enrollment={enrollment}
-                                  month={balanceMonth}
-                                  year={balanceYear}
-                                />
-                              ))}
-                            </div>
-                          )}
-                          {group.id === 'none' && (accountBalanceMap.get('none')?.unassigned_payments || 0) > 0 && (
-                            <div className="mt-3 rounded-md border border-dashed border-muted-foreground/40 p-3">
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">Оплата без активності</span>
-                                <span className="font-semibold text-success">
-                                  +{formatCurrency(accountBalanceMap.get('none')?.unassigned_payments || 0)}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

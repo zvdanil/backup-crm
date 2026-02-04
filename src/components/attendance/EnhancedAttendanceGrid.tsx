@@ -129,7 +129,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     const set = new Set<string>();
     if (!attendanceData || !Array.isArray(attendanceData)) return set;
     attendanceData.forEach((entry: any) => {
-      const amount = entry.value ?? entry.charged_amount ?? 0;
+      const amount = entry.charged_amount ?? 0;
       if (amount > 0) {
         set.add(entry.enrollment_id);
       }
@@ -263,7 +263,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       map.set(key, { 
         status: a.status, 
         amount: a.charged_amount || 0,
-        value: a.value || null,
+        value: a.value ?? null,
         notes: a.notes || null,
         manual_value_edit: a.manual_value_edit || false
       });
@@ -870,33 +870,29 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         ? getBillingRulesForDate(activity, priceHistory, date)
         : activity?.billing_rules;
       
-      // Розраховуємо value на основі billing_rules для "value" (hourly)
-      const calculatedValue = calculateHourlyValueFromRule(
-        date,
-        value,
-        customPrice,
-        discountPercent,
-        billingRulesForDate || null
-      );
-      
-      // Перевіряємо чи був це ручний ввід (value не співпадає з розрахованим)
-      const isManualEdit = existing?.manual_value_edit || (calculatedValue !== null && Math.abs((calculatedValue || 0) - value) > 0.01);
+      // Значение, введённое пользователем (первичка)
+      const inputValue = value;
+
+      // Ручний числовий ввід = сума в гривнях без перерахунку
+      // Не застосовуємо billing_rules.value, щоб уникнути множників/коефіцієнтів
+      const chargedAmount = inputValue;
+      const isManualEdit = true;
       
       try {
         await setAttendance.mutateAsync({
           enrollment_id: enrollmentId,
           date,
           status: null,
-          charged_amount: 0,
-          value: calculatedValue !== null ? calculatedValue : value,
+          charged_amount: chargedAmount,
+          value: inputValue,
           notes: notes || null,
           manual_value_edit: isManualEdit,
         });
         const updatedMap = new Map(attendanceMap);
         updatedMap.set(`${enrollmentId}-${date}`, {
           status: null,
-          amount: 0,
-          value: calculatedValue !== null ? calculatedValue : value,
+          amount: chargedAmount,
+          value: inputValue,
           notes: notes || null,
           manual_value_edit: isManualEdit,
         });

@@ -18,6 +18,8 @@ export interface Attendance {
   updated_at: string;
 }
 
+const supabaseAny = supabase as any;
+
 export type AttendanceInsert = Pick<Attendance, 'enrollment_id' | 'date' | 'status' | 'charged_amount' | 'value' | 'notes' | 'manual_value_edit' | 'group_lesson_id'>;
 export type AttendanceUpdate = Partial<Omit<Attendance, 'id' | 'enrollment_id' | 'created_at' | 'updated_at'>>;
 
@@ -103,16 +105,16 @@ export function useSetAttendance() {
       });
       
       // Upsert: insert or update if exists
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAny
         .from('attendance')
         .upsert(
           {
             enrollment_id: attendance.enrollment_id,
             group_lesson_id: attendance.group_lesson_id ?? null,
             date: attendance.date,
-            status: attendance.status,
+            status: attendance.status as AttendanceStatus,
             charged_amount: attendance.charged_amount,
-            value: attendance.value || null,
+            value: attendance.value ?? null,
             notes: attendance.notes,
             manual_value_edit: attendance.manual_value_edit ?? false,
           },
@@ -155,7 +157,7 @@ export function useSetAttendance() {
       if (data && data.enrollment_id) {
         try {
           // Получаем enrollment с activity для определения account_id
-          const { data: enrollment, error: enrollmentError } = await supabase
+          const { data: enrollment, error: enrollmentError } = await supabaseAny
             .from('enrollments')
             .select(`
               id,
@@ -179,7 +181,7 @@ export function useSetAttendance() {
             const activityId = enrollment.activity_id;
             
             // Ищем существующую finance_transaction
-            const { data: existingTransaction, error: findError } = await supabase
+            const { data: existingTransaction, error: findError } = await supabaseAny
               .from('finance_transactions')
               .select('id')
               .eq('student_id', studentId)
@@ -195,7 +197,7 @@ export function useSetAttendance() {
                 // Если charged_amount > 0, создаем или обновляем транзакцию
                 if (existingTransaction && existingTransaction.id) {
                   // Обновляем существующую транзакцию
-                  const { error: updateError } = await supabase
+                  const { error: updateError } = await supabaseAny
                     .from('finance_transactions')
                     .update({
                       amount: data.charged_amount,
@@ -211,7 +213,7 @@ export function useSetAttendance() {
                   }
                 } else {
                   // Создаем новую транзакцию
-                  const { error: insertError } = await supabase
+                  const { error: insertError } = await supabaseAny
                     .from('finance_transactions')
                     .insert({
                       type: 'income',
@@ -232,7 +234,7 @@ export function useSetAttendance() {
               } else {
                 // Если charged_amount = 0 или null, удаляем транзакцию если она существует
                 if (existingTransaction && existingTransaction.id) {
-                  const { error: deleteError } = await supabase
+                  const { error: deleteError } = await supabaseAny
                     .from('finance_transactions')
                     .delete()
                     .eq('id', existingTransaction.id);
@@ -330,7 +332,7 @@ export function useDeleteAttendance() {
       
       // Удаляем соответствующую finance_transaction, если она существует
       if (enrollment && enrollment.student_id && enrollment.activity_id) {
-        const { error: deleteTransactionError } = await supabase
+        const { error: deleteTransactionError } = await supabaseAny
           .from('finance_transactions')
           .delete()
           .eq('student_id', enrollment.student_id)
@@ -384,9 +386,9 @@ export function useDashboardStats() {
         supabase.from('enrollments').select('id', { count: 'exact' }).eq('is_active', true),
       ]);
 
-      // Підсумовуємо value (якщо є) або charged_amount
+      // Підсумовуємо лише charged_amount (фінансовий підсумок)
       const totalRevenue = attendanceResult.data?.reduce((sum, a) => {
-        const amount = a.value !== null && a.value !== undefined && a.value > 0 ? a.value : (a.charged_amount || 0);
+        const amount = a.charged_amount || 0;
         return sum + amount;
       }, 0) || 0;
       const attendanceCount = attendanceResult.data?.filter(a => a.status === 'present').length || 0;
