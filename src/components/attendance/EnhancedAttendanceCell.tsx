@@ -163,13 +163,13 @@ export function EnhancedAttendanceCell({
       return;
     }
     if (inputValue === '' && !status) {
-      onChange(null, null);
+      onChange(null, null, notes || null);
     } else if (inputValue !== '') {
       const numValue = parseFloat(inputValue);
       if (!isNaN(numValue)) {
-        onChange(null, numValue);
+        onChange(null, numValue, notes || null);
       } else if (!status) {
-        onChange(null, null);
+        onChange(null, null, notes || null);
       }
     }
     setIsEditing(false);
@@ -402,6 +402,12 @@ export function EnhancedAttendanceCell({
     if (nextOpen && isEmptyCell) {
       return;
     }
+    
+    // Синхронізуємо коментар при відкритті попапу
+    if (nextOpen && !open) {
+      setNotes(notesProp || '');
+    }
+    
     setOpen(nextOpen);
   };
 
@@ -549,7 +555,8 @@ export function EnhancedAttendanceCell({
             size="sm"
             onClick={() => {
               // Якщо вибираємо "Число" - очищаємо статус і дозволяємо ввести число
-              onChange(null, null);
+              // Але зберігаємо коментар!
+              onChange(null, null, notes || null);
               setInputValue('');
               setIsEditing(true);
               setOpen(false);
