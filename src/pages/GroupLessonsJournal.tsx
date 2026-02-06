@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,19 +20,35 @@ import { useStaff } from '@/hooks/useStaff';
 import { applyDeductionsToAmount } from '@/lib/staffSalary';
 import { formatCurrency, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR, filterDaysByPeriod, type PeriodFilter } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
   'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
 ];
 
+const getInitialDateFromParams = (searchParams: URLSearchParams) => {
+  const urlDate = searchParams.get('date');
+  if (urlDate) {
+    const d = new Date(urlDate);
+    if (!isNaN(d.getTime())) {
+      return d;
+    }
+  }
+  return new Date();
+};
+
 export default function GroupLessonsJournal() {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const initialDate = useMemo(() => getInitialDateFromParams(searchParams), [searchParams]);
+
+  const [year, setYear] = useState(() => initialDate.getFullYear());
+  const [month, setMonth] = useState(() => initialDate.getMonth());
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [activityId, setActivityId] = useState<string>('');
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
+  const [editingCell, setEditingCell] = useState<string | null>(null);
 
   const { data: activities = [], isLoading: activitiesLoading } = useActivities();
   const { data: staff = [] } = useStaff();
@@ -46,7 +63,7 @@ export default function GroupLessonsJournal() {
   const deleteStaffEntry = useDeleteStaffJournalEntry();
 
   const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
+  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, new Date(year, month)), [allDays, periodFilter, year, month]);
 
   const activityOptions = useMemo(() => {
     const allowed = activities.filter(
@@ -56,11 +73,27 @@ export default function GroupLessonsJournal() {
     return allowed.filter((activity) => activityIdsWithLessons.has(activity.id));
   }, [activities, allGroupLessons]);
 
+
   useEffect(() => {
-    if (!activityId && activityOptions.length > 0) {
-      setActivityId(activityOptions[0].id);
+    const newInitialDate = getInitialDateFromParams(searchParams);
+    setYear(newInitialDate.getFullYear());
+    setMonth(newInitialDate.getMonth());
+
+    const urlGroupLessonId = searchParams.get('groupLessonId');
+    if (urlGroupLessonId && allGroupLessons.length > 0) {
+      const lesson = allGroupLessons.find(l => l.id === urlGroupLessonId);
+      if (lesson && lesson.activity_id) {
+        setActivityId(lesson.activity_id);
+        return;
+      }
     }
-  }, [activityId, activityOptions]);
+    
+    if (!activityId && activityOptions.length > 0) {
+        setActivityId(activityOptions[0].id);
+    }
+
+  }, [searchParams, allGroupLessons, activityOptions]);
+
 
   useEffect(() => {
     const map: Record<string, string> = {};
@@ -88,8 +121,6 @@ export default function GroupLessonsJournal() {
     }
   };
 
-  const getStaffName = (id: string) => staff.find((member) => member.id === id)?.full_name || 'Невідомий';
-
   const syncStaffAccruals = async (lessonId: string, dateStr: string, count: number) => {
     const lesson = groupLessons.find((item) => item.id === lessonId);
     if (!lesson || !activityId) return;
@@ -100,7 +131,10 @@ export default function GroupLessonsJournal() {
     await Promise.all(staffIds.map(async (staffId) => {
       const staffRules = rules.filter((rule) => rule.staff_id === staffId);
       const rule = getStaffBillingRuleForDate(staffRules, dateStr, activityId, lessonId);
-      if (!rule) return;
+      if (!rule) {
+        console.warn(`No billing rule found for staff ${staffId} on ${dateStr} for lesson ${lessonId}`);
+        return;
+      };
 
       let baseAmount = 0;
       if (rule.rate_type === 'per_session' || rule.rate_type === 'per_student') {
@@ -154,12 +188,19 @@ export default function GroupLessonsJournal() {
 
   const handleValueBlur = async (lessonId: string, dateStr: string) => {
     const key = `${lessonId}-${dateStr}`;
+    setEditingCell(null);
     const raw = localValues[key];
     const parsed = raw === undefined || raw === '' ? 0 : Math.max(0, Math.round(Number(raw)));
+    
+    const existingSession = sessions.find(s => s.group_lesson_id === lessonId && s.session_date === dateStr);
+    const existingCount = existingSession ? existingSession.sessions_count : 0;
+
+    if (parsed === existingCount) return;
 
     if (!parsed) {
       await deleteSession.mutateAsync({ groupLessonId: lessonId, date: dateStr });
       await clearStaffAccruals(lessonId, dateStr);
+      toast({ title: "Запис видалено" });
       return;
     }
 
@@ -171,7 +212,24 @@ export default function GroupLessonsJournal() {
     });
 
     await syncStaffAccruals(lessonId, dateStr, parsed);
+    toast({ title: "Дані оновлено", description: `Кількість занять: ${parsed}` });
   };
+  
+  const handleCellClick = (key: string, value: string) => {
+    if (editingCell === key) return;
+    const sessionCount = Number(value || 0);
+    if (sessionCount > 0 && activityId) {
+      const dateStr = key.split('-').slice(1).join('-');
+      navigate(`/attendance?activityId=${activityId}&date=${dateStr}`);
+    } else {
+        setEditingCell(key);
+    }
+  };
+
+  const handleCellDoubleClick = (key: string) => {
+    setEditingCell(key);
+  };
+
 
   const isLoading = activitiesLoading || lessonsLoading || sessionsLoading;
 
@@ -236,11 +294,11 @@ export default function GroupLessonsJournal() {
         ) : (
           <div className="border rounded-xl">
             <div className="overflow-x-auto">
-              <table className={periodFilter === 'month' ? 'w-full border-collapse table-fixed' : 'border-collapse table-fixed'} style={periodFilter === 'month' ? { minWidth: '100%' } : { width: 'auto' }}>
+              <table className={cn("border-collapse table-fixed", periodFilter === 'month' ? 'w-full' : 'w-auto')} style={{ minWidth: '100%' }}>
                 <colgroup>
                   <col style={{ width: '180px', minWidth: '180px' }} />
                   {days.map((day) => (
-                    <col key={formatDateString(day)} style={{ width: '36px', minWidth: '36px' }} />
+                    <col key={formatDateString(day)} style={{ width: '40px', minWidth: '40px' }} />
                   ))}
                 </colgroup>
                 <thead className="bg-muted/50">
@@ -278,23 +336,35 @@ export default function GroupLessonsJournal() {
                         const dateStr = formatDateString(day);
                         const key = `${lesson.id}-${dateStr}`;
                         const value = localValues[key] ?? '';
+                        const isEditing = editingCell === key;
+
                         return (
                           <td
                             key={dateStr}
                             className={cn(
-                              'px-0.5 py-1 text-center',
+                              'p-0.5 text-center',
                               isWeekend(day) && WEEKEND_BG_COLOR
                             )}
+                            onClick={() => handleCellClick(key, value)}
+                            onDoubleClick={() => handleCellDoubleClick(key)}
                           >
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={value}
-                              onChange={(event) => handleValueChange(lesson.id, dateStr, event.target.value)}
-                              onBlur={() => handleValueBlur(lesson.id, dateStr)}
-                              className="h-7 w-9 text-xs text-center p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
+                            {isEditing ? (
+                               <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={value}
+                                onChange={(event) => handleValueChange(lesson.id, dateStr, event.target.value)}
+                                onBlur={() => handleValueBlur(lesson.id, dateStr)}
+                                autoFocus
+                                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                                className="h-7 w-full text-xs text-center p-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                            ) : (
+                                <div className={cn("flex items-center justify-center h-7 w-full text-xs rounded-md", value && Number(value) > 0 ? "bg-green-100 hover:bg-green-200 cursor-pointer" : "hover:bg-muted/50 cursor-pointer")}>
+                                    {value || ''}
+                                </div>
+                            )}
                           </td>
                         );
                       })}
@@ -307,7 +377,7 @@ export default function GroupLessonsJournal() {
         )}
 
         <p className="mt-4 text-sm text-muted-foreground">
-          Кількість занять у клітинці множиться на ставку педагога. Поточна ставка береться з індивідуальних правил для цієї активності та групового заняття.
+          Клік на клітинку з '0' або пусту - редагування. Клік на клітинку з числом - перехід до журналу відвідувань. Подвійний клік - примусове редагування.
         </p>
       </div>
     </>

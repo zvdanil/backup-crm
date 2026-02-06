@@ -28,6 +28,7 @@ import ParentPortal from "./pages/ParentPortal";
 import ParentStudentDetail from "./pages/ParentStudentDetail";
 import PendingActivation from "./pages/PendingActivation";
 import SummaryReport from "./pages/SummaryReport";
+import CalendarPage from "./pages/Calendar";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -72,6 +73,14 @@ const AppRoutes = () => {
           element={(
             <ProtectedRoute allowedRoles={['owner', 'admin', 'viewer']}>
               <Index />
+            </ProtectedRoute>
+          )}
+        />
+         <Route
+          path="/calendar"
+          element={(
+            <ProtectedRoute allowedRoles={['owner', 'admin', 'manager', 'accountant', 'viewer']}>
+              <CalendarPage />
             </ProtectedRoute>
           )}
         />

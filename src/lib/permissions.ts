@@ -2,6 +2,7 @@ import type { UserRole } from '@/context/AuthContext';
 
 export type AppSection =
   | 'dashboard'
+  | 'calendar' // Added calendar section
   | 'students'
   | 'activities'
   | 'accounts'
@@ -19,6 +20,7 @@ export type AppSection =
 const roleAccess: Record<UserRole, AppSection[]> = {
   owner: [
     'dashboard',
+    'calendar',
     'students',
     'activities',
     'accounts',
@@ -35,6 +37,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
   ],
   admin: [
     'dashboard',
+    'calendar',
     'students',
     'activities',
     'accounts',
@@ -50,6 +53,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'summary_report',
   ],
   manager: [
+    'calendar',
     'students',
     'activities',
     'groups',
@@ -60,6 +64,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     'staff_expenses',
   ],
   accountant: [
+    'calendar',
     'students',
     'activities',
     'accounts',
@@ -75,6 +80,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
   ],
   viewer: [
     'dashboard',
+    'calendar',
     'students',
     'activities',
     'groups',
@@ -93,5 +99,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
 
 export function canAccessSection(role: UserRole | null, section: AppSection): boolean {
   if (!role) return false;
+  // Handle potential new sections not defined in every role
+  if (!roleAccess[role]) return false;
   return roleAccess[role].includes(section);
 }
