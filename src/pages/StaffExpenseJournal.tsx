@@ -61,6 +61,8 @@ export default function StaffExpenseJournal() {
     bonus: '',
     bonusNotes: '',
   });
+  // Фільтр для відображення типів рядків
+  const [rowTypeFilter, setRowTypeFilter] = useState<string[]>(['auto', 'manual', 'payouts']);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
 
@@ -1044,6 +1046,60 @@ export default function StaffExpenseJournal() {
           />
         </div>
 
+        {/* Row type filter */}
+        <div className="mb-4 flex flex-wrap gap-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium">Фільтр рядків:</span>
+            <div className="flex gap-2">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={rowTypeFilter.includes('auto')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRowTypeFilter(prev => [...prev, 'auto']);
+                    } else {
+                      setRowTypeFilter(prev => prev.filter(type => type !== 'auto'));
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">Авто нарахування</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={rowTypeFilter.includes('manual')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRowTypeFilter(prev => [...prev, 'manual']);
+                    } else {
+                      setRowTypeFilter(prev => prev.filter(type => type !== 'manual'));
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">Ручні нарахування</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={rowTypeFilter.includes('payouts')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRowTypeFilter(prev => [...prev, 'payouts']);
+                    } else {
+                      setRowTypeFilter(prev => prev.filter(type => type !== 'payouts'));
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">Виплати</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         {/* Grid */}
         <div className="sticky top-16 z-30 bg-card">
           <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
@@ -1086,7 +1142,7 @@ export default function StaffExpenseJournal() {
                 return (
                   <React.Fragment key={staffMember.id}>
                     {/* Staff row with all activities combined - only if has automatic rates */}
-                    {hasAutoRates && (
+                    {hasAutoRates && rowTypeFilter.includes('auto') && (
                   <tr className="border-t hover:bg-muted/20">
                       <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
                         <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
@@ -1136,7 +1192,7 @@ export default function StaffExpenseJournal() {
                       })}
                     </tr>
                     )}
-                    {(manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
+                    {rowTypeFilter.includes('manual') && (manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
                       <tr key={`${staffMember.id}-${manualActivity.activityId || 'null'}`} className="border-t bg-muted/10">
                         <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
                           <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
@@ -1155,29 +1211,31 @@ export default function StaffExpenseJournal() {
                         )}
                       </tr>
                     ))}
-                    <tr className="border-t bg-muted/20">
-                      <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
-                        <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
-                          {staffMember.full_name}
-                        </Link>
-                        {' — Виплати'}
-                      </td>
-                      {days.map((day) => {
-                        const dateStr = formatDateString(day);
-                        const amount = payoutMap.get(`${staffMember.id}-${dateStr}`) || 0;
-                        return (
-                          <td
-                            key={dateStr}
-                            className={cn(
-                              "p-0.5 text-center text-red-600 font-medium",
-                              isWeekend(day) && WEEKEND_BG_COLOR
-                            )}
-                          >
-                            {amount > 0 ? formatCurrency(amount) : '—'}
-                          </td>
-                        );
-                      })}
-                    </tr>
+                    {rowTypeFilter.includes('payouts') && (
+                      <tr className="border-t bg-muted/20">
+                        <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
+                          <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                            {staffMember.full_name}
+                          </Link>
+                          {' — Виплати'}
+                        </td>
+                        {days.map((day) => {
+                          const dateStr = formatDateString(day);
+                          const amount = payoutMap.get(`${staffMember.id}-${dateStr}`) || 0;
+                          return (
+                            <td
+                              key={dateStr}
+                              className={cn(
+                                "p-0.5 text-center text-red-600 font-medium",
+                                isWeekend(day) && WEEKEND_BG_COLOR
+                              )}
+                            >
+                              {amount > 0 ? formatCurrency(amount) : '—'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
                   </React.Fragment>
                 );
               })}
