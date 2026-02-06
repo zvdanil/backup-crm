@@ -12,6 +12,7 @@
 - **State/Data fetching**: React Query
 
 Базовые файлы:
+
 - `src/main.tsx` — вход приложения.
 - `src/App.tsx` — маршрутизация, провайдеры, ProtectedRoute.
 - `src/components/layout/AppLayout.tsx` — шапка, меню, навигация.
@@ -22,14 +23,17 @@
 ## 2) Авторизация и роли
 
 **Файлы:**
-- `src/context/AuthContext.tsx` — сессия, профили, роли, активация, OAuth.
+
+- `src/context/AuthContext.tsx` — сессия, профили, роли, активация (email/password авторизация).
 - `src/components/auth/ProtectedRoute.tsx` — защита роутов по ролям.
 - `src/lib/permissions.ts` — матрица доступа по разделам.
 
 **Логика:**
+
 - При первом входе создаётся `user_profiles`.
 - Первый пользователь = `owner`, активен.
 - Остальные = `viewer`, **ожидают активации** (`is_active=false`), пока админ не включит.
+- Регистрация родителей через email с ролью `parent` (неактивны до утверждения).
 
 **Роли:**
 Owner, Admin, Manager, Accountant, Viewer, Parent.
@@ -39,11 +43,13 @@ Owner, Admin, Manager, Accountant, Viewer, Parent.
 ## 3) Интеграция с Supabase
 
 **Файлы:**
+
 - `src/integrations/supabase/client.ts` — клиент.
 - `src/integrations/supabase/types.ts` — типы БД.
 - `supabase/migrations/*.sql` — миграции.
 
 **Ключевые миграции:**
+
 - роли/профили/кабинет родителя
 - платёжные счета
 - подкатегории расходов
@@ -55,22 +61,27 @@ Owner, Admin, Manager, Accountant, Viewer, Parent.
 ## 4) Ключевые модули (hooks)
 
 **Дети/активности/зачисления**
+
 - `useStudents.ts`, `useActivities.ts`, `useEnrollments.ts`
 
 **Посещаемость**
+
 - `useAttendance.ts` — CRUD отметок
 - `lib/attendance.ts` — даты/форматы/утилиты
 - `lib/gardenAttendance.ts` — расчёт садкового журнала
 
 **Финансы**
+
 - `useFinanceTransactions.ts` — транзакции/балансы
 - `lib/activityPrice.ts` — цены/скидки
 - `lib/salaryCalculator.ts` — расчёт зарплаты
 
 **Персонал**
+
 - `useStaff.ts`, `useStaffBilling.ts`
 
 **Родители**
+
 - `useParentPortal.ts`, `useParentLinks.ts`, `useStudentAttendance.ts`
 
 ---
@@ -99,17 +110,21 @@ Owner, Admin, Manager, Accountant, Viewer, Parent.
 ## 6) База данных: ключевые таблицы
 
 **Основные**
+
 - `students`, `groups`, `activities`, `enrollments`, `attendance`
 
 **Финансы**
+
 - `finance_transactions`
 - `payment_accounts`
 - `expense_categories`
 
 **Персонал**
+
 - `staff`, `staff_billing_rules`, `staff_journal_entries`, `staff_payouts`
 
 **Авторизация**
+
 - `user_profiles`, `parent_student_links`
 - enum `user_role`
 - enum `balance_display_mode`
@@ -119,27 +134,33 @@ Owner, Admin, Manager, Accountant, Viewer, Parent.
 ## 7) Потоки данных (критические сценарии)
 
 ### A) Журнал посещений (обычный)
+
 1. Клик по ячейке → запись в `attendance`.
 2. `charged_amount/value` сохраняются.
 3. Дашборд и балансы получают данные из `attendance` и `finance_transactions`.
 
 ### B) Журнал відвідування v1 (садок)
+
 1. Клик по статусу → `handleStatusChange`.
 2. `calculateDailyAccrual` рассчитывает базовые и харчування тарифы.
 3. Создаются `finance_transactions` по базовым/food активностям.
 
 ### C) Баланс ребёнка
+
 `useStudentTotalBalance` и `useStudentAccountBalances`:
+
 - учитывают `balance_display_mode`
 - исключают контроллер‑активности
 - суммируют по счетам + “Без рахунку”
 
 ### D) Зарплаты
+
 `attendance` → `staff_journal_entries` → `staff_payouts`  
 Дашборд учитывает `salary` отдельно.
 
 ### E) Авторизация
-OAuth → `user_profiles` → роль/активация → `ProtectedRoute`.
+
+Email/Password → `user_profiles` → роль/активация → `ProtectedRoute`.
 
 ---
 
@@ -191,6 +212,7 @@ OAuth → `user_profiles` → роль/активация → `ProtectedRoute`.
 ---
 
 Если нужно — могу добавить:
+
 - графическую ER‑схему,
 - диаграмму потоков данных,
 - операционный сценарий “день администратора”.
