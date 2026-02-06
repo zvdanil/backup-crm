@@ -60,7 +60,7 @@ export default function Attendance() {
     if (exists && urlActivityId !== selectedActivityId) {
       setSelectedActivityId(urlActivityId);
     }
-  }, [urlActivityId, activeActivities, selectedActivityId]);
+  }, [urlActivityId, activeActivities]);
 
   useEffect(() => {
     if (!selectedActivityId) return;
@@ -80,14 +80,22 @@ export default function Attendance() {
 
   useEffect(() => {
     if (!selectedActivityId) return;
+    const currentActivityId = searchParams.get("activityId") || "";
+    const currentDate = searchParams.get("date") || "";
+    const nextDate = initialDate ? initialDate.toISOString().slice(0, 10) : "";
+
+    if (currentActivityId === selectedActivityId && currentDate === nextDate) {
+      return;
+    }
+
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("activityId", selectedActivityId);
-    if (initialDate) {
-      nextParams.set("date", initialDate.toISOString().slice(0, 10));
+    if (nextDate) {
+      nextParams.set("date", nextDate);
+    } else {
+      nextParams.delete("date");
     }
-    if (nextParams.toString() !== searchParams.toString()) {
-      setSearchParams(nextParams, { replace: true });
-    }
+    setSearchParams(nextParams, { replace: true });
   }, [selectedActivityId, initialDate, searchParams, setSearchParams]);
 
   const recentActivities = useMemo(() => {
