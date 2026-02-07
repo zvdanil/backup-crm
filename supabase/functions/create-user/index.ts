@@ -11,74 +11,46 @@ const corsHeaders = {
 
 serve(async (req) => {
   // Handle CORS preflight requests (OPTIONS)
-  // Браузер отправляет preflight запрос перед основным запросом
   if (req.method === "OPTIONS") {
     return new Response(null, {
-      status: 204, // No Content - правильный статус для OPTIONS
+      status: 204,
       headers: corsHeaders,
     });
   }
 
   try {
-    // Логируем все заголовки для отладки
-    console.log("[create-user] All headers:");
-    req.headers.forEach((value, key) => {
-      console.log(`  ${key}: ${value.substring(0, 50)}...`);
-    });
+    // Создаем клиент с заголовками из запроса - Supabase автоматически извлечет JWT
+    // Supabase Edge Runtime валидирует JWT и делает его доступным через req.headers
+    const authHeader = req.headers.get('Authorization')
+    const apiKey = req.headers.get('apikey')
+    
+    console.log('[create-user] Headers check:', {
+      hasAuth: !!authHeader,
+      hasApiKey: !!apiKey,
+      authPrefix: authHeader?.substring(0, 20),
+      apiKeyPrefix: apiKey?.substring(0, 20)
+    })
 
-    // Get the authorization header from JWT context
-    // Supabase Edge Runtime помещает JWT в стандартный Authorization header
-    const authHeader = req.headers.get("Authorization");
-    console.log(
-      "[create-user] Authorization header:",
-      authHeader ? "present" : "missing",
-    );
-
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    // Create Supabase client with user's token for authentication
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-
-    console.log(
-      "[create-user] SUPABASE_URL:",
-      supabaseUrl ? "present" : "missing",
-    );
-    console.log(
-      "[create-user] SUPABASE_ANON_KEY:",
-      supabaseAnonKey ? "present" : "missing",
-    );
-
+    // Создаем Supabase client для проверки пользователя
     const supabaseClient = createClient(
-      supabaseUrl ?? "",
-      supabaseAnonKey ?? "",
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       {
         global: {
-          headers: { Authorization: authHeader },
-        },
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
+          headers: {
+            Authorization: authHeader ?? `Bearer ${apiKey}`,
+          },
         },
       },
     );
 
-    // Verify that the user is authenticated
-    console.log("[create-user] Calling getUser()...");
+    // Проверяем что пользователь авторизован
     const {
       data: { user },
       error: userError,
     } = await supabaseClient.auth.getUser();
 
-    console.log("[create-user] getUser result:", {
+    console.log("[create-user] User check:", {
       userId: user?.id,
       error: userError?.message,
     });
