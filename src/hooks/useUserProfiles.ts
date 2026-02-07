@@ -75,68 +75,50 @@ export function useCreateUser() {
 
   return useMutation({
     mutationFn: async (userData: CreateUserData) => {
-      // Получаем текущую сессию для авторизации
+      // Получаем текущую сессию администратора
       const {
-        data: { session },
+        data: { session: adminSession },
       } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      if (!adminSession?.access_token) {
         throw new Error("Необхідна авторизація для створення користувача");
       }
 
-      // Используем Supabase Edge Function для создания пользователя
-      // Работает универсально на любой платформе (Railway, Vercel, etc)
-      console.log("[useCreateUser] Calling Supabase Edge Function with data:", {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: userData.email,
-        parentName: userData.parentName,
-        childName: userData.childName,
-        role: userData.role,
-        isActive: userData.isActive,
-      });
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as
-        | string
-        | undefined;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as
-        | string
-        | undefined;
-
-      console.log("[useCreateUser] Env check:", {
-        hasUrl: !!supabaseUrl,
-        hasKey: !!supabaseKey,
-        urlPrefix: supabaseUrl?.slice(0, 24),
-        keyPrefix: supabaseKey?.slice(0, 16),
-      });
-
-      if (!supabaseUrl || !supabaseKey) {
-        throw new Error("Missing Supabase env variables on frontend");
-      }
-
-      const functionUrl = `${supabaseUrl}/functions/v1/create-user`;
-
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: supabaseKey,
-          "Content-Type": "application/json",
+        password: userData.password,
+        options: {
+          data: {
+            parent_name: userData.parentName,
+            child_name: userData.childName,
+            full_name: userData.parentName,
+          },
         },
-        body: JSON.stringify({
-          email: userData.email,
-          password: userData.password,
-          parentName: userData.parentName,
-          childName: userData.childName,
-          role: userData.role,
-          isActive: userData.isActive,
-        }),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to create user");
+      if (signUpError) {
+        throw signUpError;
       }
 
-      return data as UserProfile;
+      if (adminSession?.access_token && adminSession.refresh_token) {
+        await supabase.auth.setSession({
+          access_token: adminSession.access_token,
+          refresh_token: adminSession.refresh_token,
+        });
+      }
+
+      const now = new Date().toISOString();
+      const createdUser = signUpData.user;
+
+      return {
+        id: createdUser?.id ?? "pending",
+        full_name: userData.parentName,
+        parent_name: userData.parentName,
+        child_name: userData.childName,
+        role: "newregistration",
+        is_active: false,
+        created_at: now,
+        updated_at: now,
+      } as UserProfile;
     },
     onSuccess: (data) => {
       console.log("[useCreateUser] onSuccess, invalidating queries");
