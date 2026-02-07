@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { supabase } from "@/integrations/supabase/client";
 import {
   useUserProfiles,
   useUpdateUserProfile,
@@ -76,6 +77,19 @@ export default function Users() {
   const isReadOnly = role !== "owner";
   const [authDebugEnabled, setAuthDebugEnabled] = useState(false);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [debugForm, setDebugForm] = useState({
+    email: "",
+    password: "",
+    parentName: "",
+    childName: "",
+    role: "parent" as UserRole,
+    isActive: false,
+  });
+  const [debugStatus, setDebugStatus] = useState<{
+    loading: boolean;
+    error?: string;
+    result?: unknown;
+  }>({ loading: false });
 
   const createUserForm = useForm<CreateUserFormData>({
     resolver: zodResolver(createUserSchema),
@@ -111,6 +125,7 @@ export default function Users() {
   );
 
   const onCreateUserSubmit = async (data: CreateUserFormData) => {
+    console.log("[Users] onCreateUserSubmit", data);
     try {
       await createUser.mutateAsync({
         email: data.email,
@@ -140,6 +155,76 @@ export default function Users() {
         queryClient.refetchQueries({ queryKey: ["user_profiles"] });
       }, 2000);
     }
+  };
+
+  const onDebugCreateUser = async () => {
+    setDebugStatus({ loading: true });
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as
+      | string
+      | undefined;
+
+    if (!supabaseUrl || !supabaseKey) {
+      setDebugStatus({
+        loading: false,
+        error: "Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY",
+      });
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      setDebugStatus({
+        loading: false,
+        error: "No active session token",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: supabaseKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: debugForm.email,
+          password: debugForm.password,
+          parentName: debugForm.parentName,
+          childName: debugForm.childName,
+          role: debugForm.role,
+          isActive: debugForm.isActive,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setDebugStatus({
+          loading: false,
+          error: result?.error || `HTTP ${response.status}`,
+          result,
+        });
+        return;
+      }
+
+      setDebugStatus({ loading: false, result });
+    } catch (error: any) {
+      setDebugStatus({
+        loading: false,
+        error: error?.message || "Unknown error",
+      });
+    }
+  };
+
+  const onCreateUserInvalid = (errors: unknown) => {
+    console.warn("[Users] create user validation errors", errors);
   };
 
   return (
@@ -180,7 +265,10 @@ export default function Users() {
                   <DialogTitle>Створити нового користувача</DialogTitle>
                 </DialogHeader>
                 <form
-                  onSubmit={createUserForm.handleSubmit(onCreateUserSubmit)}
+                  onSubmit={createUserForm.handleSubmit(
+                    onCreateUserSubmit,
+                    onCreateUserInvalid,
+                  )}
                   className="space-y-4"
                 >
                   <div className="space-y-2">
@@ -307,6 +395,107 @@ export default function Users() {
             </Dialog>
           )}
         </div>
+
+        {!isReadOnly && (
+          <div className="mb-6 rounded-xl border border-border bg-card p-4">
+            <div className="text-sm font-medium">
+              Debug create user (standalone)
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <Input
+                placeholder="Email"
+                value={debugForm.email}
+                onChange={(event) =>
+                  setDebugForm((prev) => ({
+                    ...prev,
+                    email: event.target.value,
+                  }))
+                }
+              />
+              <Input
+                placeholder="Password"
+                type="password"
+                value={debugForm.password}
+                onChange={(event) =>
+                  setDebugForm((prev) => ({
+                    ...prev,
+                    password: event.target.value,
+                  }))
+                }
+              />
+              <Input
+                placeholder="Parent name"
+                value={debugForm.parentName}
+                onChange={(event) =>
+                  setDebugForm((prev) => ({
+                    ...prev,
+                    parentName: event.target.value,
+                  }))
+                }
+              />
+              <Input
+                placeholder="Child name"
+                value={debugForm.childName}
+                onChange={(event) =>
+                  setDebugForm((prev) => ({
+                    ...prev,
+                    childName: event.target.value,
+                  }))
+                }
+              />
+              <Select
+                value={debugForm.role}
+                onValueChange={(value) =>
+                  setDebugForm((prev) => ({
+                    ...prev,
+                    role: value as UserRole,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={debugForm.isActive}
+                  onCheckedChange={(checked) =>
+                    setDebugForm((prev) => ({
+                      ...prev,
+                      isActive: checked,
+                    }))
+                  }
+                />
+                <Label>Is active</Label>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center gap-3">
+              <Button
+                onClick={onDebugCreateUser}
+                disabled={debugStatus.loading}
+              >
+                {debugStatus.loading ? "Sending..." : "Send debug request"}
+              </Button>
+              {debugStatus.error && (
+                <span className="text-sm text-destructive">
+                  {debugStatus.error}
+                </span>
+              )}
+              {debugStatus.result && !debugStatus.error && (
+                <span className="text-sm text-muted-foreground">
+                  Response received
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
