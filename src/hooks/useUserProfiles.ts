@@ -83,17 +83,18 @@ export function useCreateUser() {
         throw new Error("Необхідна авторизація для створення користувача");
       }
 
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          data: {
-            parent_name: userData.parentName,
-            child_name: userData.childName,
-            full_name: userData.parentName,
+      const { data: signUpData, error: signUpError } =
+        await supabase.auth.signUp({
+          email: userData.email,
+          password: userData.password,
+          options: {
+            data: {
+              parent_name: userData.parentName,
+              child_name: userData.childName,
+              full_name: userData.parentName,
+            },
           },
-        },
-      });
+        });
 
       if (signUpError) {
         throw signUpError;

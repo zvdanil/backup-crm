@@ -144,7 +144,6 @@ export default function Users() {
     }
   };
 
-
   const onCreateUserInvalid = (errors: unknown) => {
     console.warn("[Users] create user validation errors", errors);
   };
