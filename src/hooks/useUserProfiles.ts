@@ -93,40 +93,35 @@ export function useCreateUser() {
         isActive: userData.isActive,
       });
 
-      // Вызываем Supabase Edge Function
-      // SDK автоматически добавляет Authorization header из текущей сессии
-      const { data, error } = await supabase.functions.invoke("create-user", {
-        body: {
+      // Вызываем Supabase Edge Function напрямую через fetch
+      // чтобы гарантировать отправку Authorization header
+      const functionUrl = `${supabase.supabaseUrl}/functions/v1/create-user`;
+      
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'apikey': supabase.supabaseKey,
+        },
+        body: JSON.stringify({
           email: userData.email,
           password: userData.password,
           parentName: userData.parentName,
           childName: userData.childName,
           role: userData.role,
           isActive: userData.isActive,
-        },
+        }),
       });
 
-      console.log("[useCreateUser] Edge Function response:", { data, error });
-
-      if (error) {
-        console.error("[useCreateUser] Edge Function error:", error);
-        throw new Error(error.message || "Помилка створення користувача");
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create user');
       }
 
-      if (data?.error) {
-        console.error("[useCreateUser] Result error:", data.error);
-        throw new Error(
-          result.error.message || "Помилка створення користувача",
-        );
-      }
-
-      if (!result?.data) {
-        console.error("[useCreateUser] No data in result:", result);
-        throw new Error("Користувач не створений");
-      }
-
-      console.log("[useCreateUser] User created successfully:", result.data);
-      return result.data as UserProfile;
+      console.log("[useCreateUser] User created successfully:", data);
+      return data as UserProfile;
     },
     onSuccess: (data) => {
       console.log("[useCreateUser] onSuccess, invalidating queries");
