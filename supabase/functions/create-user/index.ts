@@ -19,46 +19,48 @@ serve(async (req) => {
   }
 
   try {
-    // Создаем клиент с заголовками из запроса - Supabase автоматически извлечет JWT
-    // Supabase Edge Runtime валидирует JWT и делает его доступным через req.headers
-    const authHeader = req.headers.get('Authorization')
-    const apiKey = req.headers.get('apikey')
-    
-    console.log('[create-user] Headers check:', {
-      hasAuth: !!authHeader,
-      hasApiKey: !!apiKey,
-      authPrefix: authHeader?.substring(0, 20),
-      apiKeyPrefix: apiKey?.substring(0, 20)
-    })
-
-    // Создаем Supabase client для проверки пользователя
-    const supabaseClient = createClient(
+    // Создаем admin клиент
+    const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      {
-        global: {
-          headers: {
-            Authorization: authHeader ?? `Bearer ${apiKey}`,
-          },
-        },
-      },
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     );
 
-    // Проверяем что пользователь авторизован
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseClient.auth.getUser();
+    // Получаем JWT токен из запроса
+    // Supabase SDK отправляет его либо в Authorization, либо в apikey
+    const authHeader = req.headers.get('Authorization')?.replace('Bearer ', '');
+    const apiKeyHeader = req.headers.get('apikey');
+    const jwt = authHeader || apiKeyHeader;
 
-    console.log("[create-user] User check:", {
+    console.log("[create-user] JWT extraction:", {
+      hasAuthHeader: !!authHeader,
+      hasApiKey: !!apiKeyHeader,
+      jwtLength: jwt?.length || 0,
+    });
+
+    if (!jwt) {
+      return new Response(
+        JSON.stringify({ error: "No authentication token provided" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // Проверяем JWT и получаем пользователя через admin API
+    const { data: { user }, error: userError } = 
+      await supabaseAdmin.auth.getUser(jwt);
+
+    console.log("[create-user] User verification:", {
       userId: user?.id,
-      error: userError?.message,
+      hasError: !!userError,
+      errorMsg: userError?.message,
     });
 
     if (userError || !user) {
       return new Response(
         JSON.stringify({
-          error: `Unauthorized: ${userError?.message || "No user"}`,
+          error: `Unauthorized: ${userError?.message || "Invalid token"}`,
         }),
         {
           status: 401,
@@ -67,27 +69,28 @@ serve(async (req) => {
       );
     }
 
-    // Create admin client for user creation
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      },
-    );
-
-    // Check user role
-    const { data: profile } = await supabaseClient
+    // Проверяем роль пользователя
+    const { data: profile } = await supabaseAdmin
       .from("user_profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
+    console.log("[create-user] Role check:", {
+      hasProfile: !!profile  ,
+      role: profile?.role,
+    });
+
     if (!profile || (profile.role !== "owner" && profile.role !== "admin")) {
-      throw new Error("Forbidden: Only owners and admins can create users");
+      return new Response(
+        JSON.stringify({
+          error: "Forbidden: Only owners and admins can create users",
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Parse request body
