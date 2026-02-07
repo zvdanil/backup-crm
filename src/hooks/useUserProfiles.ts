@@ -95,14 +95,16 @@ export function useCreateUser() {
 
       // Вызываем Supabase Edge Function напрямую через fetch
       // чтобы гарантировать отправку Authorization header
-      const functionUrl = `${supabase.supabaseUrl}/functions/v1/create-user`;
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const functionUrl = `${SUPABASE_URL}/functions/v1/create-user`;
       
       const response = await fetch(functionUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
-          'apikey': supabase.supabaseKey,
+          'apikey': SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({
           email: userData.email,
