@@ -103,6 +103,9 @@ export function useCreateUser() {
           role: userData.role,
           isActive: userData.isActive,
         },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       console.log("[useCreateUser] Edge Function response:", { data, error });
