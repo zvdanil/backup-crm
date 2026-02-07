@@ -74,9 +74,9 @@ export function useCreateUser() {
         throw new Error('Необхідна авторизація для створення користувача');
       }
 
-      // Используем Vercel API Route для создания пользователя через Admin API
-      // Это обходит rate limits и CORS проблемы
-      console.log('[useCreateUser] Calling API Route with data:', {
+      // Используем Supabase Edge Function для создания пользователя
+      // Работает универсально на любой платформе (Railway, Vercel, etc)
+      console.log('[useCreateUser] Calling Supabase Edge Function with data:', {
         email: userData.email,
         parentName: userData.parentName,
         childName: userData.childName,
@@ -84,40 +84,27 @@ export function useCreateUser() {
         isActive: userData.isActive,
       });
 
-      // Вызываем Vercel API Route (тот же домен - нет CORS)
-      const response = await fetch('/api/create-user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
+      // Вызываем Supabase Edge Function
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: {
           email: userData.email,
           password: userData.password,
           parentName: userData.parentName,
           childName: userData.childName,
           role: userData.role,
           isActive: userData.isActive,
-        }),
+        },
       });
 
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Помилка створення користувача');
-      }
-      
-      const functionError = result.error ? { message: result.error } : null;
+      console.log('[useCreateUser] Edge Function response:', { data, error });
 
-      console.log('[useCreateUser] API Route response:', { result, functionError });
-
-      if (functionError) {
-        console.error('[useCreateUser] API Route error:', functionError);
-        throw new Error(functionError.message || 'Помилка створення користувача');
+      if (error) {
+        console.error('[useCreateUser] Edge Function error:', error);
+        throw new Error(error.message || 'Помилка створення користувача');
       }
 
-      if (result?.error) {
-        console.error('[useCreateUser] Result error:', result.error);
+      if (data?.error) {
+        console.error('[useCreateUser] Result error:', data.error);
         throw new Error(result.error.message || 'Помилка створення користувача');
       }
 
