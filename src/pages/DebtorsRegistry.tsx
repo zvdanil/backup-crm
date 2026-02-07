@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import {
   Table,
@@ -245,7 +246,14 @@ export default function DebtorsRegistry() {
             <TableBody>
               {filteredRows.map((row) => (
                 <TableRow key={`${row.student_id}-${row.account_id || "none"}`}>
-                  <TableCell>{row.student_name}</TableCell>
+                  <TableCell>
+                    <Link
+                      to={`/students/${row.student_id}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {row.student_name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{row.account_name}</TableCell>
                   <TableCell className="text-right">
                     {formatCurrency(row.month_charges)}

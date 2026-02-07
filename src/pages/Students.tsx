@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,13 +46,20 @@ export default function Students() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
+  const [viewMode, setViewMode] = useState<"cards" | "table">(() => {
+    const saved = localStorage.getItem("studentsViewMode");
+    return saved === "cards" || saved === "table" ? saved : "cards";
+  });
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
   const dragStartXRef = useRef(0);
   const dragStartYRef = useRef(0);
   const scrollLeftRef = useRef(0);
   const scrollTopRef = useRef(0);
+
+  useEffect(() => {
+    localStorage.setItem("studentsViewMode", viewMode);
+  }, [viewMode]);
 
   const { data: students = [], isLoading } = useStudents();
   const { data: activities = [] } = useActivities();
