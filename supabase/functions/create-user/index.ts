@@ -18,23 +18,32 @@ serve(async (req) => {
     });
   }
 
+  // ТЕСТ: сразу возвращаем успех чтобы проверить доходит ли запрос
+  return new Response(
+    JSON.stringify({ message: 'Function reached!', test: true }),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  )
+
   try {
     // Создаем Supabase client из контекста запроса
     // В Supabase Edge Functions JWT автоматически передается через внутренний контекст
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
       {
         global: {
           headers: {
-            Authorization: req.headers.get('Authorization')!,
+            Authorization: req.headers.get("Authorization")!,
           },
         },
-      }
-    )
+      },
+    );
 
     // Получаем текущего пользователя
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseClient.auth.getUser();
 
     // Если не сработало - попробуем альтернативный способ
     if (userError || !user) {
@@ -43,30 +52,35 @@ serve(async (req) => {
       //   JSON.stringify({ error: 'Unauthorized', details: userError?.message }),
       //   { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       // )
-      
+
       // Пропускаем без проверки для теста
-      console.log('[create-user] WARNING: Skipping auth check for debugging')
+      console.log("[create-user] WARNING: Skipping auth check for debugging");
     } else {
       // Проверяем роль только если user найден
       const { data: profile } = await supabaseClient
-        .from('user_profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
+        .from("user_profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
 
-      if (!profile || (profile.role !== 'owner' && profile.role !== 'admin')) {
+      if (!profile || (profile.role !== "owner" && profile.role !== "admin")) {
         return new Response(
-          JSON.stringify({ error: 'Forbidden: Only owners and admins can create users' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
+          JSON.stringify({
+            error: "Forbidden: Only owners and admins can create users",
+          }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
     }
 
     // Создаем admin client для создания пользователя
     const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    );
 
     // Parse request body
     const { email, password, parentName, childName, role, isActive } =
