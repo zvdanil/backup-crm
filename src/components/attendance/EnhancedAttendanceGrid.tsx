@@ -390,6 +390,21 @@ export function EnhancedAttendanceGrid({
     [activity],
   );
 
+  const isMarkedAttendance = useCallback(
+    (attendance?: {
+      status: AttendanceStatus | null;
+      value: number | null;
+    }): boolean => {
+      if (!attendance) return false;
+      if (attendance.status) return true;
+      if (attendance.value !== null && attendance.value !== undefined) {
+        return attendance.value !== 0;
+      }
+      return false;
+    },
+    [],
+  );
+
   const buildAttendanceRecordsFromMap = useCallback(
     (
       mapOverride?: Map<
@@ -803,16 +818,32 @@ export function EnhancedAttendanceGrid({
   const studentTotals = useMemo(() => {
     const totals: Record<
       string,
-      { present: number; sick: number; absent: number; values: number }
+      {
+        present: number;
+        sick: number;
+        absent: number;
+        values: number;
+        marked: number;
+      }
     > = {};
 
     filteredEnrollments.forEach((enrollment) => {
-      totals[enrollment.id] = { present: 0, sick: 0, absent: 0, values: 0 };
+      totals[enrollment.id] = {
+        present: 0,
+        sick: 0,
+        absent: 0,
+        values: 0,
+        marked: 0,
+      };
 
       days.forEach((day) => {
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = attendanceMap.get(key);
+
+        if (isMarkedAttendance(attendance)) {
+          totals[enrollment.id].marked++;
+        }
 
         // Якщо є статус - рахуємо статус
         if (attendance?.status) {
@@ -833,22 +864,38 @@ export function EnhancedAttendanceGrid({
     });
 
     return totals;
-  }, [filteredEnrollments, days, attendanceMap]);
+  }, [filteredEnrollments, days, attendanceMap, isMarkedAttendance]);
 
   // Ітоги за день
   const dailyTotals = useMemo(() => {
     const totals: Record<
       string,
-      { present: number; sick: number; absent: number; values: number }
+      {
+        present: number;
+        sick: number;
+        absent: number;
+        values: number;
+        marked: number;
+      }
     > = {};
 
     days.forEach((day) => {
       const dateStr = formatDateString(day);
-      totals[dateStr] = { present: 0, sick: 0, absent: 0, values: 0 };
+      totals[dateStr] = {
+        present: 0,
+        sick: 0,
+        absent: 0,
+        values: 0,
+        marked: 0,
+      };
 
       filteredEnrollments.forEach((enrollment) => {
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = attendanceMap.get(key);
+
+        if (isMarkedAttendance(attendance)) {
+          totals[dateStr].marked++;
+        }
 
         // Якщо є статус - рахуємо статус
         if (attendance?.status) {
@@ -868,7 +915,7 @@ export function EnhancedAttendanceGrid({
     });
 
     return totals;
-  }, [filteredEnrollments, days, attendanceMap]);
+  }, [filteredEnrollments, days, attendanceMap, isMarkedAttendance]);
 
   const visibleGroupRows = useMemo(() => {
     const ids = new Set<string>();
@@ -1936,6 +1983,7 @@ export function EnhancedAttendanceGrid({
                       sick: 0,
                       absent: 0,
                       values: 0,
+                      marked: 0,
                     };
                     return (
                       <th
@@ -1945,13 +1993,13 @@ export function EnhancedAttendanceGrid({
                           isWeekend(day) && WEEKEND_BG_COLOR,
                         )}
                       >
-                        {totals.present}
+                        {totals.marked}
                       </th>
                     );
                   })}
                   <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
                     {Object.values(studentTotals).reduce(
-                      (sum, t) => sum + t.present,
+                      (sum, t) => sum + t.marked,
                       0,
                     )}
                   </th>
