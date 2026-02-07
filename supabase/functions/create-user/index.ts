@@ -20,9 +20,12 @@ serve(async (req) => {
 
   // ТЕСТ: сразу возвращаем успех чтобы проверить доходит ли запрос
   return new Response(
-    JSON.stringify({ message: 'Function reached!', test: true }),
-    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  )
+    JSON.stringify({ message: "Function reached!", test: true }),
+    {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    },
+  );
 
   try {
     // Создаем Supabase client из контекста запроса

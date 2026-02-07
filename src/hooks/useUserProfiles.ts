@@ -93,18 +93,30 @@ export function useCreateUser() {
         isActive: userData.isActive,
       });
 
-      // Вызываем Supabase Edge Function напрямую через fetch
-      // чтобы гарантировать отправку Authorization header
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-      const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      const functionUrl = `${SUPABASE_URL}/functions/v1/create-user`;
-      
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as
+        | string
+        | undefined;
+
+      console.log("[useCreateUser] Env check:", {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!supabaseKey,
+        urlPrefix: supabaseUrl?.slice(0, 24),
+        keyPrefix: supabaseKey?.slice(0, 16),
+      });
+
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Missing Supabase env variables on frontend");
+      }
+
+      const functionUrl = `${supabaseUrl}/functions/v1/create-user`;
+
       const response = await fetch(functionUrl, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-          'apikey': SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: supabaseKey,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email: userData.email,
@@ -117,12 +129,11 @@ export function useCreateUser() {
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create user');
+        throw new Error(data?.error || "Failed to create user");
       }
 
-      console.log("[useCreateUser] User created successfully:", data);
       return data as UserProfile;
     },
     onSuccess: (data) => {
