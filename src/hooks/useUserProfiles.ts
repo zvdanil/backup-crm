@@ -94,6 +94,7 @@ export function useCreateUser() {
       });
 
       // Вызываем Supabase Edge Function
+      // SDK автоматически добавляет Authorization header из текущей сессии
       const { data, error } = await supabase.functions.invoke("create-user", {
         body: {
           email: userData.email,
@@ -102,9 +103,6 @@ export function useCreateUser() {
           childName: userData.childName,
           role: userData.role,
           isActive: userData.isActive,
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
         },
       });
 

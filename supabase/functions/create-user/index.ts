@@ -1,162 +1,209 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-}
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Max-Age": "86400",
+};
 
 serve(async (req) => {
   // Handle CORS preflight requests (OPTIONS)
   // Браузер отправляет preflight запрос перед основным запросом
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { 
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
       status: 204, // No Content - правильный статус для OPTIONS
       headers: corsHeaders,
-    })
+    });
   }
 
   try {
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization')
+    // Логируем все заголовки для отладки
+    console.log("[create-user] All headers:");
+    req.headers.forEach((value, key) => {
+      console.log(`  ${key}: ${value.substring(0, 50)}...`);
+    });
+
+    // Get the authorization header from JWT context
+    // Supabase Edge Runtime помещает JWT в стандартный Authorization header
+    const authHeader = req.headers.get("Authorization");
+    console.log(
+      "[create-user] Authorization header:",
+      authHeader ? "present" : "missing",
+    );
+
     if (!authHeader) {
-      throw new Error('Missing authorization header')
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Create Supabase client with user's token for authentication
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+    console.log(
+      "[create-user] SUPABASE_URL:",
+      supabaseUrl ? "present" : "missing",
+    );
+    console.log(
+      "[create-user] SUPABASE_ANON_KEY:",
+      supabaseAnonKey ? "present" : "missing",
+    );
+
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      supabaseUrl ?? "",
+      supabaseAnonKey ?? "",
       {
         global: {
-          headers: { Authorization: authHeader }
+          headers: { Authorization: authHeader },
         },
         auth: {
           autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+          persistSession: false,
+        },
+      },
+    );
 
     // Verify that the user is authenticated
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-    
+    console.log("[create-user] Calling getUser()...");
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseClient.auth.getUser();
+
+    console.log("[create-user] getUser result:", {
+      userId: user?.id,
+      error: userError?.message,
+    });
+
     if (userError || !user) {
-      throw new Error('Unauthorized')
+      return new Response(
+        JSON.stringify({
+          error: `Unauthorized: ${userError?.message || "No user"}`,
+        }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     // Create admin client for user creation
     const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       {
         auth: {
           autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+          persistSession: false,
+        },
+      },
+    );
 
     // Check user role
     const { data: profile } = await supabaseClient
-      .from('user_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
 
-    if (!profile || (profile.role !== 'owner' && profile.role !== 'admin')) {
-      throw new Error('Forbidden: Only owners and admins can create users')
+    if (!profile || (profile.role !== "owner" && profile.role !== "admin")) {
+      throw new Error("Forbidden: Only owners and admins can create users");
     }
 
     // Parse request body
-    const { email, password, parentName, childName, role, isActive } = await req.json()
+    const { email, password, parentName, childName, role, isActive } =
+      await req.json();
 
     if (!email || !password || !parentName || !childName) {
-      throw new Error('Missing required fields')
+      throw new Error("Missing required fields");
     }
 
     // Create user using Admin API (bypasses rate limits)
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // Auto-confirm email
-      user_metadata: {
-        parent_name: parentName,
-        child_name: childName,
-        full_name: parentName,
-      },
-    })
+    const { data: authData, error: authError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // Auto-confirm email
+        user_metadata: {
+          parent_name: parentName,
+          child_name: childName,
+          full_name: parentName,
+        },
+      });
 
-    if (authError) throw authError
-    if (!authData.user) throw new Error('User creation failed')
+    if (authError) throw authError;
+    if (!authData.user) throw new Error("User creation failed");
 
     // Wait a bit for trigger to create profile
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Check if profile exists
     const { data: existingProfile } = await supabaseAdmin
-      .from('user_profiles')
-      .select('id')
-      .eq('id', authData.user.id)
-      .maybeSingle()
+      .from("user_profiles")
+      .select("id")
+      .eq("id", authData.user.id)
+      .maybeSingle();
 
-    let profileData
+    let profileData;
 
     if (existingProfile) {
       // Update existing profile
       const { data: updatedProfile, error: updateError } = await supabaseAdmin
-        .from('user_profiles')
+        .from("user_profiles")
         .update({
-          role: role || 'newregistration',
+          role: role || "newregistration",
           is_active: isActive !== undefined ? isActive : false,
           parent_name: parentName,
           child_name: childName,
           full_name: parentName,
         })
-        .eq('id', authData.user.id)
-        .select('*')
-        .single()
+        .eq("id", authData.user.id)
+        .select("*")
+        .single();
 
-      if (updateError) throw updateError
-      profileData = updatedProfile
+      if (updateError) throw updateError;
+      profileData = updatedProfile;
     } else {
       // Create profile explicitly
       const { data: createdProfile, error: createError } = await supabaseAdmin
-        .from('user_profiles')
+        .from("user_profiles")
         .insert({
           id: authData.user.id,
           full_name: parentName,
           parent_name: parentName,
           child_name: childName,
-          role: role || 'newregistration',
+          role: role || "newregistration",
           is_active: isActive !== undefined ? isActive : false,
         })
-        .select('*')
-        .single()
+        .select("*")
+        .single();
 
-      if (createError) throw createError
-      profileData = createdProfile
+      if (createError) throw createError;
+      profileData = createdProfile;
     }
 
-    return new Response(
-      JSON.stringify({ data: profileData, error: null }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      },
-    )
+    return new Response(JSON.stringify({ data: profileData, error: null }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200,
+    });
   } catch (error) {
     return new Response(
-      JSON.stringify({ 
-        data: null, 
-        error: { message: error.message || 'Internal server error' } 
+      JSON.stringify({
+        data: null,
+        error: { message: error.message || "Internal server error" },
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 400,
       },
-    )
+    );
   }
-})
+});
