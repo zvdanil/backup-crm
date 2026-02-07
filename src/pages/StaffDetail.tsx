@@ -513,12 +513,12 @@ export default function StaffDetail() {
         entry.is_manual_override === true,
     );
 
-    console.log('[DEBUG handleJournalEntryCellClick]', {
+    console.log("[DEBUG handleJournalEntryCellClick]", {
       date,
       realActivityId,
       existing,
       description: existing?.description,
-      allEntriesForDate: journalEntries.filter(e => e.date === date),
+      allEntriesForDate: journalEntries.filter((e) => e.date === date),
     });
 
     // Get manual rate for this date and activity
@@ -568,7 +568,10 @@ export default function StaffDetail() {
         description: existing?.description || "",
       });
     } else if (rateType === "hourly") {
-      if (existing?.hours_worked !== null && existing?.hours_worked !== undefined) {
+      if (
+        existing?.hours_worked !== null &&
+        existing?.hours_worked !== undefined
+      ) {
         setManualValue(existing.hours_worked.toString());
       } else {
         setManualValue(existing?.amount.toString() || "");
