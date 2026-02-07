@@ -25,7 +25,29 @@ serve(async (req) => {
       throw new Error('Missing authorization header')
     }
 
-    // Create Supabase client with service role key (admin)
+    // Create Supabase client with user's token for authentication
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: { Authorization: authHeader }
+        },
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    // Verify that the user is authenticated
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    
+    if (userError || !user) {
+      throw new Error('Unauthorized')
+    }
+
+    // Create admin client for user creation
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -37,16 +59,8 @@ serve(async (req) => {
       }
     )
 
-    // Verify that the user making the request is authenticated and is owner/admin
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
-    
-    if (userError || !user) {
-      throw new Error('Unauthorized')
-    }
-
     // Check user role
-    const { data: profile } = await supabaseAdmin
+    const { data: profile } = await supabaseClient
       .from('user_profiles')
       .select('role')
       .eq('id', user.id)
