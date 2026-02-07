@@ -1,7 +1,7 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/hooks/use-toast';
-import type { UserRole } from '@/context/AuthContext';
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import type { UserRole } from "@/context/AuthContext";
 
 export interface UserProfile {
   id: string;
@@ -16,12 +16,12 @@ export interface UserProfile {
 
 export function useUserProfiles() {
   return useQuery({
-    queryKey: ['user_profiles'],
+    queryKey: ["user_profiles"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .from("user_profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       return data as UserProfile[];
@@ -33,23 +33,30 @@ export function useUpdateUserProfile() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, ...updates }: Partial<UserProfile> & { id: string }) => {
+    mutationFn: async ({
+      id,
+      ...updates
+    }: Partial<UserProfile> & { id: string }) => {
       const { data, error } = await supabase
-        .from('user_profiles')
+        .from("user_profiles")
         .update(updates)
-        .eq('id', id)
-        .select('*')
+        .eq("id", id)
+        .select("*")
         .single();
 
       if (error) throw error;
       return data as UserProfile;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
-      toast({ title: 'Профіль оновлено' });
+      queryClient.invalidateQueries({ queryKey: ["user_profiles"] });
+      toast({ title: "Профіль оновлено" });
     },
     onError: (error) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -69,14 +76,16 @@ export function useCreateUser() {
   return useMutation({
     mutationFn: async (userData: CreateUserData) => {
       // Получаем текущую сессию для авторизации
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        throw new Error('Необхідна авторизація для створення користувача');
+        throw new Error("Необхідна авторизація для створення користувача");
       }
 
       // Используем Supabase Edge Function для создания пользователя
       // Работает универсально на любой платформе (Railway, Vercel, etc)
-      console.log('[useCreateUser] Calling Supabase Edge Function with data:', {
+      console.log("[useCreateUser] Calling Supabase Edge Function with data:", {
         email: userData.email,
         parentName: userData.parentName,
         childName: userData.childName,
@@ -85,7 +94,7 @@ export function useCreateUser() {
       });
 
       // Вызываем Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('create-user', {
+      const { data, error } = await supabase.functions.invoke("create-user", {
         body: {
           email: userData.email,
           password: userData.password,
@@ -96,51 +105,60 @@ export function useCreateUser() {
         },
       });
 
-      console.log('[useCreateUser] Edge Function response:', { data, error });
+      console.log("[useCreateUser] Edge Function response:", { data, error });
 
       if (error) {
-        console.error('[useCreateUser] Edge Function error:', error);
-        throw new Error(error.message || 'Помилка створення користувача');
+        console.error("[useCreateUser] Edge Function error:", error);
+        throw new Error(error.message || "Помилка створення користувача");
       }
 
       if (data?.error) {
-        console.error('[useCreateUser] Result error:', data.error);
-        throw new Error(result.error.message || 'Помилка створення користувача');
+        console.error("[useCreateUser] Result error:", data.error);
+        throw new Error(
+          result.error.message || "Помилка створення користувача",
+        );
       }
 
       if (!result?.data) {
-        console.error('[useCreateUser] No data in result:', result);
-        throw new Error('Користувач не створений');
+        console.error("[useCreateUser] No data in result:", result);
+        throw new Error("Користувач не створений");
       }
 
-      console.log('[useCreateUser] User created successfully:', result.data);
+      console.log("[useCreateUser] User created successfully:", result.data);
       return result.data as UserProfile;
     },
     onSuccess: (data) => {
-      console.log('[useCreateUser] onSuccess, invalidating queries');
+      console.log("[useCreateUser] onSuccess, invalidating queries");
       // Инвалидируем и сразу обновляем список
-      queryClient.invalidateQueries({ queryKey: ['user_profiles'] });
-      queryClient.refetchQueries({ queryKey: ['user_profiles'] });
-      toast({ title: 'Користувача створено', description: `Створено: ${data.full_name || data.parent_name || 'Користувач'}` });
+      queryClient.invalidateQueries({ queryKey: ["user_profiles"] });
+      queryClient.refetchQueries({ queryKey: ["user_profiles"] });
+      toast({
+        title: "Користувача створено",
+        description: `Створено: ${data.full_name || data.parent_name || "Користувач"}`,
+      });
     },
     onError: (error: any) => {
       let errorMessage = error.message;
-      
+
       // Обработка специфичных ошибок Supabase
-      if (error.status === 429 || error.message?.includes('rate limit')) {
-        errorMessage = 'Перевищено ліміт запитів. Зачекайте кілька хвилин перед повторною спробою.';
-      } else if (error.message?.includes('already registered') || error.message?.includes('already exists')) {
-        errorMessage = 'Користувач з таким email вже існує.';
-      } else if (error.message?.includes('invalid email')) {
-        errorMessage = 'Невірний формат email.';
-      } else if (error.message?.includes('password')) {
-        errorMessage = 'Пароль не відповідає вимогам (мінімум 6 символів).';
+      if (error.status === 429 || error.message?.includes("rate limit")) {
+        errorMessage =
+          "Перевищено ліміт запитів. Зачекайте кілька хвилин перед повторною спробою.";
+      } else if (
+        error.message?.includes("already registered") ||
+        error.message?.includes("already exists")
+      ) {
+        errorMessage = "Користувач з таким email вже існує.";
+      } else if (error.message?.includes("invalid email")) {
+        errorMessage = "Невірний формат email.";
+      } else if (error.message?.includes("password")) {
+        errorMessage = "Пароль не відповідає вимогам (мінімум 6 символів).";
       }
-      
-      toast({ 
-        title: 'Помилка створення користувача', 
-        description: errorMessage, 
-        variant: 'destructive' 
+
+      toast({
+        title: "Помилка створення користувача",
+        description: errorMessage,
+        variant: "destructive",
       });
     },
   });

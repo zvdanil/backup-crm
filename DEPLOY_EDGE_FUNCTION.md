@@ -4,6 +4,7 @@
 
 Система теперь использует **Supabase Edge Function** вместо Vercel API Routes.
 **Преимущества:**
+
 - ✅ Работает на любой платформе (Railway, Vercel, Netlify, etc)
 - ✅ Не зависит от хостинга frontend
 - ✅ Универсальное решение
@@ -35,6 +36,7 @@ supabase link --project-ref your-project-ref
 ```
 
 **Где найти project-ref:**
+
 - Зайдите в Supabase Dashboard
 - URL выглядит как: `https://supabase.com/dashboard/project/[YOUR-PROJECT-REF]`
 - Или в Settings → General → Reference ID
@@ -48,12 +50,14 @@ supabase functions deploy create-user
 ### Шаг 5: Проверить что функция работает
 
 Зайдите в Supabase Dashboard:
+
 - Edge Functions → create-user
 - Должна быть зеленая галочка "Deployed"
 
 ## Проверка работы
 
 1. Задеплойте изменения на Railway:
+
    ```powershell
    git add .
    git commit -m "feat: use Supabase Edge Function for user creation"
@@ -69,6 +73,7 @@ supabase functions deploy create-user
 ### Ошибка "Function not found"
 
 Edge Function не задеплоена. Повторите:
+
 ```powershell
 supabase functions deploy create-user
 ```
@@ -86,6 +91,7 @@ CORS настроен в Edge Function, должно работать.
 ## После деплоя
 
 Папку `/api` можно удалить - она больше не нужна:
+
 ```powershell
 rm -r api
 ```
