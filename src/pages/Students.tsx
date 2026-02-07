@@ -1,13 +1,23 @@
-import { useMemo, useRef, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { StudentCard } from '@/components/students/StudentCard';
-import { StudentForm } from '@/components/students/StudentForm';
-import { useStudents, useCreateStudent, useUpdateStudent, useDeleteStudent, type Student } from '@/hooks/useStudents';
-import { useActivities } from '@/hooks/useActivities';
-import { useCreateEnrollment, useEnrollments, useUnenrollStudent } from '@/hooks/useEnrollments';
+import { useMemo, useRef, useState } from "react";
+import { Plus, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { StudentCard } from "@/components/students/StudentCard";
+import { StudentForm } from "@/components/students/StudentForm";
+import {
+  useStudents,
+  useCreateStudent,
+  useUpdateStudent,
+  useDeleteStudent,
+  type Student,
+} from "@/hooks/useStudents";
+import { useActivities } from "@/hooks/useActivities";
+import {
+  useCreateEnrollment,
+  useEnrollments,
+  useUnenrollStudent,
+} from "@/hooks/useEnrollments";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,8 +27,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -26,17 +36,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Link } from 'react-router-dom';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Link } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 export default function Students() {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const isDraggingRef = useRef(false);
   const dragStartXRef = useRef(0);
@@ -53,22 +63,26 @@ export default function Students() {
   const createEnrollment = useCreateEnrollment();
   const unenrollStudent = useUnenrollStudent();
 
-  const filteredStudents = students.filter(s =>
-    s.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    s.guardian_name?.toLowerCase().includes(search.toLowerCase())
+  const filteredStudents = students.filter(
+    (s) =>
+      s.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      s.guardian_name?.toLowerCase().includes(search.toLowerCase()),
   );
 
   const activeActivities = useMemo(
-    () => activities.filter(activity => activity.is_active && activity.show_in_children),
-    [activities]
+    () =>
+      activities.filter(
+        (activity) => activity.is_active && activity.show_in_children,
+      ),
+    [activities],
   );
   const tableGridTemplate = useMemo(
     () => `220px repeat(${activeActivities.length}, 140px)`,
-    [activeActivities.length]
+    [activeActivities.length],
   );
   const tableMinWidth = useMemo(
     () => `${220 + activeActivities.length * 140}px`,
-    [activeActivities.length]
+    [activeActivities.length],
   );
 
   const enrollmentMap = useMemo(() => {
@@ -79,7 +93,11 @@ export default function Students() {
     return map;
   }, [enrollments]);
 
-  const handleToggleEnrollment = (studentId: string, activityId: string, checked: boolean) => {
+  const handleToggleEnrollment = (
+    studentId: string,
+    activityId: string,
+    checked: boolean,
+  ) => {
     const existing = enrollmentMap.get(`${studentId}:${activityId}`);
     if (checked) {
       if (!existing) {
@@ -109,9 +127,9 @@ export default function Students() {
 
   const handleTableMouseUp = () => {
     isDraggingRef.current = false;
-    tableScrollRef.current?.classList.remove('is-dragging');
-    window.removeEventListener('mousemove', handleTableMouseMove);
-    window.removeEventListener('mouseup', handleTableMouseUp);
+    tableScrollRef.current?.classList.remove("is-dragging");
+    window.removeEventListener("mousemove", handleTableMouseMove);
+    window.removeEventListener("mouseup", handleTableMouseUp);
   };
 
   const handleTableMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -126,9 +144,9 @@ export default function Students() {
     dragStartYRef.current = event.clientY - rect.top;
     scrollLeftRef.current = tableScrollRef.current.scrollLeft;
     scrollTopRef.current = tableScrollRef.current.scrollTop;
-    tableScrollRef.current.classList.add('is-dragging');
-    window.addEventListener('mousemove', handleTableMouseMove);
-    window.addEventListener('mouseup', handleTableMouseUp);
+    tableScrollRef.current.classList.add("is-dragging");
+    window.addEventListener("mousemove", handleTableMouseMove);
+    window.addEventListener("mouseup", handleTableMouseUp);
   };
 
   const handleEdit = (student: Student) => {
@@ -154,17 +172,22 @@ export default function Students() {
 
   return (
     <>
-      <PageHeader 
-        title="Діти" 
+      <PageHeader
+        title="Діти"
         description={`${students.length} записів`}
         actions={
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Додати
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/debtors">Дебіторська заборгованність</Link>
+            </Button>
+            <Button onClick={() => setFormOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Додати
+            </Button>
+          </div>
         }
       />
-      
+
       <div className="p-8">
         <div className="mb-6">
           <div className="relative max-w-md">
@@ -190,10 +213,14 @@ export default function Students() {
             </Button>
           </div>
         ) : (
-          <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as 'cards' | 'table')}>
+          <Tabs
+            value={viewMode}
+            onValueChange={(value) => setViewMode(value as "cards" | "table")}
+          >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-muted-foreground">
-                {filteredStudents.length} дітей, {activeActivities.length} активностей
+                {filteredStudents.length} дітей, {activeActivities.length}{" "}
+                активностей
               </div>
               <TabsList>
                 <TabsTrigger value="cards">Карточки</TabsTrigger>
@@ -226,7 +253,7 @@ export default function Students() {
                   className={cn(
                     "rounded-xl border border-border bg-card shadow-soft overflow-auto max-h-[70vh] relative",
                     "cursor-grab active:cursor-grabbing select-none",
-                    "[&.is-dragging]:cursor-grabbing"
+                    "[&.is-dragging]:cursor-grabbing",
                   )}
                 >
                   <div
@@ -247,7 +274,10 @@ export default function Students() {
                           Дитина
                         </div>
                         {activeActivities.map((activity) => (
-                          <div key={activity.id} className="px-2 py-2 text-center font-medium">
+                          <div
+                            key={activity.id}
+                            className="px-2 py-2 text-center font-medium"
+                          >
                             <div className="flex items-center justify-center gap-2">
                               <span
                                 className="h-2 w-2 rounded-full"
@@ -281,8 +311,12 @@ export default function Students() {
                           )}
                         </div>
                         {activeActivities.map((activity) => {
-                          const enrollment = enrollmentMap.get(`${student.id}:${activity.id}`);
-                          const isBusy = createEnrollment.isPending || unenrollStudent.isPending;
+                          const enrollment = enrollmentMap.get(
+                            `${student.id}:${activity.id}`,
+                          );
+                          const isBusy =
+                            createEnrollment.isPending ||
+                            unenrollStudent.isPending;
                           return (
                             <div
                               key={`${student.id}-${activity.id}`}
@@ -293,7 +327,11 @@ export default function Students() {
                                   checked={!!enrollment}
                                   onCheckedChange={(checked) => {
                                     const nextChecked = checked === true;
-                                    handleToggleEnrollment(student.id, activity.id, nextChecked);
+                                    handleToggleEnrollment(
+                                      student.id,
+                                      activity.id,
+                                      nextChecked,
+                                    );
                                   }}
                                   disabled={isBusy}
                                   className={cn(!enrollment && "opacity-60")}
@@ -328,12 +366,16 @@ export default function Students() {
           <AlertDialogHeader>
             <AlertDialogTitle>Видалити дитину?</AlertDialogTitle>
             <AlertDialogDescription>
-              Цю дію не можна скасувати. Всі дані про відвідуваність та записи будуть видалені.
+              Цю дію не можна скасувати. Всі дані про відвідуваність та записи
+              будуть видалені.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Скасувати</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground"
+            >
               Видалити
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -964,8 +964,8 @@ export function EnhancedAttendanceGrid({
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = attendanceMap.get(key);
-        // Учитываем 'present' ИЛИ кастомные статусы с use_for_salary: true для отображения в журнале
-        if (attendance?.status && isStatusForSalary(attendance.status)) {
+        // Учитываем любые отметки: статусы, числовые значения, кастомные статусы
+        if (isMarkedAttendance(attendance)) {
           totals[groupId][dateStr] = (totals[groupId][dateStr] || 0) + 1;
         }
       });
