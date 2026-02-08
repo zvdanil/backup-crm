@@ -707,6 +707,95 @@ export function useStudentActivityMonthlyBalance(
   });
 }
 
+// Get subscription charges grouped by account for a student in a specific month
+export function useStudentSubscriptionChargesByAccount(
+  studentId: string,
+  month: number,
+  year: number,
+  enrollments: any[], // EnrollmentWithRelations[]
+) {
+  return useQuery({
+    queryKey: [
+      "student_subscription_charges_by_account",
+      studentId,
+      month,
+      year,
+      enrollments.map((e) => e.id).join(","),
+    ],
+    queryFn: async () => {
+      const startDate = getMonthStartDate(year, month);
+      const endDate = getMonthEndDate(year, month);
+
+      // Filter subscription enrollments
+      const subscriptionEnrollments = enrollments.filter((enrollment) => {
+        const activity = enrollment.activities;
+        const presentRule = activity?.billing_rules?.present;
+        return presentRule?.type === "subscription";
+      });
+
+      if (subscriptionEnrollments.length === 0) {
+        return new Map<string, number>();
+      }
+
+      // Get activity IDs
+      const activityIds = subscriptionEnrollments.map((e) => e.activity_id);
+
+      // Get income transactions for these activities
+      const { data: transactions, error } = await supabaseAny
+        .from("finance_transactions")
+        .select("activity_id, amount")
+        .eq("student_id", studentId)
+        .eq("type", "income")
+        .in("activity_id", activityIds)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (error) throw error;
+
+      // Group by account_id
+      const chargesByAccount = new Map<string, number>();
+
+      subscriptionEnrollments.forEach((enrollment) => {
+        const activity = enrollment.activities;
+        const accountId =
+          enrollment.account_id || activity?.account_id || "none";
+
+        // Sum charges for this activity from transactions
+        const activityCharges =
+          transactions
+            ?.filter((t) => t.activity_id === enrollment.activity_id)
+            .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+
+        // If no transactions found, calculate from tariff (for future/current months)
+        let chargeToAdd = activityCharges;
+        if (activityCharges === 0) {
+          const presentRule = activity?.billing_rules?.present;
+          if (
+            enrollment.custom_price !== null &&
+            enrollment.custom_price !== undefined
+          ) {
+            const discountMultiplier =
+              1 - (enrollment.discount_percent || 0) / 100;
+            chargeToAdd =
+              Math.round(enrollment.custom_price * discountMultiplier * 100) /
+              100;
+          } else if (presentRule?.rate && presentRule.rate > 0) {
+            chargeToAdd = presentRule.rate;
+          } else {
+            chargeToAdd = activity?.default_price || 0;
+          }
+        }
+
+        const currentTotal = chargesByAccount.get(accountId) || 0;
+        chargesByAccount.set(accountId, currentTotal + chargeToAdd);
+      });
+
+      return chargesByAccount;
+    },
+    enabled: !!studentId && enrollments.length > 0,
+  });
+}
+
 // Calculate total balance for student across all activities
 export function useStudentTotalBalance(
   studentId: string,
