@@ -235,19 +235,29 @@ export function StudentAccountBalance({
                         {formatCurrency(payments)}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-destructive">
+                        До сплати на початок {MONTHS[month]}
+                      </span>
+                      <span className="font-medium text-destructive">
+                        {formatCurrency(charges - previousBalance)}
+                      </span>
+                    </div>
                     <div className="border-t border-border my-1"></div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Ітого</span>
+                      <span className="text-foreground">
+                        Поточний баланс
+                      </span>
                       {endBalance < 0 ? (
-                        <span className="font-semibold text-destructive">
+                        <span className="font-semibold text-foreground">
                           До сплати: {formatCurrency(Math.abs(endBalance))}
                         </span>
                       ) : endBalance > 0 ? (
-                        <span className="font-semibold text-success">
+                        <span className="font-semibold text-foreground">
                           Переплата: +{formatCurrency(endBalance)}
                         </span>
                       ) : (
-                        <span className="font-semibold text-muted-foreground">
+                        <span className="font-semibold text-foreground">
                           {formatCurrency(0)}
                         </span>
                       )}

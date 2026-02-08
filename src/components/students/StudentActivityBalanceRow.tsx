@@ -164,7 +164,14 @@ export function StudentActivityBalanceRow({
           ? baseMonthlyCharge
           : 0;
       const balance = payments - charges + refunds;
-      return { balance, payments, charges, refunds, attendanceCount, absentCount };
+      return {
+        balance,
+        payments,
+        charges,
+        refunds,
+        attendanceCount,
+        absentCount,
+      };
     }
 
     // Для других режимов: используем стандартную логику
@@ -190,7 +197,14 @@ export function StudentActivityBalanceRow({
     }
 
     const balance = payments - charges + refunds;
-    return { balance, payments, charges, refunds, attendanceCount, absentCount };
+    return {
+      balance,
+      payments,
+      charges,
+      refunds,
+      attendanceCount,
+      absentCount,
+    };
   }, [
     displayMode,
     monthlyData,
@@ -385,12 +399,11 @@ export function StudentActivityBalanceRow({
               {formatCurrency(Math.abs(displayBalance))}
             </div>
             <div className="text-xs text-muted-foreground whitespace-normal break-words">
-              {isFoodActivity 
+              {isFoodActivity
                 ? `Пропусків: ${absentCount}`
-                : presentRule?.type === 'subscription' 
-                  ? 'Абонплата'
-                  : `Відвідувань: ${attendanceCount}`
-              }
+                : presentRule?.type === "subscription"
+                  ? "Абонплата"
+                  : `Відвідувань: ${attendanceCount}`}
             </div>
             {isFoodActivity && displayRefunds > 0 && (
               <div className="text-xs text-muted-foreground whitespace-normal break-words">
