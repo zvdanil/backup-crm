@@ -5,6 +5,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -113,6 +114,16 @@ export default function DebtorsRegistry() {
       filteredRows
         .filter((row) => row.is_debtor)
         .reduce((sum, row) => sum + row.balance_all_time, 0),
+    [filteredRows],
+  );
+
+  const totalCharges = useMemo(
+    () => filteredRows.reduce((sum, row) => sum + row.month_charges, 0),
+    [filteredRows],
+  );
+
+  const totalPayments = useMemo(
+    () => filteredRows.reduce((sum, row) => sum + row.month_payments, 0),
     [filteredRows],
   );
 
@@ -299,6 +310,22 @@ export default function DebtorsRegistry() {
                 );
               })}
             </TableBody>
+            <TableFooter>
+              <TableRow>
+                <TableCell colSpan={2} className="font-semibold">
+                  РАЗОМ:
+                </TableCell>
+                <TableCell className="text-right font-semibold">
+                  {formatCurrency(totalCharges)}
+                </TableCell>
+                <TableCell className="text-right font-semibold">
+                  {formatCurrency(totalPayments)}
+                </TableCell>
+                <TableCell className="text-right font-semibold text-destructive">
+                  {formatCurrency(totalDebt)}
+                </TableCell>
+              </TableRow>
+            </TableFooter>
           </Table>
         </div>
       )}
