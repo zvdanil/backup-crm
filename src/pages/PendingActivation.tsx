@@ -9,8 +9,8 @@ export default function PendingActivation() {
 
   // Если пользователь активен - редирект на главную
   useEffect(() => {
-    if (user && profile && profile.is_active && role !== 'newregistration') {
-      navigate(role === 'parent' ? '/parent' : '/', { replace: true });
+    if (user && profile && profile.is_active && role !== "newregistration") {
+      navigate(role === "parent" ? "/parent" : "/", { replace: true });
     }
   }, [user, profile, role, navigate]);
 

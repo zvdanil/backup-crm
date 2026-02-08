@@ -55,7 +55,8 @@ if (typeof window !== "undefined") {
 
 const AppRoutes = () => {
   const location = useLocation();
-  const isPublicPage = location.pathname === "/login" || location.pathname === "/pending";
+  const isPublicPage =
+    location.pathname === "/login" || location.pathname === "/pending";
 
   if (isPublicPage) {
     return (
