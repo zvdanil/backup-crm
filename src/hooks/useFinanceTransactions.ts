@@ -482,6 +482,7 @@ export function useStudentActivityBalance(
 
       // Get attendance count
       let attendanceCount = 0;
+      let absentCount = 0;
       const { data: enrollments } = await supabase
         .from("enrollments")
         .select("id")
@@ -497,7 +498,8 @@ export function useStudentActivityBalance(
           .eq("id", activityId)
           .single();
 
-        const customStatuses = (activity?.billing_rules as any)?.custom_statuses || [];
+        const customStatuses =
+          (activity?.billing_rules as any)?.custom_statuses || [];
         const activeCustomStatusIds = customStatuses
           .filter((cs: any) => cs.is_active !== false)
           .map((cs: any) => cs.id);
@@ -511,12 +513,36 @@ export function useStudentActivityBalance(
           .lte("date", endDate);
 
         // Count: 'present' OR custom status (status = UUID from custom_statuses)
-        attendanceCount = attendanceRecords?.filter(record => 
-          record.status === 'present' || activeCustomStatusIds.includes(record.status)
-        ).length || 0;
+        attendanceCount =
+          attendanceRecords?.filter(
+            (record) =>
+              record.status === "present" ||
+              activeCustomStatusIds.includes(record.status),
+          ).length || 0;
       }
 
-      return { balance, payments: totalPayments, charges, refunds, attendanceCount };
+      // Count absent for food activities (from expense transactions)
+      const { data: absenceExpenseTransactions } = await supabaseAny
+        .from("finance_transactions")
+        .select("id")
+        .eq("student_id", studentId)
+        .not("student_id", "is", null)
+        .eq("activity_id", activityId)
+        .not("activity_id", "is", null)
+        .eq("type", "expense")
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      absentCount = absenceExpenseTransactions?.length || 0;
+
+      return {
+        balance,
+        payments: totalPayments,
+        charges,
+        refunds,
+        attendanceCount,
+        absentCount,
+      };
     },
     enabled: !!studentId && !!activityId,
   });
@@ -615,6 +641,7 @@ export function useStudentActivityMonthlyBalance(
 
       // Get attendance count
       let attendanceCount = 0;
+      let absentCount = 0;
       const { data: enrollments } = await supabase
         .from("enrollments")
         .select("id")
@@ -630,7 +657,8 @@ export function useStudentActivityMonthlyBalance(
           .eq("id", activityId)
           .single();
 
-        const customStatuses = (activity?.billing_rules as any)?.custom_statuses || [];
+        const customStatuses =
+          (activity?.billing_rules as any)?.custom_statuses || [];
         const activeCustomStatusIds = customStatuses
           .filter((cs: any) => cs.is_active !== false)
           .map((cs: any) => cs.id);
@@ -644,12 +672,36 @@ export function useStudentActivityMonthlyBalance(
           .lte("date", endDate);
 
         // Count: 'present' OR custom status (status = UUID from custom_statuses)
-        attendanceCount = attendanceRecords?.filter(record => 
-          record.status === 'present' || activeCustomStatusIds.includes(record.status)
-        ).length || 0;
+        attendanceCount =
+          attendanceRecords?.filter(
+            (record) =>
+              record.status === "present" ||
+              activeCustomStatusIds.includes(record.status),
+          ).length || 0;
       }
 
-      return { balance, payments: totalPayments, charges, refunds, attendanceCount };
+      // Count absent for food activities (from expense transactions)
+      const { data: absenceExpenseTransactions } = await supabaseAny
+        .from("finance_transactions")
+        .select("id")
+        .eq("student_id", studentId)
+        .not("student_id", "is", null)
+        .eq("activity_id", activityId)
+        .not("activity_id", "is", null)
+        .eq("type", "expense")
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      absentCount = absenceExpenseTransactions?.length || 0;
+
+      return {
+        balance,
+        payments: totalPayments,
+        charges,
+        refunds,
+        attendanceCount,
+        absentCount,
+      };
     },
     enabled: !!studentId && !!activityId,
   });

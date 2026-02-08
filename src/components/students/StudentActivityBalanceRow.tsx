@@ -1,22 +1,25 @@
-import { 
-  useStudentActivityBalance, 
+import {
+  useStudentActivityBalance,
   useStudentActivityMonthlyBalance,
   useActivityIncomeTransaction,
   useDeleteIncomeTransaction,
-  useCreateFinanceTransaction
-} from '@/hooks/useFinanceTransactions';
-import { formatCurrency } from '@/lib/attendance';
-import type { EnrollmentWithRelations } from '@/hooks/useEnrollments';
-import { cn } from '@/lib/utils';
-import { useActivities } from '@/hooks/useActivities';
-import { useMemo, useState } from 'react';
-import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
-import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
-import { useAuth } from '@/context/AuthContext';
-import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
-import { DeleteTransactionDialog } from './DeleteTransactionDialog';
-import { toast } from '@/hooks/use-toast';
+  useCreateFinanceTransaction,
+} from "@/hooks/useFinanceTransactions";
+import { formatCurrency } from "@/lib/attendance";
+import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
+import { cn } from "@/lib/utils";
+import { useActivities } from "@/hooks/useActivities";
+import { useMemo, useState } from "react";
+import {
+  isGardenAttendanceController,
+  type GardenAttendanceConfig,
+} from "@/lib/gardenAttendance";
+import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Trash2 } from "lucide-react";
+import { DeleteTransactionDialog } from "./DeleteTransactionDialog";
+import { toast } from "@/hooks/use-toast";
 
 interface StudentActivityBalanceRowProps {
   studentId: string;
@@ -25,16 +28,16 @@ interface StudentActivityBalanceRowProps {
   year: number;
 }
 
-export function StudentActivityBalanceRow({ 
-  studentId, 
-  enrollment, 
-  month, 
-  year 
+export function StudentActivityBalanceRow({
+  studentId,
+  enrollment,
+  month,
+  year,
 }: StudentActivityBalanceRowProps) {
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
   const { role } = useAuth();
-  const canDelete = role === 'owner' || role === 'admin';
+  const canDelete = role === "owner" || role === "admin";
   const deleteIncome = useDeleteIncomeTransaction();
   const createTransaction = useCreateFinanceTransaction();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -42,10 +45,10 @@ export function StudentActivityBalanceRow({
   // Check if this is a food activity
   const isFoodActivity = useMemo(() => {
     const foodTariffIds = new Set<string>();
-    allActivities.forEach(activity => {
+    allActivities.forEach((activity) => {
       if (isGardenAttendanceController(activity)) {
         const config = (activity.config as GardenAttendanceConfig) || {};
-        (config.food_tariff_ids || []).forEach(id => foodTariffIds.add(id));
+        (config.food_tariff_ids || []).forEach((id) => foodTariffIds.add(id));
       }
     });
     return foodTariffIds.has(enrollment.activity_id);
@@ -53,59 +56,83 @@ export function StudentActivityBalanceRow({
 
   const activities = enrollment.activities;
   const presentRule = activities?.billing_rules?.present;
-  const isMonthlyBilling = !!activities && !isFoodActivity && (presentRule?.type === 'fixed' || presentRule?.type === 'subscription');
+  const isMonthlyBilling =
+    !!activities &&
+    !isFoodActivity &&
+    (presentRule?.type === "fixed" || presentRule?.type === "subscription");
 
   const accountLabel = useMemo(() => {
     // Приоритет: enrollment.account_id ?? activity.account_id
     const accountId = enrollment.account_id || activities?.account_id;
-    if (!accountId) return 'Без рахунку';
-    return accounts.find(account => account.id === accountId)?.name || 'Без рахунку';
+    if (!accountId) return "Без рахунку";
+    return (
+      accounts.find((account) => account.id === accountId)?.name ||
+      "Без рахунку"
+    );
   }, [accounts, enrollment.account_id, activities?.account_id]);
 
   const baseMonthlyCharge = useMemo(() => {
     if (!isMonthlyBilling) return 0;
-    if (enrollment.custom_price !== null && enrollment.custom_price !== undefined) {
-      const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
-      return Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
+    if (
+      enrollment.custom_price !== null &&
+      enrollment.custom_price !== undefined
+    ) {
+      const discountMultiplier = 1 - (enrollment.discount_percent || 0) / 100;
+      return (
+        Math.round(enrollment.custom_price * discountMultiplier * 100) / 100
+      );
     }
     if (presentRule?.rate && presentRule.rate > 0) {
       return presentRule.rate;
     }
     return activities?.default_price || 0;
-  }, [isMonthlyBilling, enrollment.custom_price, enrollment.discount_percent, activities?.default_price, presentRule?.rate]);
+  }, [
+    isMonthlyBilling,
+    enrollment.custom_price,
+    enrollment.discount_percent,
+    activities?.default_price,
+    presentRule?.rate,
+  ]);
 
   const monthlyBalanceQuery = useStudentActivityMonthlyBalance(
     studentId,
     enrollment.activity_id,
     baseMonthlyCharge,
     month,
-    year
+    year,
   );
 
   const regularBalanceQuery = useStudentActivityBalance(
     studentId,
     enrollment.activity_id,
     month,
-    year
+    year,
   );
-  
+
   // Get income transaction for subscription charges (only if monthly billing)
   const incomeTransactionQuery = useActivityIncomeTransaction(
     studentId,
     enrollment.activity_id,
     month,
-    year
+    year,
   );
-  
+
   // For monthly billing, use income transaction if it exists
   // This works even for archived enrollments - we still want to show delete button
-  const incomeTransaction = isMonthlyBilling ? incomeTransactionQuery.data : null;
-  
+  const incomeTransaction = isMonthlyBilling
+    ? incomeTransactionQuery.data
+    : null;
+
   const displayMode =
     enrollment.activities.balance_display_mode ??
-    (isFoodActivity ? 'recalculation' : isMonthlyBilling ? 'subscription' : 'recalculation');
+    (isFoodActivity
+      ? "recalculation"
+      : isMonthlyBilling
+        ? "subscription"
+        : "recalculation");
 
-  const isLoading = monthlyBalanceQuery.isLoading || regularBalanceQuery.isLoading;
+  const isLoading =
+    monthlyBalanceQuery.isLoading || regularBalanceQuery.isLoading;
   const monthlyData = monthlyBalanceQuery.data;
   const recalculationData = regularBalanceQuery.data;
 
@@ -115,47 +142,72 @@ export function StudentActivityBalanceRow({
   const combinedData = useMemo(() => {
     // Для подписок: используем только monthlyData (или baseMonthlyCharge если monthlyData отсутствует)
     // Не используем recalculationData для подписок, так как он может содержать данные из другого месяца
-    if (displayMode === 'subscription') {
+    if (displayMode === "subscription") {
       // Для подписок: используем monthlyData или baseMonthlyCharge
       const payments = monthlyData?.payments ?? 0;
       const refunds = monthlyData?.refunds ?? 0;
-      const attendanceCount = monthlyData?.attendanceCount ?? recalculationData?.attendanceCount ?? 0;
+      const attendanceCount =
+        monthlyData?.attendanceCount ?? recalculationData?.attendanceCount ?? 0;
+      const absentCount =
+        monthlyData?.absentCount ?? recalculationData?.absentCount ?? 0;
       const monthlyChargesLocal = monthlyData?.charges ?? 0;
       // Если есть incomeTransaction, используем monthlyChargesLocal (транзакция существует)
       // Если нет incomeTransaction:
       //   - Для архивных активностей: charges = 0 (транзакция была удалена)
       //   - Для активных активностей: используем baseMonthlyCharge (для будущих месяцев)
       const hasIncomeTransaction = !!incomeTransaction;
-      const charges = hasIncomeTransaction 
-        ? (monthlyChargesLocal > 0 ? monthlyChargesLocal : baseMonthlyCharge)
-        : (enrollment.is_active && baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
+      const charges = hasIncomeTransaction
+        ? monthlyChargesLocal > 0
+          ? monthlyChargesLocal
+          : baseMonthlyCharge
+        : enrollment.is_active && baseMonthlyCharge > 0
+          ? baseMonthlyCharge
+          : 0;
       const balance = payments - charges + refunds;
-      return { balance, payments, charges, refunds, attendanceCount };
+      return { balance, payments, charges, refunds, attendanceCount, absentCount };
     }
 
     // Для других режимов: используем стандартную логику
     if (!monthlyData && !recalculationData) return null;
     const payments = recalculationData?.payments ?? monthlyData?.payments ?? 0;
     const refunds = recalculationData?.refunds ?? monthlyData?.refunds ?? 0;
-    const attendanceCount = recalculationData?.attendanceCount ?? monthlyData?.attendanceCount ?? 0;
+    const attendanceCount =
+      recalculationData?.attendanceCount ?? monthlyData?.attendanceCount ?? 0;
+    const absentCount =
+      recalculationData?.absentCount ?? monthlyData?.absentCount ?? 0;
     const monthlyChargesLocal = monthlyData?.charges ?? 0;
     const recalculationCharges = recalculationData?.charges ?? 0;
 
     let charges = recalculationCharges;
-    if (displayMode === 'subscription_and_recalculation') {
-      const monthlyCharges = monthlyChargesLocal > 0 ? monthlyChargesLocal : (baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
+    if (displayMode === "subscription_and_recalculation") {
+      const monthlyCharges =
+        monthlyChargesLocal > 0
+          ? monthlyChargesLocal
+          : baseMonthlyCharge > 0
+            ? baseMonthlyCharge
+            : 0;
       charges = monthlyCharges + recalculationCharges;
     }
 
     const balance = payments - charges + refunds;
-    return { balance, payments, charges, refunds, attendanceCount };
-  }, [displayMode, monthlyData, recalculationData, monthlyCharges, baseMonthlyCharge, incomeTransaction, enrollment.is_active]);
+    return { balance, payments, charges, refunds, attendanceCount, absentCount };
+  }, [
+    displayMode,
+    monthlyData,
+    recalculationData,
+    monthlyCharges,
+    baseMonthlyCharge,
+    incomeTransaction,
+    enrollment.is_active,
+  ]);
 
   // Check if activities data is loaded (might be null for archived activities)
   if (!activities) {
     return (
       <div className="flex items-center justify-between p-3 border rounded-lg">
-        <span className="text-sm text-muted-foreground">Завантаження даних активності...</span>
+        <span className="text-sm text-muted-foreground">
+          Завантаження даних активності...
+        </span>
       </div>
     );
   }
@@ -173,13 +225,21 @@ export function StudentActivityBalanceRow({
   const charges = combinedData?.charges || 0;
   const refunds = combinedData?.refunds || 0;
   const attendanceCount = combinedData?.attendanceCount || 0;
-  
+  const absentCount = combinedData?.absentCount || 0;
+
   // Для архивных активностей: скрываем если баланс = 0 и нет транзакций
   // Это позволяет скрывать архивные активности после удаления транзакций
-  if (!enrollment.is_active && balance === 0 && payments === 0 && charges === 0 && refunds === 0 && !incomeTransaction) {
+  if (
+    !enrollment.is_active &&
+    balance === 0 &&
+    payments === 0 &&
+    charges === 0 &&
+    refunds === 0 &&
+    !incomeTransaction
+  ) {
     return null;
   }
-  
+
   // Активность отображается если ребёнок записан на неё (есть enrollment)
   // Или если есть баланс/платежи/начисления
 
@@ -189,15 +249,19 @@ export function StudentActivityBalanceRow({
   // For food: balance = payments (0) - charges (0) + refunds (200) = 200 (positive, green)
   // For food: refunds are always positive for client, so balance should always be positive if refunds > 0
   const displayBalance = balance;
-  
+
   // For food: charges = 0 (no charges), refunds shown separately
   const displayCharges = isFoodActivity ? 0 : charges;
   const displayRefunds = isFoodActivity ? refunds : 0;
-  
+
   // For food activity: if there are refunds, balance is always positive (green) for client
   // For other activities: balance can be positive or negative
-  const isPositive = isFoodActivity ? (refunds > 0 ? true : balance >= 0) : (balance >= 0);
-  
+  const isPositive = isFoodActivity
+    ? refunds > 0
+      ? true
+      : balance >= 0
+    : balance >= 0;
+
   // Check if we can show delete button for subscription charges
   // For subscription billing, show delete button if:
   // 1. It's monthly billing (fixed or subscription type)
@@ -205,11 +269,12 @@ export function StudentActivityBalanceRow({
   // We show button even if incomeTransaction doesn't exist - we'll create it on delete
   // This works even for archived enrollments
   // Note: After deletion, monthlyCharges will be 0, so button will disappear
-  const hasSubscriptionCharge = isMonthlyBilling && (monthlyCharges > 0 || !!incomeTransaction);
-  
+  const hasSubscriptionCharge =
+    isMonthlyBilling && (monthlyCharges > 0 || !!incomeTransaction);
+
   // Debug logging for "Прескул" activity
-  if (activities.name === 'Прескул' || activities.name?.includes('Прескул')) {
-    console.log('[Прескул Debug]', {
+  if (activities.name === "Прескул" || activities.name?.includes("Прескул")) {
+    console.log("[Прескул Debug]", {
       activityName: activities.name,
       isActive: enrollment.is_active,
       isMonthlyBilling,
@@ -229,30 +294,34 @@ export function StudentActivityBalanceRow({
       billingRules: activities.billing_rules,
     });
   }
-  
+
   const handleDeleteClick = () => {
     // Allow deletion for subscription charges even if transaction doesn't exist
     if (hasSubscriptionCharge) {
       setDeleteDialogOpen(true);
     }
   };
-  
+
   const handleDeleteConfirm = async (reason: string) => {
     if (!hasSubscriptionCharge) return;
-    
+
     try {
       let transactionId = incomeTransaction?.id;
-      
+
       // If transaction doesn't exist, create it first
       if (!transactionId) {
         // Get account_id from enrollment or activity
-        const accountId = enrollment.account_id || activities.account_id || null;
-        
+        const accountId =
+          enrollment.account_id || activities.account_id || null;
+
         // Create income transaction for subscription charge
-        const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-        const monthName = new Date(year, month).toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' });
+        const startDate = new Date(year, month, 1).toISOString().split("T")[0];
+        const monthName = new Date(year, month).toLocaleDateString("uk-UA", {
+          month: "long",
+          year: "numeric",
+        });
         const createdTransaction = await createTransaction.mutateAsync({
-          type: 'income',
+          type: "income",
           student_id: studentId,
           activity_id: enrollment.activity_id,
           staff_id: null,
@@ -262,29 +331,29 @@ export function StudentActivityBalanceRow({
           category: null,
           account_id: accountId,
         });
-        
+
         transactionId = createdTransaction.id;
-        
+
         // Wait a bit for the transaction to be fully created and queries to update
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      
+
       // Delete the transaction
       await deleteIncome.mutateAsync({
         transactionId: transactionId!,
         reason,
       });
-      
+
       toast({
-        title: 'Успішно',
-        description: 'Нарахування видалено',
+        title: "Успішно",
+        description: "Нарахування видалено",
       });
       setDeleteDialogOpen(false);
     } catch (error: any) {
       toast({
-        title: 'Помилка',
-        description: error.message || 'Не вдалося видалити нарахування',
-        variant: 'destructive',
+        title: "Помилка",
+        description: error.message || "Не вдалося видалити нарахування",
+        variant: "destructive",
       });
     }
   };
@@ -293,8 +362,8 @@ export function StudentActivityBalanceRow({
     <>
       <div className="flex flex-col gap-2 p-3 border rounded-lg sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-2">
-          <span 
-            className="w-3 h-3 rounded-full" 
+          <span
+            className="w-3 h-3 rounded-full"
             style={{ backgroundColor: activities.color }}
           />
           <span className="text-sm font-medium break-words">
@@ -306,14 +375,22 @@ export function StudentActivityBalanceRow({
         </div>
         <div className="flex items-center gap-2">
           <div className="text-left sm:text-right">
-            <div className={cn(
-              "text-sm font-semibold",
-              isPositive ? "text-success" : "text-destructive"
-            )}>
-              {displayBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(displayBalance))}
+            <div
+              className={cn(
+                "text-sm font-semibold",
+                isPositive ? "text-success" : "text-destructive",
+              )}
+            >
+              {displayBalance > 0 ? "+" : ""}
+              {formatCurrency(Math.abs(displayBalance))}
             </div>
             <div className="text-xs text-muted-foreground whitespace-normal break-words">
-              Відвідувань: {attendanceCount}
+              {isFoodActivity 
+                ? `Пропусків: ${absentCount}`
+                : presentRule?.type === 'subscription' 
+                  ? 'Абонплата'
+                  : `Відвідувань: ${attendanceCount}`
+              }
             </div>
             {isFoodActivity && displayRefunds > 0 && (
               <div className="text-xs text-muted-foreground whitespace-normal break-words">
@@ -334,7 +411,7 @@ export function StudentActivityBalanceRow({
           )}
         </div>
       </div>
-      
+
       {hasSubscriptionCharge && (
         <DeleteTransactionDialog
           open={deleteDialogOpen}
