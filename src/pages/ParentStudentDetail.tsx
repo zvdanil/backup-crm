@@ -60,6 +60,18 @@ export default function ParentStudentDetail() {
     Array.from(foodTariffIds)
   );
 
+  const accountNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    accounts.forEach((account) => map.set(account.id, account.name));
+    return map;
+  }, [accounts]);
+
+  const accountDetailsMap = useMemo(() => {
+    const map = new Map<string, string | null>();
+    accounts.forEach((account) => map.set(account.id, account.details));
+    return map;
+  }, [accounts]);
+
   const activeEnrollments = useMemo(() => (
     enrollments.filter(enrollment => enrollment.is_active)
       .filter((enrollment) => {
@@ -102,18 +114,6 @@ export default function ParentStudentDetail() {
       return a.label.localeCompare(b.label, 'uk-UA');
     });
   }, [balanceEnrollments, accountNameMap]);
-
-  const accountNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    accounts.forEach((account) => map.set(account.id, account.name));
-    return map;
-  }, [accounts]);
-
-  const accountDetailsMap = useMemo(() => {
-    const map = new Map<string, string | null>();
-    accounts.forEach((account) => map.set(account.id, account.details));
-    return map;
-  }, [accounts]);
 
   const [expandedAccountId, setExpandedAccountId] = useState<string | null>(null);
 
