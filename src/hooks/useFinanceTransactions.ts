@@ -707,6 +707,74 @@ export function useStudentActivityMonthlyBalance(
   });
 }
 
+// Get subscription charges grouped by account for a student in a specific month
+export function useStudentSubscriptionChargesByAccount(
+  studentId: string,
+  month: number,
+  year: number,
+  enrollments: any[], // EnrollmentWithRelations[]
+) {
+  return useQuery({
+    queryKey: [
+      "student_subscription_charges_by_account",
+      studentId,
+      month,
+      year,
+      enrollments.map((e) => e.id).join(","),
+    ],
+    queryFn: async () => {
+      const startDate = getMonthStartDate(year, month);
+      const endDate = getMonthEndDate(year, month);
+
+      // Filter subscription enrollments
+      const subscriptionEnrollments = enrollments.filter((enrollment) => {
+        const activity = enrollment.activities;
+        const presentRule = activity?.billing_rules?.present;
+        return presentRule?.type === "subscription";
+      });
+
+      if (subscriptionEnrollments.length === 0) {
+        return new Map<string, number>();
+      }
+
+      // Get activity IDs
+      const activityIds = subscriptionEnrollments.map((e) => e.activity_id);
+
+      // Get income transactions for these activities
+      const { data: transactions, error } = await supabaseAny
+        .from("finance_transactions")
+        .select("activity_id, amount")
+        .eq("student_id", studentId)
+        .eq("type", "income")
+        .in("activity_id", activityIds)
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (error) throw error;
+
+      // Group by account_id
+      const chargesByAccount = new Map<string, number>();
+
+      subscriptionEnrollments.forEach((enrollment) => {
+        const activity = enrollment.activities;
+        const accountId =
+          enrollment.account_id || activity?.account_id || "none";
+
+        // Sum charges for this activity
+        const activityCharges = transactions
+          ?.filter((t) => t.activity_id === enrollment.activity_id)
+          .reduce((sum, t) => sum + (t.amount || 0), 0) || 0;
+
+        const currentTotal = chargesByAccount.get(accountId) || 0;
+        chargesByAccount.set(accountId, currentTotal + activityCharges);
+      });
+
+      return chargesByAccount;
+    },
+    enabled: !!studentId && enrollments.length > 0,
+  });
+}
+
 // Calculate total balance for student across all activities
 export function useStudentTotalBalance(
   studentId: string,

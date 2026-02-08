@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { isGardenAttendanceController } from "@/lib/gardenAttendance";
 import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
 import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
+import { useStudentSubscriptionChargesByAccount } from "@/hooks/useFinanceTransactions";
 
 const MONTHS = [
   "Січень",
@@ -135,41 +136,14 @@ export function StudentAccountBalance({
     });
   }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
-  // Calculate subscription charges per account
-  const subscriptionChargesMap = useMemo(() => {
-    const map = new Map<string, number>();
-
-    balanceEnrollments.forEach((enrollment) => {
-      const activity = enrollment.activities;
-      const presentRule = activity?.billing_rules?.present;
-
-      // Only count subscription activities
-      if (presentRule?.type !== "subscription") return;
-
-      // Calculate charge for this subscription activity
-      let charge = 0;
-      if (
-        enrollment.custom_price !== null &&
-        enrollment.custom_price !== undefined
-      ) {
-        const discountMultiplier = 1 - (enrollment.discount_percent || 0) / 100;
-        charge =
-          Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
-      } else if (presentRule?.rate && presentRule.rate > 0) {
-        charge = presentRule.rate;
-      } else {
-        charge = activity?.default_price || 0;
-      }
-
-      // Group by account
-      const accountId =
-        enrollment.account_id || activity?.account_id || "none";
-      const currentTotal = map.get(accountId) || 0;
-      map.set(accountId, currentTotal + charge);
-    });
-
-    return map;
-  }, [balanceEnrollments]);
+  // Get real subscription charges from database
+  const { data: subscriptionChargesMap } =
+    useStudentSubscriptionChargesByAccount(
+      studentId,
+      month,
+      year,
+      balanceEnrollments,
+    );
 
   if (balanceEnrollments.length === 0) {
     return null;
@@ -219,7 +193,7 @@ export function StudentAccountBalance({
               const refunds = accountBalance?.refunds || 0;
               const endBalance = previousBalance + payments - charges + refunds;
               const subscriptionCharges =
-                subscriptionChargesMap.get(group.id) || 0;
+                subscriptionChargesMap?.get(group.id) || 0;
               const startLabel =
                 previousBalance < 0
                   ? "Борг на початок"
