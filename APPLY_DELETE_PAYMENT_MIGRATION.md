@@ -1,12 +1,14 @@
 # Применение миграции для удаления платежей
 
 ## Ошибка
+
 ```
 Failed to load resource: the server responded with a status of 400/404
 [useDeletePaymentTransaction] RPC error
 ```
 
 ## Причина
+
 Функция `delete_payment_transaction` либо не существует (404), либо не может выполниться (400) из-за отсутствия таблицы `advance_balances`
 
 ## Решение (ПРОСТОЕ) ✅
@@ -27,6 +29,7 @@ Failed to load resource: the server responded with a status of 400/404
 ### Что делает миграция
 
 Создаёт упрощённую функцию `delete_payment_transaction`:
+
 - Удаляет платёж по ID
 - НЕ требует таблицу advance_balances
 - НЕ требует другие функции и триггеры
