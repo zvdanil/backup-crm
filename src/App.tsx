@@ -98,13 +98,7 @@ const AppRoutes = () => {
           path="/calendar"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "manager", "viewer"]}
             >
               <CalendarPage />
             </ProtectedRoute>
@@ -133,9 +127,7 @@ const AppRoutes = () => {
         <Route
           path="/activities"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <Activities />
             </ProtectedRoute>
           }
@@ -143,9 +135,7 @@ const AppRoutes = () => {
         <Route
           path="/activities/:id/expenses"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <ActivityExpenseJournal />
             </ProtectedRoute>
           }
@@ -153,7 +143,7 @@ const AppRoutes = () => {
         <Route
           path="/accounts"
           element={
-            <ProtectedRoute allowedRoles={["owner", "admin", "accountant"]}>
+            <ProtectedRoute allowedRoles={["owner", "admin"]}>
               <Accounts />
             </ProtectedRoute>
           }
@@ -161,7 +151,7 @@ const AppRoutes = () => {
         <Route
           path="/accounts/:id"
           element={
-            <ProtectedRoute allowedRoles={["owner", "admin", "accountant"]}>
+            <ProtectedRoute allowedRoles={["owner", "admin"]}>
               <AccountDetail />
             </ProtectedRoute>
           }
@@ -170,13 +160,7 @@ const AppRoutes = () => {
           path="/attendance"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "manager", "viewer"]}
             >
               <Attendance />
             </ProtectedRoute>
@@ -186,13 +170,7 @@ const AppRoutes = () => {
           path="/group-lessons"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "manager", "viewer"]}
             >
               <GroupLessonsJournal />
             </ProtectedRoute>
@@ -201,9 +179,7 @@ const AppRoutes = () => {
         <Route
           path="/groups"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <Groups />
             </ProtectedRoute>
           }
@@ -211,9 +187,7 @@ const AppRoutes = () => {
         <Route
           path="/staff"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <Staff />
             </ProtectedRoute>
           }
@@ -221,9 +195,7 @@ const AppRoutes = () => {
         <Route
           path="/staff/:id"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <StaffDetail />
             </ProtectedRoute>
           }
@@ -231,9 +203,7 @@ const AppRoutes = () => {
         <Route
           path="/staff-expenses"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <StaffExpenseJournal />
             </ProtectedRoute>
           }
@@ -241,9 +211,7 @@ const AppRoutes = () => {
         <Route
           path="/staff-payroll"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <StaffPayrollRegistry />
             </ProtectedRoute>
           }
@@ -252,13 +220,7 @@ const AppRoutes = () => {
           path="/garden-attendance"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "manager", "viewer"]}
             >
               <GardenAttendanceJournal />
             </ProtectedRoute>
@@ -267,9 +229,7 @@ const AppRoutes = () => {
         <Route
           path="/nutrition-report"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <NutritionReport />
             </ProtectedRoute>
           }
@@ -285,9 +245,7 @@ const AppRoutes = () => {
         <Route
           path="/summary-report"
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "admin", "accountant", "viewer"]}
-            >
+            <ProtectedRoute allowedRoles={["owner", "admin", "viewer"]}>
               <SummaryReport />
             </ProtectedRoute>
           }

@@ -15,7 +15,8 @@ export type AppSection =
   | "staff_expenses"
   | "staff_payroll"
   | "users"
-  | "summary_report";
+  | "summary_report"
+  | "debtors";
 
 const roleAccess: Record<UserRole, AppSection[]> = {
   owner: [
@@ -58,21 +59,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     "group_lessons_journal",
     "garden_attendance",
   ],
-  accountant: [
-    "calendar",
-    "students",
-    "activities",
-    "accounts",
-    "groups",
-    "attendance",
-    "group_lessons_journal",
-    "garden_attendance",
-    "nutrition",
-    "staff",
-    "staff_expenses",
-    "staff_payroll",
-    "summary_report",
-  ],
+  accountant: ["students", "debtors"],
   viewer: [
     "dashboard",
     "calendar",

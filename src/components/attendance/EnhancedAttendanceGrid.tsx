@@ -1754,7 +1754,7 @@ export function EnhancedAttendanceGrid({
             <div>Н: {dailyTotals[selectedDateStr]?.absent || 0}</div>
             <div>Σ: {dailyTotals[selectedDateStr]?.values || 0}</div>
           </div>
-          {role !== 'manager' && (
+          {role !== "manager" && (
             <div className="mt-2 text-sm font-medium">
               {teachersForActivity.length > 0 ? (
                 <>
@@ -2046,7 +2046,7 @@ export function EnhancedAttendanceGrid({
                 ))}
 
                 {/* Рядок оплати педагогу */}
-                {role !== 'manager' && (
+                {role !== "manager" && (
                   <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
                     <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">
                       {teachersForActivity.length > 0 ? (

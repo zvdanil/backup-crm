@@ -474,213 +474,225 @@ export default function StudentDetail() {
             />
           </div>
 
-          {/* Enrollments */}
-          <div className="lg:col-span-3">
-            <div className="rounded-xl bg-card border border-border shadow-soft">
-              <div className="flex items-center justify-between p-4 sm:p-6 border-b">
-                <h3 className="text-lg font-semibold">Активності</h3>
-                <Button size="sm" onClick={() => setEnrollFormOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Записати
-                </Button>
-              </div>
-
-              {activeEnrollments.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  <p>Немає активних записів</p>
-                  <Button
-                    variant="link"
-                    onClick={() => setEnrollFormOpen(true)}
-                  >
-                    Записати на активність
+          {/* Enrollments - Hidden for accountant */}
+          {role !== "accountant" && (
+            <div className="lg:col-span-3">
+              <div className="rounded-xl bg-card border border-border shadow-soft">
+                <div className="flex items-center justify-between p-4 sm:p-6 border-b">
+                  <h3 className="text-lg font-semibold">Активності</h3>
+                  <Button size="sm" onClick={() => setEnrollFormOpen(true)}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Записати
                   </Button>
                 </div>
-              ) : isMobile ? (
-                <div className="space-y-3 p-4">
-                  {activeEnrollments.map((enrollment) => {
-                    if (!enrollment.activities) return null;
-                    const isFoodActivity = foodTariffIds.has(
-                      enrollment.activity_id,
-                    );
-                    return (
-                      <div
-                        key={enrollment.id}
-                        className="rounded-lg border p-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="w-3 h-3 rounded-full"
-                                style={{
-                                  backgroundColor: enrollment.activities.color,
-                                }}
-                              />
-                              <span className="text-sm font-medium break-words">
-                                {isFoodActivity
-                                  ? `+ ${enrollment.activities.name}`
-                                  : enrollment.activities.name}
-                              </span>
+
+                {activeEnrollments.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">
+                    <p>Немає активних записів</p>
+                    <Button
+                      variant="link"
+                      onClick={() => setEnrollFormOpen(true)}
+                    >
+                      Записати на активність
+                    </Button>
+                  </div>
+                ) : isMobile ? (
+                  <div className="space-y-3 p-4">
+                    {activeEnrollments.map((enrollment) => {
+                      if (!enrollment.activities) return null;
+                      const isFoodActivity = foodTariffIds.has(
+                        enrollment.activity_id,
+                      );
+                      return (
+                        <div
+                          key={enrollment.id}
+                          className="rounded-lg border p-3"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-3 h-3 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      enrollment.activities.color,
+                                  }}
+                                />
+                                <span className="text-sm font-medium break-words">
+                                  {isFoodActivity
+                                    ? `+ ${enrollment.activities.name}`
+                                    : enrollment.activities.name}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {formatDate(enrollment.enrolled_at)}
+                              </div>
+                              <div className="mt-2 text-sm">
+                                <EnrollmentPriceDisplay
+                                  enrollment={enrollment}
+                                />
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Знижка:{" "}
+                                {(enrollment.discount_percent ?? 0) > 0
+                                  ? `${enrollment.discount_percent}%`
+                                  : "—"}
+                              </div>
                             </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              {formatDate(enrollment.enrolled_at)}
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setEditingEnrollment(enrollment)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setUnenrollingId(enrollment.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
                             </div>
-                            <div className="mt-2 text-sm">
-                              <EnrollmentPriceDisplay enrollment={enrollment} />
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              Знижка:{" "}
-                              {(enrollment.discount_percent ?? 0) > 0
-                                ? `${enrollment.discount_percent}%`
-                                : "—"}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setEditingEnrollment(enrollment)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setUnenrollingId(enrollment.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[560px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Активність</TableHead>
-                        <TableHead>Ціна</TableHead>
-                        <TableHead>Знижка</TableHead>
-                        <TableHead>Дата запису</TableHead>
-                        <TableHead></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {activeEnrollments.map((enrollment) => {
-                        if (!enrollment.activities) return null;
-                        const isFoodActivity = foodTariffIds.has(
-                          enrollment.activity_id,
-                        );
-                        return (
-                          <TableRow key={enrollment.id}>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="w-3 h-3 rounded-full"
-                                  style={{
-                                    backgroundColor:
-                                      enrollment.activities.color,
-                                  }}
-                                />
-                                {isFoodActivity
-                                  ? `+ ${enrollment.activities.name}`
-                                  : enrollment.activities.name}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <EnrollmentPriceDisplay enrollment={enrollment} />
-                            </TableCell>
-                            <TableCell>
-                              {(enrollment.discount_percent ?? 0) > 0
-                                ? `${enrollment.discount_percent}%`
-                                : "—"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatDate(enrollment.enrolled_at)}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() =>
-                                    setEditingEnrollment(enrollment)
-                                  }
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() =>
-                                    setUnenrollingId(enrollment.id)
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-
-              {pastEnrollments.length > 0 && (
-                <>
-                  <div className="px-6 py-3 bg-muted/30 text-sm font-medium text-muted-foreground">
-                    Архів
+                      );
+                    })}
                   </div>
-                  <Table>
-                    <TableBody>
-                      {pastEnrollments.map((enrollment) => {
-                        if (!enrollment.activities) return null;
-                        const isFoodActivity = foodTariffIds.has(
-                          enrollment.activity_id,
-                        );
-                        return (
-                          <TableRow key={enrollment.id} className="opacity-60">
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="w-3 h-3 rounded-full"
-                                  style={{
-                                    backgroundColor:
-                                      enrollment.activities.color,
-                                  }}
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[560px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Активність</TableHead>
+                          <TableHead>Ціна</TableHead>
+                          <TableHead>Знижка</TableHead>
+                          <TableHead>Дата запису</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activeEnrollments.map((enrollment) => {
+                          if (!enrollment.activities) return null;
+                          const isFoodActivity = foodTariffIds.has(
+                            enrollment.activity_id,
+                          );
+                          return (
+                            <TableRow key={enrollment.id}>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="w-3 h-3 rounded-full"
+                                    style={{
+                                      backgroundColor:
+                                        enrollment.activities.color,
+                                    }}
+                                  />
+                                  {isFoodActivity
+                                    ? `+ ${enrollment.activities.name}`
+                                    : enrollment.activities.name}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <EnrollmentPriceDisplay
+                                  enrollment={enrollment}
                                 />
-                                {isFoodActivity
-                                  ? `+ ${enrollment.activities.name}`
-                                  : enrollment.activities.name}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <EnrollmentPriceDisplay enrollment={enrollment} />
-                            </TableCell>
-                            <TableCell>
-                              {(enrollment.discount_percent ?? 0) > 0
-                                ? `${enrollment.discount_percent}%`
-                                : "—"}
-                            </TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {enrollment.unenrolled_at &&
-                                formatDate(enrollment.unenrolled_at)}
-                            </TableCell>
-                            <TableCell></TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </>
-              )}
+                              </TableCell>
+                              <TableCell>
+                                {(enrollment.discount_percent ?? 0) > 0
+                                  ? `${enrollment.discount_percent}%`
+                                  : "—"}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {formatDate(enrollment.enrolled_at)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      setEditingEnrollment(enrollment)
+                                    }
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      setUnenrollingId(enrollment.id)
+                                    }
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                {pastEnrollments.length > 0 && (
+                  <>
+                    <div className="px-6 py-3 bg-muted/30 text-sm font-medium text-muted-foreground">
+                      Архів
+                    </div>
+                    <Table>
+                      <TableBody>
+                        {pastEnrollments.map((enrollment) => {
+                          if (!enrollment.activities) return null;
+                          const isFoodActivity = foodTariffIds.has(
+                            enrollment.activity_id,
+                          );
+                          return (
+                            <TableRow
+                              key={enrollment.id}
+                              className="opacity-60"
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="w-3 h-3 rounded-full"
+                                    style={{
+                                      backgroundColor:
+                                        enrollment.activities.color,
+                                    }}
+                                  />
+                                  {isFoodActivity
+                                    ? `+ ${enrollment.activities.name}`
+                                    : enrollment.activities.name}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <EnrollmentPriceDisplay
+                                  enrollment={enrollment}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                {(enrollment.discount_percent ?? 0) > 0
+                                  ? `${enrollment.discount_percent}%`
+                                  : "—"}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {enrollment.unenrolled_at &&
+                                  formatDate(enrollment.unenrolled_at)}
+                              </TableCell>
+                              <TableCell></TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -692,14 +704,16 @@ export default function StudentDetail() {
         isLoading={updateStudent.isPending}
       />
 
-      <EnrollmentForm
-        open={enrollFormOpen}
-        onOpenChange={setEnrollFormOpen}
-        onSubmit={handleEnroll}
-        studentName={student.full_name}
-        isLoading={createEnrollment.isPending}
-        excludeActivityIds={activeEnrollments.map((e) => e.activity_id)}
-      />
+      {role !== "accountant" && (
+        <EnrollmentForm
+          open={enrollFormOpen}
+          onOpenChange={setEnrollFormOpen}
+          onSubmit={handleEnroll}
+          studentName={student.full_name}
+          isLoading={createEnrollment.isPending}
+          excludeActivityIds={activeEnrollments.map((e) => e.activity_id)}
+        />
+      )}
 
       <TransactionForm
         open={transactionFormOpen}
@@ -714,7 +728,7 @@ export default function StudentDetail() {
         isLoading={createTransaction.isPending}
       />
 
-      {editingEnrollment && (
+      {role !== "accountant" && editingEnrollment && (
         <EditEnrollmentForm
           open={!!editingEnrollment}
           onOpenChange={(open) => !open && setEditingEnrollment(null)}
@@ -728,26 +742,28 @@ export default function StudentDetail() {
         />
       )}
 
-      <AlertDialog
-        open={!!unenrollingId}
-        onOpenChange={() => setUnenrollingId(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Відписати від активності?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Дитину буде відписано, але історія відвідуваності збережеться для
-              розрахунку балансу.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Скасувати</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUnenroll}>
-              Відписати
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {role !== "accountant" && (
+        <AlertDialog
+          open={!!unenrollingId}
+          onOpenChange={() => setUnenrollingId(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Відписати від активності?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Дитину буде відписано, але історія відвідуваності збережеться
+                для розрахунку балансу.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Скасувати</AlertDialogCancel>
+              <AlertDialogAction onClick={handleUnenroll}>
+                Відписати
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </>
   );
 }
