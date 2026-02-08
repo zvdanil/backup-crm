@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 import { isGardenAttendanceController } from "@/lib/gardenAttendance";
 import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
 import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
-import { useStudentSubscriptionChargesByAccount } from "@/hooks/useFinanceTransactions";
 
 const MONTHS = [
   "Січень",
@@ -136,15 +135,6 @@ export function StudentAccountBalance({
     });
   }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
-  // Get real subscription charges from database
-  const { data: subscriptionChargesMap } =
-    useStudentSubscriptionChargesByAccount(
-      studentId,
-      month,
-      year,
-      balanceEnrollments,
-    );
-
   if (balanceEnrollments.length === 0) {
     return null;
   }
@@ -192,8 +182,6 @@ export function StudentAccountBalance({
               const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
               const endBalance = previousBalance + payments - charges + refunds;
-              const subscriptionCharges =
-                subscriptionChargesMap?.get(group.id) || 0;
               const startLabel =
                 previousBalance < 0
                   ? "Борг на початок"
@@ -252,7 +240,7 @@ export function StudentAccountBalance({
                         До сплати на початок {MONTHS[month]}
                       </span>
                       <span className="font-medium text-destructive">
-                        {formatCurrency(subscriptionCharges - previousBalance)}
+                        {formatCurrency(charges - previousBalance)}
                       </span>
                     </div>
                     <div className="border-t border-border my-1"></div>
