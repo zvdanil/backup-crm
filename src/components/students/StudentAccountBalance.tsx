@@ -135,6 +135,42 @@ export function StudentAccountBalance({
     });
   }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
+  // Calculate subscription charges per account
+  const subscriptionChargesMap = useMemo(() => {
+    const map = new Map<string, number>();
+
+    balanceEnrollments.forEach((enrollment) => {
+      const activity = enrollment.activities;
+      const presentRule = activity?.billing_rules?.present;
+
+      // Only count subscription activities
+      if (presentRule?.type !== "subscription") return;
+
+      // Calculate charge for this subscription activity
+      let charge = 0;
+      if (
+        enrollment.custom_price !== null &&
+        enrollment.custom_price !== undefined
+      ) {
+        const discountMultiplier = 1 - (enrollment.discount_percent || 0) / 100;
+        charge =
+          Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
+      } else if (presentRule?.rate && presentRule.rate > 0) {
+        charge = presentRule.rate;
+      } else {
+        charge = activity?.default_price || 0;
+      }
+
+      // Group by account
+      const accountId =
+        enrollment.account_id || activity?.account_id || "none";
+      const currentTotal = map.get(accountId) || 0;
+      map.set(accountId, currentTotal + charge);
+    });
+
+    return map;
+  }, [balanceEnrollments]);
+
   if (balanceEnrollments.length === 0) {
     return null;
   }
@@ -182,6 +218,8 @@ export function StudentAccountBalance({
               const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
               const endBalance = previousBalance + payments - charges + refunds;
+              const subscriptionCharges =
+                subscriptionChargesMap.get(group.id) || 0;
               const startLabel =
                 previousBalance < 0
                   ? "Борг на початок"
@@ -240,14 +278,12 @@ export function StudentAccountBalance({
                         До сплати на початок {MONTHS[month]}
                       </span>
                       <span className="font-medium text-destructive">
-                        {formatCurrency(charges - previousBalance)}
+                        {formatCurrency(subscriptionCharges - previousBalance)}
                       </span>
                     </div>
                     <div className="border-t border-border my-1"></div>
                     <div className="flex items-center justify-between">
-                      <span className="text-foreground">
-                        Поточний баланс
-                      </span>
+                      <span className="text-foreground">Поточний баланс</span>
                       {endBalance < 0 ? (
                         <span className="font-semibold text-foreground">
                           До сплати: {formatCurrency(Math.abs(endBalance))}
