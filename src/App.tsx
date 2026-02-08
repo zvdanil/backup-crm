@@ -55,14 +55,30 @@ if (typeof window !== "undefined") {
 
 const AppRoutes = () => {
   const location = useLocation();
-  const isPublicPage = location.pathname === "/login" || location.pathname === "/pending";
+  const isPublicPage = location.pathname === "/login";
 
   if (isPublicPage) {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/pending" element={<PendingActivation />} />
         <Route path="*" element={<Login />} />
+      </Routes>
+    );
+  }
+
+  // Страница ожидания активации - без AppLayout
+  if (location.pathname === "/pending") {
+    return (
+      <Routes>
+        <Route
+          path="/pending"
+          element={
+            <ProtectedRoute>
+              <PendingActivation />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<PendingActivation />} />
       </Routes>
     );
   }
@@ -98,13 +114,7 @@ const AppRoutes = () => {
           path="/students"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <Students />
             </ProtectedRoute>
@@ -114,13 +124,7 @@ const AppRoutes = () => {
           path="/students/:id"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <StudentDetail />
             </ProtectedRoute>
@@ -130,13 +134,7 @@ const AppRoutes = () => {
           path="/activities"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <Activities />
             </ProtectedRoute>
@@ -146,13 +144,7 @@ const AppRoutes = () => {
           path="/activities/:id/expenses"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <ActivityExpenseJournal />
             </ProtectedRoute>
@@ -210,13 +202,7 @@ const AppRoutes = () => {
           path="/groups"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <Groups />
             </ProtectedRoute>
@@ -246,13 +232,7 @@ const AppRoutes = () => {
           path="/staff-expenses"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <StaffExpenseJournal />
             </ProtectedRoute>
@@ -288,13 +268,7 @@ const AppRoutes = () => {
           path="/nutrition-report"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <NutritionReport />
             </ProtectedRoute>
@@ -322,13 +296,7 @@ const AppRoutes = () => {
           path="/debtors"
           element={
             <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-              ]}
+              allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <DebtorsRegistry />
             </ProtectedRoute>

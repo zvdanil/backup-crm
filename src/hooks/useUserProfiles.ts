@@ -19,8 +19,9 @@ export function useUserProfiles() {
   return useQuery({
     queryKey: ["user_profiles"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .rpc('get_user_profiles_with_email');
+      const { data, error } = await supabase.rpc(
+        "get_user_profiles_with_email",
+      );
 
       if (error) throw error;
       return data as UserProfile[];

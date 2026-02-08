@@ -335,9 +335,7 @@ export default function Users() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="text-sm">
-                        {profile.email || "—"}
-                      </div>
+                      <div className="text-sm">{profile.email || "—"}</div>
                     </TableCell>
                     <TableCell>
                       <Select
