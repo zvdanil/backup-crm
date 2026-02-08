@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { supabase } from "@/integrations/supabase/client";
 import {
   useUserProfiles,
   useUpdateUserProfile,
@@ -112,7 +111,6 @@ export default function Users() {
   );
 
   const onCreateUserSubmit = async (data: CreateUserFormData) => {
-    console.log("[Users] onCreateUserSubmit", data);
     try {
       await createUser.mutateAsync({
         email: data.email,
@@ -142,10 +140,6 @@ export default function Users() {
         queryClient.refetchQueries({ queryKey: ["user_profiles"] });
       }, 2000);
     }
-  };
-
-  const onCreateUserInvalid = (errors: unknown) => {
-    console.warn("[Users] create user validation errors", errors);
   };
 
   return (
@@ -186,10 +180,7 @@ export default function Users() {
                   <DialogTitle>Створити нового користувача</DialogTitle>
                 </DialogHeader>
                 <form
-                  onSubmit={createUserForm.handleSubmit(
-                    onCreateUserSubmit,
-                    onCreateUserInvalid,
-                  )}
+                  onSubmit={createUserForm.handleSubmit(onCreateUserSubmit)}
                   className="space-y-4"
                 >
                   <div className="space-y-2">
