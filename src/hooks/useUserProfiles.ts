@@ -100,6 +100,11 @@ export function useCreateUser() {
         throw signUpError;
       }
 
+      if (!signUpData.user?.id) {
+        throw new Error("Користувача створено, але ID відсутній");
+      }
+
+      // Восстанавливаем сессию администратора
       if (adminSession?.access_token && adminSession.refresh_token) {
         await supabase.auth.setSession({
           access_token: adminSession.access_token,
@@ -107,16 +112,33 @@ export function useCreateUser() {
         });
       }
 
+      // Явно создаём профиль в user_profiles (триггер может не сработать из-за RLS)
+      const { error: profileError } = await supabase
+        .from("user_profiles")
+        .insert({
+          id: signUpData.user.id,
+          full_name: userData.parentName,
+          parent_name: userData.parentName,
+          child_name: userData.childName,
+          role: userData.role,
+          is_active: userData.isActive,
+        });
+
+      if (profileError) {
+        console.error("[useCreateUser] Profile creation error:", profileError);
+        // Не бросаем ошибку, т.к. пользователь уже создан
+        // Профиль можно будет создать позже вручную
+      }
+
       const now = new Date().toISOString();
-      const createdUser = signUpData.user;
 
       return {
-        id: createdUser?.id ?? "pending",
+        id: signUpData.user.id,
         full_name: userData.parentName,
         parent_name: userData.parentName,
         child_name: userData.childName,
-        role: "newregistration",
-        is_active: false,
+        role: userData.role,
+        is_active: userData.isActive,
         created_at: now,
         updated_at: now,
       } as UserProfile;
