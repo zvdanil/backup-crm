@@ -68,6 +68,41 @@ export default function ParentStudentDetail() {
       })
   ), [enrollments, allActivities]);
 
+  const balanceEnrollments = useMemo(() => (
+    enrollments.filter((enrollment) => {
+      const activity = allActivities.find(a => a.id === enrollment.activity_id);
+      return activity ? !isGardenAttendanceController(activity) && !foodTariffIds.has(enrollment.activity_id) : true;
+    })
+  ), [enrollments, allActivities, foodTariffIds]);
+
+  const accountBalanceMap = useMemo(() => {
+    const map = new Map();
+    accountBalances.forEach((item) => {
+      map.set(item.account_id || 'none', item);
+    });
+    return map;
+  }, [accountBalances]);
+
+  const accountGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; label: string; enrollments: typeof balanceEnrollments }>();
+    
+    balanceEnrollments.forEach((enrollment) => {
+      const accountId = enrollment.account_id || 'none';
+      if (!groups.has(accountId)) {
+        const accountLabel = accountId !== 'none' ? (accountNameMap.get(accountId) || 'Без рахунку') : 'Без рахунку';
+        groups.set(accountId, { id: accountId, label: accountLabel, enrollments: [] });
+      }
+      groups.get(accountId)!.enrollments.push(enrollment);
+    });
+    
+    return Array.from(groups.values()).sort((a, b) => {
+      const aIsNone = a.id === 'none';
+      const bIsNone = b.id === 'none';
+      if (aIsNone !== bIsNone) return aIsNone ? 1 : -1;
+      return a.label.localeCompare(b.label, 'uk-UA');
+    });
+  }, [balanceEnrollments, accountNameMap]);
+
   const accountNameMap = useMemo(() => {
     const map = new Map<string, string>();
     accounts.forEach((account) => map.set(account.id, account.name));
@@ -138,74 +173,8 @@ export default function ParentStudentDetail() {
 
       <div className="p-4 sm:p-8 space-y-6">
         <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft">
-          <h3 className="text-lg font-semibold mb-4">Баланс</h3>
-          {balancesLoading ? (
-            <div className="text-sm text-muted-foreground">Завантаження...</div>
-          ) : (
-            <div className="space-y-3">
-              <div className="text-2xl font-bold">
-                <span className={cn(totalBalance >= 0 ? 'text-success' : 'text-destructive')}>
-                  {totalBalance >= 0 ? '+' : ''}{formatCurrency(totalBalance)}
-                </span>
-              </div>
-              <div className="space-y-2 text-sm">
-                {accountBalances.map((account) => {
-                  const accountId = account.account_id || 'none';
-                  const accountName = accountId !== 'none' ? (accountNameMap.get(accountId) || 'Без рахунку') : 'Без рахунку';
-                  const accountDetails = accountId !== 'none' ? accountDetailsMap.get(accountId) : null;
-                  const balance = account.balance || 0;
-                  const isExpanded = expandedAccountId === accountId;
-                  const hasDetails = accountDetails && accountDetails.trim().length > 0;
-
-                  return (
-                    <div key={accountId} className="border rounded-lg overflow-hidden">
-                      <div 
-                        className={cn(
-                          "flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors",
-                          hasDetails && "cursor-pointer"
-                        )}
-                        onClick={() => hasDetails && setExpandedAccountId(isExpanded ? null : accountId)}
-                      >
-                        <div className="flex items-center gap-2 flex-1">
-                          <span className="text-muted-foreground">
-                            {accountName}
-                          </span>
-                          {hasDetails && (
-                            isExpanded ? (
-                              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                            )
-                          )}
-                        </div>
-                        <span className={cn(balance >= 0 ? 'text-success' : 'text-destructive', 'font-medium')}>
-                          {balance >= 0 ? '+' : ''}{formatCurrency(balance)}
-                        </span>
-                      </div>
-                      {isExpanded && hasDetails && (
-                        <div className="px-3 pb-3 pt-2 border-t bg-muted/30">
-                          <div className="text-xs font-medium text-muted-foreground mb-1">
-                            Сума до оплати: <span className={cn(balance < 0 ? 'text-destructive font-semibold' : 'text-foreground')}>
-                              {formatCurrency(Math.abs(balance))}
-                            </span>
-                          </div>
-                          <div className="text-xs text-muted-foreground whitespace-pre-wrap">
-                            {accountDetails}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-            <h3 className="text-lg font-semibold">Баланс по активностях</h3>
+            <h3 className="text-lg font-semibold">Баланс</h3>
             <div className="flex flex-col sm:flex-row gap-2">
               <Select value={month.toString()} onValueChange={(value) => setMonth(parseInt(value))}>
                 <SelectTrigger className="w-full sm:w-32">
@@ -227,17 +196,138 @@ export default function ParentStudentDetail() {
               />
             </div>
           </div>
-          <div className="space-y-3">
-            {activeEnrollments.map((enrollment) => (
-              <StudentActivityBalanceRow
-                key={enrollment.id}
-                studentId={id!}
-                enrollment={enrollment}
-                month={month}
-                year={year}
-              />
-            ))}
-          </div>
+          {balancesLoading ? (
+            <div className="text-sm text-muted-foreground">Завантаження...</div>
+          ) : accountGroups.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              Немає рядків за вибраний період
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {accountGroups.map((group) => {
+                const accountBalance = accountBalanceMap.get(group.id);
+                const previousBalance = accountBalance?.previous_balance || 0;
+                const charges = accountBalance?.charges || 0;
+                const payments = accountBalance?.payments || 0;
+                const refunds = accountBalance?.refunds || 0;
+                const endBalance = previousBalance + payments - charges + refunds;
+                const startLabel = previousBalance < 0
+                  ? 'Борг на початок'
+                  : previousBalance > 0
+                    ? 'Залишок на початок'
+                    : 'Баланс на початок';
+                const accountDetails = group.id !== 'none' ? accountDetailsMap.get(group.id) : null;
+                const hasDetails = accountDetails && accountDetails.trim().length > 0;
+                const isExpanded = expandedAccountId === group.id;
+                
+                return (
+                  <div key={group.id} className="rounded-lg border border-border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <div className="text-sm font-semibold">{group.label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {MONTHS[month]} {year}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-sm mb-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">{startLabel}</span>
+                        <span
+                          className={cn(
+                            "font-semibold",
+                            previousBalance < 0
+                              ? "text-destructive"
+                              : previousBalance > 0
+                                ? "text-success"
+                                : "text-muted-foreground"
+                          )}
+                        >
+                          {previousBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(previousBalance))}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Нараховано за місяць</span>
+                        <span className="font-medium">{formatCurrency(charges)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Оплачено за місяць</span>
+                        <span className="font-medium">{formatCurrency(payments)}</span>
+                      </div>
+                      <div className="border-t border-border my-1"></div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Ітого</span>
+                        {endBalance < 0 ? (
+                          <span className="font-semibold text-destructive">
+                            До сплати: {formatCurrency(Math.abs(endBalance))}
+                          </span>
+                        ) : endBalance > 0 ? (
+                          <span className="font-semibold text-success">
+                            Переплата: +{formatCurrency(endBalance)}
+                          </span>
+                        ) : (
+                          <span className="font-semibold text-muted-foreground">
+                            {formatCurrency(0)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {hasDetails && (
+                      <div 
+                        className={cn(
+                          "cursor-pointer rounded-md border p-3 transition-colors hover:bg-muted/50 mb-3",
+                          isExpanded && "bg-muted/30"
+                        )}
+                        onClick={() => setExpandedAccountId(isExpanded ? null : group.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-medium text-muted-foreground">
+                            {isExpanded ? 'Приховати деталі оплати' : 'Показати деталі оплати'}
+                          </div>
+                          {isExpanded ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div className="mt-2 pt-2 border-t text-xs text-muted-foreground whitespace-pre-wrap">
+                            {accountDetails}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {group.enrollments.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">Немає активностей за вибраний період</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {group.enrollments.map((enrollment) => (
+                          <StudentActivityBalanceRow
+                            key={enrollment.id}
+                            studentId={id!}
+                            enrollment={enrollment}
+                            month={month}
+                            year={year}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {group.id === 'none' && (accountBalanceMap.get('none')?.unassigned_payments || 0) > 0 && (
+                      <div className="mt-3 rounded-md border border-dashed border-muted-foreground/40 p-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Оплата без активності</span>
+                          <span className="font-semibold text-success">
+                            +{formatCurrency(accountBalanceMap.get('none')?.unassigned_payments || 0)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft">
