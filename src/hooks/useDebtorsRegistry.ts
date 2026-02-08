@@ -15,6 +15,7 @@ type DebtorRow = {
   account_name: string;
   month_charges: number;
   month_payments: number;
+  month_refunds: number;
   balance_all_time: number;
   is_debtor: boolean;
 };
@@ -104,6 +105,7 @@ export function useDebtorsRegistry(
             account_name: accountName,
             month_charges: balance.charges,
             month_payments: balance.payments,
+            month_refunds: balance.refunds,
             balance_all_time: endBalance,
             is_debtor: endBalance < 0,
           });
