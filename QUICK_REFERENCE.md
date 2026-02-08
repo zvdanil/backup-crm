@@ -9,16 +9,16 @@ npm run dev  # http://localhost:8080
 
 ## 📋 Ключевая информация
 
-| Параметр | Значение |
-|----------|----------|
-| **Проект** | backup-crm (CRM для образовательного центра) |
-| **Branch** | test-srm-iris |
-| **Frontend** | React + TypeScript + Vite |
-| **UI** | shadcn-ui + Tailwind |
-| **Backend** | Supabase (PostgreSQL + Auth) |
-| **Deploy** | Railway |
-| **Supabase Project ID** | qtphickigswerhvintvh |
-| **Последний коммит** | 9792073 (remove debug logs) |
+| Параметр                | Значение                                     |
+| ----------------------- | -------------------------------------------- |
+| **Проект**              | backup-crm (CRM для образовательного центра) |
+| **Branch**              | test-srm-iris                                |
+| **Frontend**            | React + TypeScript + Vite                    |
+| **UI**                  | shadcn-ui + Tailwind                         |
+| **Backend**             | Supabase (PostgreSQL + Auth)                 |
+| **Deploy**              | Railway                                      |
+| **Supabase Project ID** | qtphickigswerhvintvh                         |
+| **Последний коммит**    | 9792073 (remove debug logs)                  |
 
 ## 🔑 Основные файлы
 
@@ -27,7 +27,7 @@ src/
 ├── pages/Users.tsx              # Управление пользователями
 ├── hooks/useUserProfiles.ts     # Хуки для работы с профилями
 ├── context/AuthContext.tsx      # Контекст аутентификации
-├── integrations/supabase/       
+├── integrations/supabase/
 │   ├── client.ts                # Supabase клиент
 │   └── types.ts                 # Типы БД
 └── components/
@@ -45,19 +45,20 @@ package.json                     # Зависимости
 
 ## 🔐 Роли пользователей
 
-| Роль | Описание | Доступ |
-|------|----------|--------|
-| `owner` | Владелец | Полный доступ |
-| `admin` | Администратор | Почти полный доступ |
-| `manager` | Менеджер | Ученики + группы |
-| `accountant` | Бухгалтер | Финансы |
-| `viewer` | Наблюдатель | Только чтение |
-| `parent` | Родитель | Портал родителя |
-| `newregistration` | Новая регистрация | Ожидание активации |
+| Роль              | Описание          | Доступ              |
+| ----------------- | ----------------- | ------------------- |
+| `owner`           | Владелец          | Полный доступ       |
+| `admin`           | Администратор     | Почти полный доступ |
+| `manager`         | Менеджер          | Ученики + группы    |
+| `accountant`      | Бухгалтер         | Финансы             |
+| `viewer`          | Наблюдатель       | Только чтение       |
+| `parent`          | Родитель          | Портал родителя     |
+| `newregistration` | Новая регистрация | Ожидание активации  |
 
 ## 📝 Основные команды
 
 ### Development
+
 ```bash
 npm run dev          # Dev server
 npm run build        # Production build
@@ -66,6 +67,7 @@ npm run lint         # ESLint
 ```
 
 ### Git
+
 ```bash
 git status
 git add .
@@ -74,6 +76,7 @@ git push origin test-srm-iris
 ```
 
 ### Supabase CLI
+
 ```bash
 supabase login
 supabase link --project-ref qtphickigswerhvintvh
@@ -116,21 +119,21 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_LQZwutg-thrQOGsqiwgUvw_4r6BmHQE
 
 ## 📚 Документация
 
-| Файл | Описание |
-|------|----------|
-| [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) | **Полный контекст проекта** |
-| [README.md](README.md) | Базовая информация |
-| [AUTH_FIXES_README.md](AUTH_FIXES_README.md) | Исправления auth |
-| [DEPLOY_EDGE_FUNCTION.md](DEPLOY_EDGE_FUNCTION.md) | Деплой Edge Functions |
-| [DATABASE_SCHEMA.md](database_schema.md) | Схема БД |
+| Файл                                               | Описание                    |
+| -------------------------------------------------- | --------------------------- |
+| [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)           | **Полный контекст проекта** |
+| [README.md](README.md)                             | Базовая информация          |
+| [AUTH_FIXES_README.md](AUTH_FIXES_README.md)       | Исправления auth            |
+| [DEPLOY_EDGE_FUNCTION.md](DEPLOY_EDGE_FUNCTION.md) | Деплой Edge Functions       |
+| [DATABASE_SCHEMA.md](database_schema.md)           | Схема БД                    |
 
 ## 🔧 Важные хуки
 
 ```typescript
 // src/hooks/useUserProfiles.ts
-useUserProfiles()        // Получить список пользователей
-useUpdateUserProfile()   // Обновить профиль
-useCreateUser()          // Создать пользователя (через signUp)
+useUserProfiles(); // Получить список пользователей
+useUpdateUserProfile(); // Обновить профиль
+useCreateUser(); // Создать пользователя (через signUp)
 ```
 
 ## 🎨 UI Компоненты
@@ -138,6 +141,7 @@ useCreateUser()          // Создать пользователя (через 
 Используется **shadcn-ui** (Radix UI + Tailwind)
 
 Все компоненты в `src/components/ui/`:
+
 - Button, Input, Select, Dialog, Table
 - Form, Label, Toast
 - Accordion, Tabs, Card
@@ -146,11 +150,13 @@ useCreateUser()          // Создать пользователя (через 
 ## 🚀 Deployment
 
 ### Railway (Auto)
+
 1. Push в `test-srm-iris`
 2. Railway автоматически деплоит
 3. Если не деплоит: `git commit --allow-empty -m "chore: trigger deploy"`
 
 ### Supabase
+
 - БД и Auth уже настроены
 - Edge Functions: `supabase functions deploy [name]`
 

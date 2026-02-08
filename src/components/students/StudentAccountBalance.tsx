@@ -1,21 +1,31 @@
-import { useMemo } from 'react';
+import { useMemo } from "react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { formatCurrency } from '@/lib/attendance';
-import { cn } from '@/lib/utils';
-import { isGardenAttendanceController } from '@/lib/gardenAttendance';
-import { StudentActivityBalanceRow } from './StudentActivityBalanceRow';
-import type { EnrollmentWithRelations } from '@/hooks/useEnrollments';
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { formatCurrency } from "@/lib/attendance";
+import { cn } from "@/lib/utils";
+import { isGardenAttendanceController } from "@/lib/gardenAttendance";
+import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
+import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
 
 const MONTHS = [
-  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
-  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
+  "Січень",
+  "Лютий",
+  "Березень",
+  "Квітень",
+  "Травень",
+  "Червень",
+  "Липень",
+  "Серпень",
+  "Вересень",
+  "Жовтень",
+  "Листопад",
+  "Грудень",
 ];
 
 interface StudentAccountBalanceProps {
@@ -47,12 +57,15 @@ export function StudentAccountBalance({
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
-    const isFutureMonth = year > currentYear || (year === currentYear && month > currentMonth);
-    
+    const isFutureMonth =
+      year > currentYear || (year === currentYear && month > currentMonth);
+
     return enrollments.filter((enrollment) => {
-      const activity = allActivities.find(a => a.id === enrollment.activity_id);
+      const activity = allActivities.find(
+        (a) => a.id === enrollment.activity_id,
+      );
       if (activity && isGardenAttendanceController(activity)) return false;
-      
+
       // Фильтруем по месяцу архивации:
       // - Для будущих месяцев: только активные enrollments
       // - Для текущего/прошлого месяца: активные + архивные, которые были заархивированы в этом месяце
@@ -79,40 +92,46 @@ export function StudentAccountBalance({
   }, [accounts]);
 
   const accountBalanceMap = useMemo(() => {
-    const map = new Map<string, typeof accountBalances[number]>();
+    const map = new Map<string, (typeof accountBalances)[number]>();
     accountBalances.forEach((balance) => {
-      map.set(balance.account_id || 'none', balance);
+      map.set(balance.account_id || "none", balance);
     });
     return map;
   }, [accountBalances]);
 
   const accountGroups = useMemo(() => {
-    const groups = new Map<string, { id: string; label: string; enrollments: EnrollmentWithRelations[] }>();
+    const groups = new Map<
+      string,
+      { id: string; label: string; enrollments: EnrollmentWithRelations[] }
+    >();
     balanceEnrollments.forEach((enrollment) => {
       // Приоритет: enrollment.account_id ?? activity.account_id
-      const accountId = enrollment.account_id || enrollment.activities.account_id || 'none';
-      const label = accountId === 'none'
-        ? 'Без рахунку'
-        : (accountLabelMap.get(accountId) || 'Без рахунку');
+      const accountId =
+        enrollment.account_id || enrollment.activities.account_id || "none";
+      const label =
+        accountId === "none"
+          ? "Без рахунку"
+          : accountLabelMap.get(accountId) || "Без рахунку";
       if (!groups.has(accountId)) {
         groups.set(accountId, { id: accountId, label, enrollments: [] });
       }
       groups.get(accountId)!.enrollments.push(enrollment);
     });
     accountBalances.forEach((balance) => {
-      const accountId = balance.account_id || 'none';
+      const accountId = balance.account_id || "none";
       if (!groups.has(accountId)) {
-        const label = accountId === 'none'
-          ? 'Без рахунку'
-          : (accountLabelMap.get(accountId) || 'Без рахунку');
+        const label =
+          accountId === "none"
+            ? "Без рахунку"
+            : accountLabelMap.get(accountId) || "Без рахунку";
         groups.set(accountId, { id: accountId, label, enrollments: [] });
       }
     });
     return Array.from(groups.values()).sort((a, b) => {
-      const aIsNone = a.id === 'none';
-      const bIsNone = b.id === 'none';
+      const aIsNone = a.id === "none";
+      const bIsNone = b.id === "none";
       if (aIsNone !== bIsNone) return aIsNone ? 1 : -1;
-      return a.label.localeCompare(b.label, 'uk-UA');
+      return a.label.localeCompare(b.label, "uk-UA");
     });
   }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
@@ -148,7 +167,7 @@ export function StudentAccountBalance({
           />
         </div>
       </div>
-      
+
       <div className="space-y-4">
         {accountBalancesLoading ? (
           <div className="text-sm text-muted-foreground">Завантаження...</div>
@@ -163,13 +182,17 @@ export function StudentAccountBalance({
               const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
               const endBalance = previousBalance + payments - charges + refunds;
-              const startLabel = previousBalance < 0
-                ? 'Борг на початок'
-                : previousBalance > 0
-                  ? 'Залишок на початок'
-                  : 'Баланс на початок';
+              const startLabel =
+                previousBalance < 0
+                  ? "Борг на початок"
+                  : previousBalance > 0
+                    ? "Залишок на початок"
+                    : "Баланс на початок";
               return (
-                <div key={group.id} className="rounded-lg border border-border p-3">
+                <div
+                  key={group.id}
+                  className="rounded-lg border border-border p-3"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <div className="text-sm font-semibold">{group.label}</div>
                     <div className="text-xs text-muted-foreground">
@@ -179,7 +202,9 @@ export function StudentAccountBalance({
 
                   <div className="space-y-2 text-sm mb-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">{startLabel}</span>
+                      <span className="text-muted-foreground">
+                        {startLabel}
+                      </span>
                       <span
                         className={cn(
                           "font-semibold",
@@ -187,19 +212,28 @@ export function StudentAccountBalance({
                             ? "text-destructive"
                             : previousBalance > 0
                               ? "text-success"
-                              : "text-muted-foreground"
+                              : "text-muted-foreground",
                         )}
                       >
-                        {previousBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(previousBalance))}
+                        {previousBalance > 0 ? "+" : ""}
+                        {formatCurrency(Math.abs(previousBalance))}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Нараховано за місяць</span>
-                      <span className="font-medium">{formatCurrency(charges)}</span>
+                      <span className="text-muted-foreground">
+                        Нараховано за місяць
+                      </span>
+                      <span className="font-medium">
+                        {formatCurrency(charges)}
+                      </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Оплачено за місяць</span>
-                      <span className="font-medium">{formatCurrency(payments)}</span>
+                      <span className="text-muted-foreground">
+                        Оплачено за місяць
+                      </span>
+                      <span className="font-medium">
+                        {formatCurrency(payments)}
+                      </span>
                     </div>
                     <div className="border-t border-border my-1"></div>
                     <div className="flex items-center justify-between">
@@ -221,7 +255,9 @@ export function StudentAccountBalance({
                   </div>
 
                   {group.enrollments.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Немає рядків за вибраний період</div>
+                    <div className="text-sm text-muted-foreground">
+                      Немає рядків за вибраний період
+                    </div>
                   ) : (
                     <div className="space-y-3">
                       {group.enrollments.map((enrollment) => (
@@ -235,16 +271,24 @@ export function StudentAccountBalance({
                       ))}
                     </div>
                   )}
-                  {group.id === 'none' && (accountBalanceMap.get('none')?.unassigned_payments || 0) > 0 && (
-                    <div className="mt-3 rounded-md border border-dashed border-muted-foreground/40 p-3">
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Оплата без активності</span>
-                        <span className="font-semibold text-success">
-                          +{formatCurrency(accountBalanceMap.get('none')?.unassigned_payments || 0)}
-                        </span>
+                  {group.id === "none" &&
+                    (accountBalanceMap.get("none")?.unassigned_payments || 0) >
+                      0 && (
+                      <div className="mt-3 rounded-md border border-dashed border-muted-foreground/40 p-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">
+                            Оплата без активності
+                          </span>
+                          <span className="font-semibold text-success">
+                            +
+                            {formatCurrency(
+                              accountBalanceMap.get("none")
+                                ?.unassigned_payments || 0,
+                            )}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               );
             })}

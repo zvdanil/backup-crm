@@ -14,6 +14,7 @@
 **Репозиторий:** https://github.com/zvdanil/backup-crm.git
 
 ### Описание
+
 Система управления учениками, группами, занятиями, финансами и персоналом образовательного центра. Включает функционал для родителей, администраторов, бухгалтеров и владельцев.
 
 ---
@@ -21,6 +22,7 @@
 ## 2. Технологический стек
 
 ### Frontend
+
 - **Framework:** React 18 + TypeScript
 - **Build tool:** Vite
 - **UI библиотека:** shadcn-ui (Radix UI + Tailwind CSS)
@@ -30,6 +32,7 @@
 - **Стилизация:** Tailwind CSS + class-variance-authority
 
 ### Backend & Infrastructure
+
 - **BaaS:** Supabase (PostgreSQL + Auth + Edge Functions)
 - **Project ID:** qtphickigswerhvintvh
 - **URL:** https://qtphickigswerhvintvh.supabase.co
@@ -37,6 +40,7 @@
 - **API:** Vercel (опциональные serverless функции)
 
 ### Основные зависимости
+
 ```json
 {
   "@supabase/supabase-js": "^2.90.1",
@@ -117,39 +121,41 @@ backup-crm/
 
 ### Основные страницы (Routes)
 
-| Route | Компонент | Описание | Доступ |
-|-------|-----------|----------|--------|
-| `/` | EnhancedDashboard | Главная панель с аналитикой | Все авторизованные кроме parent |
-| `/parent-portal` | ParentPortal | Портал для родителей | parent |
-| `/login` | Login | Страница входа | Публичная |
-| `/users` | Users | Управление пользователями | owner, admin |
-| `/students` | Students | Управление учениками | owner, admin, manager |
-| `/groups` | Groups | Управление группами | owner, admin, manager |
-| `/staff` | Staff | Управление персоналом | owner, admin |
-| `/accounts` | Accounts | Финансовые счета | owner, admin, accountant |
-| `/activities` | Activities | Виды активностей | owner, admin, manager |
-| `/attendance` | Attendance | Учёт посещений | owner, admin, manager |
-| `/calendar` | Calendar | Календарь занятий | Все авторизованные |
-| `/pending-activation` | PendingActivation | Ожидание активации | newregistration |
-| ... | ... | ... | ... |
+| Route                 | Компонент         | Описание                    | Доступ                          |
+| --------------------- | ----------------- | --------------------------- | ------------------------------- |
+| `/`                   | EnhancedDashboard | Главная панель с аналитикой | Все авторизованные кроме parent |
+| `/parent-portal`      | ParentPortal      | Портал для родителей        | parent                          |
+| `/login`              | Login             | Страница входа              | Публичная                       |
+| `/users`              | Users             | Управление пользователями   | owner, admin                    |
+| `/students`           | Students          | Управление учениками        | owner, admin, manager           |
+| `/groups`             | Groups            | Управление группами         | owner, admin, manager           |
+| `/staff`              | Staff             | Управление персоналом       | owner, admin                    |
+| `/accounts`           | Accounts          | Финансовые счета            | owner, admin, accountant        |
+| `/activities`         | Activities        | Виды активностей            | owner, admin, manager           |
+| `/attendance`         | Attendance        | Учёт посещений              | owner, admin, manager           |
+| `/calendar`           | Calendar          | Календарь занятий           | Все авторизованные              |
+| `/pending-activation` | PendingActivation | Ожидание активации          | newregistration                 |
+| ...                   | ...               | ...                         | ...                             |
 
 ---
 
 ## 4. Аутентификация и авторизация
 
 ### Роли пользователей (UserRole)
+
 ```typescript
-type UserRole = 
-  | "owner"           // Владелец - полный доступ
-  | "admin"           // Администратор - почти полный доступ
-  | "manager"         // Менеджер - управление учениками и группами
-  | "accountant"      // Бухгалтер - финансовый доступ
-  | "viewer"          // Наблюдатель - только чтение
-  | "parent"          // Родитель - портал родителя
-  | "newregistration" // Новая регистрация - ожидание активации
+type UserRole =
+  | "owner" // Владелец - полный доступ
+  | "admin" // Администратор - почти полный доступ
+  | "manager" // Менеджер - управление учениками и группами
+  | "accountant" // Бухгалтер - финансовый доступ
+  | "viewer" // Наблюдатель - только чтение
+  | "parent" // Родитель - портал родителя
+  | "newregistration"; // Новая регистрация - ожидание активации
 ```
 
 ### AuthContext
+
 - **Файл:** `src/context/AuthContext.tsx`
 - **Функции:**
   - `signInWithPassword(email, password)` - вход
@@ -163,6 +169,7 @@ type UserRole =
   - `isLoading` - статус загрузки
 
 ### Supabase Auth
+
 - **Таблица:** `user_profiles`
 - **Колонки:**
   - `id` (UUID, FK к auth.users)
@@ -179,9 +186,11 @@ type UserRole =
 ## 5. Ключевые компоненты и хуки
 
 ### useUserProfiles.ts
+
 **Расположение:** `src/hooks/useUserProfiles.ts`
 
 **Функции:**
+
 ```typescript
 // Получение списка пользователей
 useUserProfiles(): UseQueryResult<UserProfile[]>
@@ -194,20 +203,24 @@ useCreateUser(): UseMutationResult<UserProfile>
 ```
 
 **Особенности:**
+
 - `useCreateUser` использует `supabase.auth.signUp()` вместо Edge Function
 - После signUp восстанавливает сессию администратора
 - Автоматически инвалидирует кэш TanStack Query
 
 ### Users.tsx
+
 **Расположение:** `src/pages/Users.tsx`
 
 **Функции:**
+
 - Отображение таблицы пользователей
 - Форма создания нового пользователя (Dialog)
 - Редактирование роли и статуса активации
 - Только owner может редактировать
 
 **Валидация:**
+
 ```typescript
 const createUserSchema = z.object({
   email: z.string().email("Невірний формат email"),
@@ -224,6 +237,7 @@ const createUserSchema = z.object({
 ## 6. Конфигурация
 
 ### Переменные окружения (.env)
+
 ```env
 VITE_SUPABASE_PROJECT_ID=qtphickigswerhvintvh
 VITE_SUPABASE_URL=https://qtphickigswerhvintvh.supabase.co
@@ -232,17 +246,20 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_LQZwutg-thrQOGsqiwgUvw_4r6BmHQE
 ```
 
 ### Supabase Config (supabase/config.toml)
+
 ```toml
 project_id = "qtphickigswerhvintvh"
 ```
 
 ### Vite Config (vite.config.ts)
+
 - **Dev server:** порт 8080, host `::`
 - **Proxy:** `/api` → `VITE_API_URL` или `http://localhost:3000`
 - **Plugins:** react-swc, lovable-tagger (dev only)
 - **Alias:** `@` → `./src`
 
 ### Vercel Config (vercel.json)
+
 ```json
 {
   "devCommand": "vite --port 8080 --strictPort false",
@@ -261,6 +278,7 @@ project_id = "qtphickigswerhvintvh"
 ## 7. Последние изменения (Git History)
 
 ### Последние 10 коммитов:
+
 ```
 9792073 (HEAD -> test-srm-iris, origin/test-srm-iris) chore: remove debug logs from users page
 0903e09 chore: trigger Railway deploy
@@ -275,6 +293,7 @@ c075a33 fix: use env variables for Supabase URL and key
 ```
 
 ### Статус репозитория:
+
 ```
 Branch: test-srm-iris
 Status: up to date with origin/test-srm-iris
@@ -288,12 +307,14 @@ Working tree: clean (нет uncommitted changes)
 ### 8.1 Проблема: 401 при создании пользователей через Edge Function
 
 **Описание:**
+
 - При попытке создать пользователя через Edge Function `create-user` возникала ошибка 401
 - Проблема сохранялась несмотря на правильные JWT токены и apikey
 - Headers присутствовали в Network но не доходили до функции
 - Попытки с `verify_jwt=false` не помогли
 
 **Попытки решения:**
+
 1. ✗ Проверка JWT payload (iss field корректен)
 2. ✗ Верификация apikey (совпадает с Dashboard)
 3. ✗ Различные подходы auth в Edge Function (admin client, ANON_KEY client)
@@ -301,6 +322,7 @@ Working tree: clean (нет uncommitted changes)
 5. ✗ Исправление project_id в supabase/config.toml
 
 **Финальное решение:**
+
 - **Переход на прямой `supabase.auth.signUp()`** в `useCreateUser` hook
 - Сохранение сессии администратора перед signUp
 - Восстановление сессии администратора после signUp
@@ -308,14 +330,17 @@ Working tree: clean (нет uncommitted changes)
 - После одобрения администратор меняет роль и активирует
 
 **Реализация:**
+
 ```typescript
 // src/hooks/useUserProfiles.ts
 export function useCreateUser() {
   return useMutation({
     mutationFn: async (userData: CreateUserData) => {
       // Сохраняем сессию админа
-      const { data: { session: adminSession } } = await supabase.auth.getSession();
-      
+      const {
+        data: { session: adminSession },
+      } = await supabase.auth.getSession();
+
       // Создаём пользователя
       const { data: signUpData, error } = await supabase.auth.signUp({
         email: userData.email,
@@ -328,14 +353,16 @@ export function useCreateUser() {
           },
         },
       });
-      
+
       // Восстанавливаем сессию админа
       await supabase.auth.setSession({
         access_token: adminSession.access_token,
         refresh_token: adminSession.refresh_token,
       });
-      
-      return { /* user profile */ };
+
+      return {
+        /* user profile */
+      };
     },
   });
 }
@@ -351,12 +378,14 @@ export function useCreateUser() {
 
 **Статус:** ⚠️ Не используется (заменён на signUp)
 
-**Содержимое:** 
+**Содержимое:**
+
 - Содержит тестовый return для диагностики
 - Основной код закомментирован/недостижим
 - Оставлен для истории и возможной отладки
 
 **Config:**
+
 ```toml
 # supabase/functions/create-user/config.toml
 verify_jwt = false
@@ -369,13 +398,16 @@ verify_jwt = false
 ### 8.3 Railway Deployment
 
 **Проблема:**
+
 - Railway не всегда автоматически деплоит при push
 
 **Решение:**
+
 - Пустой коммит для триггера: `git commit --allow-empty -m "chore: trigger Railway deploy"`
 - Альтернатива: вручную через Railway Dashboard
 
 **Последний деплой:**
+
 - Коммит: 9792073
 - Содержание: Удаление debug logs из Users.tsx
 - Статус: ✅ Завершён
@@ -406,6 +438,7 @@ verify_jwt = false
 ## 10. Скрипты и команды
 
 ### NPM Scripts
+
 ```bash
 npm run dev          # Запуск dev server (Vite)
 npm run build        # Production build
@@ -415,10 +448,12 @@ npm run lint         # ESLint
 ```
 
 ### Важные скрипты
+
 - `create_backup.ps1` - PowerShell скрипт создания бэкапа БД
 - `scripts/` - различные утилиты
 
 ### Git workflow
+
 ```bash
 git status
 git add .
@@ -431,6 +466,7 @@ git push origin test-srm-iris
 ## 11. Документация
 
 ### Основные документы:
+
 - `README.md` - базовая информация
 - `PROJECT_CONTEXT.md` - этот файл (полный контекст)
 - `AUTH_FIXES_README.md` - исправления аутентификации
@@ -442,6 +478,7 @@ git push origin test-srm-iris
 - `STAFF_FINANCIAL_CALENDAR_ROWS_LOGIC.md` - логика финансового календаря
 
 ### SQL скрипты:
+
 - `APPLY_*.sql` - миграции
 - `CHECK_*.sql` - проверки данных
 - `FIX_*.sql` - исправления
@@ -454,6 +491,7 @@ git push origin test-srm-iris
 ## 12. Development Setup
 
 ### Требования:
+
 - Node.js (рекомендуется через nvm)
 - npm или yarn
 - Git
@@ -461,6 +499,7 @@ git push origin test-srm-iris
 - Vercel CLI (если используются API routes)
 
 ### Установка:
+
 ```bash
 # 1. Клонировать репозиторий
 git clone https://github.com/zvdanil/backup-crm.git
@@ -479,6 +518,7 @@ npm run dev
 ```
 
 ### Работа с Supabase:
+
 ```bash
 # Логин в Supabase CLI
 supabase login
@@ -498,11 +538,13 @@ supabase gen types typescript --project-id qtphickigswerhvintvh > src/integratio
 ## 13. Production Deployment
 
 ### Railway (Frontend)
+
 1. Push в branch `test-srm-iris`
 2. Railway автоматически деплоит (или триггер пустым коммитом)
 3. Проверить логи в Railway Dashboard
 
 ### Supabase (Backend)
+
 - БД и Auth уже настроены
 - Edge Functions деплоятся через Supabase CLI
 - Миграции применяются через SQL Editor в Dashboard
@@ -512,11 +554,13 @@ supabase gen types typescript --project-id qtphickigswerhvintvh > src/integratio
 ## 14. Текущие TODO и планы
 
 ### Краткосрочные:
+
 - [ ] Протестировать создание пользователей на production после деплоя
 - [ ] Убедиться что signUp approach работает корректно
 - [ ] Мониторинг ошибок в production
 
 ### Долгосрочные:
+
 - [ ] Удалить или переработать Edge Function create-user
 - [ ] Оптимизация запросов к БД
 - [ ] Добавить E2E тесты

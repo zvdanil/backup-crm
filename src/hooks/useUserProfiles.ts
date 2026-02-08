@@ -88,6 +88,7 @@ export function useCreateUser() {
           email: userData.email,
           password: userData.password,
           options: {
+            emailRedirectTo: undefined,
             data: {
               parent_name: userData.parentName,
               child_name: userData.childName,

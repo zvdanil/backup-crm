@@ -119,6 +119,7 @@ export function StudentActivityBalanceRow({
       // Для подписок: используем monthlyData или baseMonthlyCharge
       const payments = monthlyData?.payments ?? 0;
       const refunds = monthlyData?.refunds ?? 0;
+      const attendanceCount = monthlyData?.attendanceCount ?? recalculationData?.attendanceCount ?? 0;
       const monthlyChargesLocal = monthlyData?.charges ?? 0;
       // Если есть incomeTransaction, используем monthlyChargesLocal (транзакция существует)
       // Если нет incomeTransaction:
@@ -129,13 +130,14 @@ export function StudentActivityBalanceRow({
         ? (monthlyChargesLocal > 0 ? monthlyChargesLocal : baseMonthlyCharge)
         : (enrollment.is_active && baseMonthlyCharge > 0 ? baseMonthlyCharge : 0);
       const balance = payments - charges + refunds;
-      return { balance, payments, charges, refunds };
+      return { balance, payments, charges, refunds, attendanceCount };
     }
 
     // Для других режимов: используем стандартную логику
     if (!monthlyData && !recalculationData) return null;
     const payments = recalculationData?.payments ?? monthlyData?.payments ?? 0;
     const refunds = recalculationData?.refunds ?? monthlyData?.refunds ?? 0;
+    const attendanceCount = recalculationData?.attendanceCount ?? monthlyData?.attendanceCount ?? 0;
     const monthlyChargesLocal = monthlyData?.charges ?? 0;
     const recalculationCharges = recalculationData?.charges ?? 0;
 
@@ -146,7 +148,7 @@ export function StudentActivityBalanceRow({
     }
 
     const balance = payments - charges + refunds;
-    return { balance, payments, charges, refunds };
+    return { balance, payments, charges, refunds, attendanceCount };
   }, [displayMode, monthlyData, recalculationData, monthlyCharges, baseMonthlyCharge, incomeTransaction, enrollment.is_active]);
 
   // Check if activities data is loaded (might be null for archived activities)
@@ -170,6 +172,7 @@ export function StudentActivityBalanceRow({
   const payments = combinedData?.payments || 0;
   const charges = combinedData?.charges || 0;
   const refunds = combinedData?.refunds || 0;
+  const attendanceCount = combinedData?.attendanceCount || 0;
   
   // Для архивных активностей: скрываем если баланс = 0 и нет транзакций
   // Это позволяет скрывать архивные активности после удаления транзакций
@@ -310,7 +313,7 @@ export function StudentActivityBalanceRow({
               {displayBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(displayBalance))}
             </div>
             <div className="text-xs text-muted-foreground whitespace-normal break-words">
-              Оплачено: {formatCurrency(payments)} | Нараховано: {formatCurrency(displayCharges)}
+              Відвідувань: {attendanceCount}
             </div>
             {isFoodActivity && displayRefunds > 0 && (
               <div className="text-xs text-muted-foreground whitespace-normal break-words">

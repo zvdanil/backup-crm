@@ -480,7 +480,43 @@ export function useStudentActivityBalance(
       // So we'll calculate: balance = payments - charges + refunds (refunds always increase balance for client)
       const balance = totalPayments - charges + refunds;
 
-      return { balance, payments: totalPayments, charges, refunds };
+      // Get attendance count
+      let attendanceCount = 0;
+      const { data: enrollments } = await supabase
+        .from("enrollments")
+        .select("id")
+        .eq("student_id", studentId)
+        .eq("activity_id", activityId)
+        .maybeSingle();
+
+      if (enrollments) {
+        // Get activity with billing_rules to access custom_statuses
+        const { data: activity } = await supabase
+          .from("activities")
+          .select("billing_rules")
+          .eq("id", activityId)
+          .single();
+
+        const customStatuses = (activity?.billing_rules as any)?.custom_statuses || [];
+        const activeCustomStatusIds = customStatuses
+          .filter((cs: any) => cs.is_active !== false)
+          .map((cs: any) => cs.id);
+
+        // Get all attendance records
+        const { data: attendanceRecords } = await supabase
+          .from("attendance")
+          .select("id, status")
+          .eq("enrollment_id", enrollments.id)
+          .gte("date", startDate)
+          .lte("date", endDate);
+
+        // Count: 'present' OR custom status (status = UUID from custom_statuses)
+        attendanceCount = attendanceRecords?.filter(record => 
+          record.status === 'present' || activeCustomStatusIds.includes(record.status)
+        ).length || 0;
+      }
+
+      return { balance, payments: totalPayments, charges, refunds, attendanceCount };
     },
     enabled: !!studentId && !!activityId,
   });
@@ -577,7 +613,43 @@ export function useStudentActivityMonthlyBalance(
           : 0;
       const balance = totalPayments - charges + refunds;
 
-      return { balance, payments: totalPayments, charges, refunds };
+      // Get attendance count
+      let attendanceCount = 0;
+      const { data: enrollments } = await supabase
+        .from("enrollments")
+        .select("id")
+        .eq("student_id", studentId)
+        .eq("activity_id", activityId)
+        .maybeSingle();
+
+      if (enrollments) {
+        // Get activity with billing_rules to access custom_statuses
+        const { data: activity } = await supabase
+          .from("activities")
+          .select("billing_rules")
+          .eq("id", activityId)
+          .single();
+
+        const customStatuses = (activity?.billing_rules as any)?.custom_statuses || [];
+        const activeCustomStatusIds = customStatuses
+          .filter((cs: any) => cs.is_active !== false)
+          .map((cs: any) => cs.id);
+
+        // Get all attendance records
+        const { data: attendanceRecords } = await supabase
+          .from("attendance")
+          .select("id, status")
+          .eq("enrollment_id", enrollments.id)
+          .gte("date", startDate)
+          .lte("date", endDate);
+
+        // Count: 'present' OR custom status (status = UUID from custom_statuses)
+        attendanceCount = attendanceRecords?.filter(record => 
+          record.status === 'present' || activeCustomStatusIds.includes(record.status)
+        ).length || 0;
+      }
+
+      return { balance, payments: totalPayments, charges, refunds, attendanceCount };
     },
     enabled: !!studentId && !!activityId,
   });

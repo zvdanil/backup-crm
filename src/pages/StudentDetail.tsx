@@ -1,41 +1,78 @@
-import { useState, useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Calendar, Phone, Mail, User, Pencil, Wallet } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { StudentForm } from '@/components/students/StudentForm';
-import { EnrollmentForm } from '@/components/enrollments/EnrollmentForm';
-import { EditEnrollmentForm } from '@/components/enrollments/EditEnrollmentForm';
-import { TransactionForm } from '@/components/finance/TransactionForm';
-import { useStudent, useUpdateStudent } from '@/hooks/useStudents';
-import { useEnrollments, useCreateEnrollment, useUnenrollStudent, useUpdateEnrollment, type EnrollmentWithRelations } from '@/hooks/useEnrollments';
-import { useCreateFinanceTransaction, useStudentAccountBalances, useStudentTotalBalance } from '@/hooks/useFinanceTransactions';
-import { formatCurrency, formatDate } from '@/lib/attendance';
-import { StudentActivityBalanceRow } from '@/components/students/StudentActivityBalanceRow';
-import { StudentPaymentHistory } from '@/components/students/StudentPaymentHistory';
-import { StudentAccountBalance } from '@/components/students/StudentAccountBalance';
-import { EnrollmentPriceDisplay } from '@/components/enrollments/EnrollmentPriceDisplay';
-import { cn } from '@/lib/utils';
-import { useActivities } from '@/hooks/useActivities';
-import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
-import { Input } from '@/components/ui/input';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
+import { useState, useMemo } from "react";
+import { useParams, Link } from "react-router-dom";
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Calendar,
+  Phone,
+  Mail,
+  User,
+  Pencil,
+  Wallet,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { StudentForm } from "@/components/students/StudentForm";
+import { EnrollmentForm } from "@/components/enrollments/EnrollmentForm";
+import { EditEnrollmentForm } from "@/components/enrollments/EditEnrollmentForm";
+import { TransactionForm } from "@/components/finance/TransactionForm";
+import { useStudent, useUpdateStudent } from "@/hooks/useStudents";
+import {
+  useEnrollments,
+  useCreateEnrollment,
+  useUnenrollStudent,
+  useUpdateEnrollment,
+  type EnrollmentWithRelations,
+} from "@/hooks/useEnrollments";
+import {
+  useCreateFinanceTransaction,
+  useStudentAccountBalances,
+  useStudentTotalBalance,
+} from "@/hooks/useFinanceTransactions";
+import { formatCurrency, formatDate } from "@/lib/attendance";
+import { StudentActivityBalanceRow } from "@/components/students/StudentActivityBalanceRow";
+import { StudentPaymentHistory } from "@/components/students/StudentPaymentHistory";
+import { StudentAccountBalance } from "@/components/students/StudentAccountBalance";
+import { EnrollmentPriceDisplay } from "@/components/enrollments/EnrollmentPriceDisplay";
+import { cn } from "@/lib/utils";
+import { useActivities } from "@/hooks/useActivities";
+import {
+  isGardenAttendanceController,
+  type GardenAttendanceConfig,
+} from "@/lib/gardenAttendance";
+import { Input } from "@/components/ui/input";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { useParentLinks, useAddParentLink, useRemoveParentLink } from '@/hooks/useParentLinks';
-import { useUserProfiles } from '@/hooks/useUserProfiles';
+} from "@/components/ui/select";
+import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  useParentLinks,
+  useAddParentLink,
+  useRemoveParentLink,
+} from "@/hooks/useParentLinks";
+import { useUserProfiles } from "@/hooks/useUserProfiles";
 
 const MONTHS = [
-  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
-  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
+  "Січень",
+  "Лютий",
+  "Березень",
+  "Квітень",
+  "Травень",
+  "Червень",
+  "Липень",
+  "Серпень",
+  "Вересень",
+  "Жовтень",
+  "Листопад",
+  "Грудень",
 ];
 
 const supabaseAny = supabase as any;
@@ -48,7 +85,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -56,7 +93,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 
 export default function StudentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -64,19 +101,21 @@ export default function StudentDetail() {
   const [enrollFormOpen, setEnrollFormOpen] = useState(false);
   const [editProfileOpen, setEditProfileOpen] = useState(false);
   const [transactionFormOpen, setTransactionFormOpen] = useState(false);
-  const [editingEnrollment, setEditingEnrollment] = useState<EnrollmentWithRelations | null>(null);
+  const [editingEnrollment, setEditingEnrollment] =
+    useState<EnrollmentWithRelations | null>(null);
   const [unenrollingId, setUnenrollingId] = useState<string | null>(null);
   const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
   const [balanceYear, setBalanceYear] = useState(now.getFullYear());
   const isMobile = useIsMobile();
   const { role } = useAuth();
-  const [selectedParentId, setSelectedParentId] = useState<string>('none');
+  const [selectedParentId, setSelectedParentId] = useState<string>("none");
 
   const { data: student, isLoading: studentLoading } = useStudent(id!);
-  const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
-    studentId: id,
-    activeOnly: false 
-  });
+  const { data: enrollments = [], isLoading: enrollmentsLoading } =
+    useEnrollments({
+      studentId: id,
+      activeOnly: false,
+    });
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
   const { data: userProfiles = [] } = useUserProfiles();
@@ -92,49 +131,61 @@ export default function StudentDetail() {
   // Get food tariff IDs from controller activities
   const foodTariffIds = useMemo(() => {
     const ids = new Set<string>();
-    allActivities.forEach(activity => {
+    allActivities.forEach((activity) => {
       if (isGardenAttendanceController(activity)) {
         const config = (activity.config as GardenAttendanceConfig) || {};
-        (config.food_tariff_ids || []).forEach(id => ids.add(id));
+        (config.food_tariff_ids || []).forEach((id) => ids.add(id));
       }
     });
     return ids;
   }, [allActivities]);
 
-  const controllerActivityIds = useMemo(() => (
-    allActivities.filter(isGardenAttendanceController).map(activity => activity.id)
-  ), [allActivities]);
-
-  const { data: accountBalances = [], isLoading: accountBalancesLoading } = useStudentAccountBalances(
-    id!,
-    balanceMonth,
-    balanceYear,
-    controllerActivityIds,
-    Array.from(foodTariffIds)
+  const controllerActivityIds = useMemo(
+    () =>
+      allActivities
+        .filter(isGardenAttendanceController)
+        .map((activity) => activity.id),
+    [allActivities],
   );
+
+  const { data: accountBalances = [], isLoading: accountBalancesLoading } =
+    useStudentAccountBalances(
+      id!,
+      balanceMonth,
+      balanceYear,
+      controllerActivityIds,
+      Array.from(foodTariffIds),
+    );
 
   // Filter active/past enrollments
   // В карточке ребёнка показываем ВСЕ активности, включая управляющую
   const activeEnrollments = useMemo(() => {
-    return enrollments.filter(e => e.is_active);
+    return enrollments.filter((e) => e.is_active);
   }, [enrollments]);
-  
+
   const pastEnrollments = useMemo(() => {
     // В карточке ребёнка показываем все архивные активности, включая управляющую
-    return enrollments.filter(e => !e.is_active);
+    return enrollments.filter((e) => !e.is_active);
   }, [enrollments]);
 
   const parentOptions = useMemo(() => {
     const linkedIds = new Set(parentLinks.map((link) => link.parent_id));
     return userProfiles
-      .filter((profile) => profile.role === 'parent' && !linkedIds.has(profile.id))
+      .filter(
+        (profile) => profile.role === "parent" && !linkedIds.has(profile.id),
+      )
       .map((profile) => ({
         id: profile.id,
         label: profile.full_name || profile.id,
       }));
   }, [parentLinks, userProfiles]);
 
-  const handleEnroll = async (data: { activity_id: string; custom_price: number | null; discount_percent: number; account_id: string | null }) => {
+  const handleEnroll = async (data: {
+    activity_id: string;
+    custom_price: number | null;
+    discount_percent: number;
+    account_id: string | null;
+  }) => {
     // Используем mutateAsync для ожидания завершения мутации
     await createEnrollment.mutateAsync({
       student_id: id!,
@@ -145,11 +196,16 @@ export default function StudentDetail() {
     });
   };
 
-  const handleUpdateEnrollment = async (data: { custom_price: number | null; discount_percent: number; effective_from: string | null; account_id: string | null }) => {
+  const handleUpdateEnrollment = async (data: {
+    custom_price: number | null;
+    discount_percent: number;
+    effective_from: string | null;
+    account_id: string | null;
+  }) => {
     if (editingEnrollment) {
       const oldAccountId = editingEnrollment.account_id;
       const newAccountId = data.account_id;
-      
+
       // Обновляем enrollment
       await updateEnrollment.mutateAsync({
         id: editingEnrollment.id,
@@ -158,33 +214,35 @@ export default function StudentDetail() {
         effective_from: data.effective_from,
         account_id: newAccountId,
       });
-      
+
       // Если изменился account_id, пересчитываем finance_transactions
       if (oldAccountId !== newAccountId) {
         // Находим все finance_transactions, связанные с этим enrollment
-        const { data: transactions, error: transactionsError } = await supabaseAny
-          .from('finance_transactions')
-          .select('id, account_id')
-          .eq('student_id', editingEnrollment.student_id)
-          .eq('activity_id', editingEnrollment.activity_id)
-          .eq('type', 'income'); // Только начисления (income)
-        
+        const { data: transactions, error: transactionsError } =
+          await supabaseAny
+            .from("finance_transactions")
+            .select("id, account_id")
+            .eq("student_id", editingEnrollment.student_id)
+            .eq("activity_id", editingEnrollment.activity_id)
+            .eq("type", "income"); // Только начисления (income)
+
         if (!transactionsError && transactions) {
           // Определяем правильный account_id для обновления
           // Используем приоритет: enrollment.account_id ?? activity.account_id
-          const targetAccountId = newAccountId || editingEnrollment.activities.account_id;
-          
+          const targetAccountId =
+            newAccountId || editingEnrollment.activities.account_id;
+
           // Обновляем account_id во всех связанных транзакциях
           if (transactions.length > 0) {
-            const transactionIds = transactions.map(t => t.id);
+            const transactionIds = transactions.map((t) => t.id);
             await supabaseAny
-              .from('finance_transactions')
+              .from("finance_transactions")
               .update({ account_id: targetAccountId })
-              .in('id', transactionIds);
+              .in("id", transactionIds);
           }
         }
       }
-      
+
       setEditingEnrollment(null);
     }
   };
@@ -221,7 +279,7 @@ export default function StudentDetail() {
 
   return (
     <>
-      <PageHeader 
+      <PageHeader
         title={student.full_name}
         actions={
           <Button variant="outline" asChild>
@@ -232,7 +290,7 @@ export default function StudentDetail() {
           </Button>
         }
       />
-      
+
       <div className="p-4 sm:p-8 overflow-x-hidden">
         <div className="grid gap-4 sm:gap-8 lg:grid-cols-5">
           {/* Student Info */}
@@ -244,16 +302,24 @@ export default function StudentDetail() {
                     <User className="h-8 w-8 text-primary" />
                   </div>
                   <div className="min-w-0">
-                    <h2 className="text-xl font-semibold break-words leading-tight">{student.full_name}</h2>
-                    <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                      student.status === 'active' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {student.status === 'active' ? 'Активний' : student.status}
+                    <h2 className="text-xl font-semibold break-words leading-tight">
+                      {student.full_name}
+                    </h2>
+                    <span
+                      className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        student.status === "active"
+                          ? "bg-success/10 text-success"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {student.status === "active"
+                        ? "Активний"
+                        : student.status}
                     </span>
                   </div>
                 </div>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   size="icon"
                   onClick={() => setEditProfileOpen(true)}
                 >
@@ -265,34 +331,42 @@ export default function StudentDetail() {
                 {student.birth_date && (
                   <div className="flex flex-wrap items-center gap-3">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="break-words">Дата народження: {formatDate(student.birth_date)}</span>
+                    <span className="break-words">
+                      Дата народження: {formatDate(student.birth_date)}
+                    </span>
                   </div>
                 )}
-                
+
                 {student.guardian_name && (
                   <div className="pt-4 border-t">
-                    <p className="font-medium text-muted-foreground mb-2">Опікун</p>
+                    <p className="font-medium text-muted-foreground mb-2">
+                      Опікун
+                    </p>
                     <p className="font-medium">{student.guardian_name}</p>
                   </div>
                 )}
-                
+
                 {student.guardian_phone && (
                   <div className="flex flex-wrap items-center gap-3">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span className="break-words">{student.guardian_phone}</span>
+                    <span className="break-words">
+                      {student.guardian_phone}
+                    </span>
                   </div>
                 )}
-                
+
                 {student.guardian_email && (
                   <div className="flex flex-wrap items-center gap-3">
                     <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span className="break-words">{student.guardian_email}</span>
+                    <span className="break-words">
+                      {student.guardian_email}
+                    </span>
                   </div>
                 )}
 
                 <div className="pt-4 border-t">
-                  <Button 
-                    className="w-full max-w-full whitespace-normal text-center leading-tight text-sm sm:text-base" 
+                  <Button
+                    className="w-full max-w-full whitespace-normal text-center leading-tight text-sm sm:text-base"
                     onClick={() => setTransactionFormOpen(true)}
                   >
                     <Wallet className="h-4 w-4 mr-2" />
@@ -303,21 +377,35 @@ export default function StudentDetail() {
             </div>
 
             {/* Parent Access - moved to top */}
-            {(role === 'owner' || role === 'admin') && (
+            {(role === "owner" || role === "admin") && (
               <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
-                <h3 className="text-lg font-semibold mb-4">Доступ для батьків</h3>
+                <h3 className="text-lg font-semibold mb-4">
+                  Доступ для батьків
+                </h3>
                 <div className="space-y-3">
                   {parentLinks.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Немає привʼязаних батьків</div>
+                    <div className="text-sm text-muted-foreground">
+                      Немає привʼязаних батьків
+                    </div>
                   ) : (
                     <div className="space-y-2">
                       {parentLinks.map((link) => (
-                        <div key={link.id} className="flex items-center justify-between text-sm border rounded-md p-2">
-                          <span className="font-medium">{link.user_profiles?.full_name || link.parent_id}</span>
+                        <div
+                          key={link.id}
+                          className="flex items-center justify-between text-sm border rounded-md p-2"
+                        >
+                          <span className="font-medium">
+                            {link.user_profiles?.full_name || link.parent_id}
+                          </span>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => removeParentLink.mutate({ linkId: link.id, student_id: id! })}
+                            onClick={() =>
+                              removeParentLink.mutate({
+                                linkId: link.id,
+                                student_id: id!,
+                              })
+                            }
                           >
                             Видалити
                           </Button>
@@ -327,7 +415,10 @@ export default function StudentDetail() {
                   )}
 
                   <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                    <Select value={selectedParentId} onValueChange={setSelectedParentId}>
+                    <Select
+                      value={selectedParentId}
+                      onValueChange={setSelectedParentId}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Обрати батьківський акаунт" />
                       </SelectTrigger>
@@ -342,11 +433,14 @@ export default function StudentDetail() {
                     </Select>
                     <Button
                       onClick={() => {
-                        if (selectedParentId === 'none') return;
-                        addParentLink.mutate({ parent_id: selectedParentId, student_id: id! });
-                        setSelectedParentId('none');
+                        if (selectedParentId === "none") return;
+                        addParentLink.mutate({
+                          parent_id: selectedParentId,
+                          student_id: id!,
+                        });
+                        setSelectedParentId("none");
                       }}
-                      disabled={selectedParentId === 'none'}
+                      disabled={selectedParentId === "none"}
                     >
                       Додати
                     </Button>
@@ -358,7 +452,7 @@ export default function StudentDetail() {
             {/* Payment History */}
             <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
               <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
-              <StudentPaymentHistory 
+              <StudentPaymentHistory
                 studentId={id!}
                 month={balanceMonth}
                 year={balanceYear}
@@ -394,7 +488,10 @@ export default function StudentDetail() {
               {activeEnrollments.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   <p>Немає активних записів</p>
-                  <Button variant="link" onClick={() => setEnrollFormOpen(true)}>
+                  <Button
+                    variant="link"
+                    onClick={() => setEnrollFormOpen(true)}
+                  >
                     Записати на активність
                   </Button>
                 </div>
@@ -402,18 +499,27 @@ export default function StudentDetail() {
                 <div className="space-y-3 p-4">
                   {activeEnrollments.map((enrollment) => {
                     if (!enrollment.activities) return null;
-                    const isFoodActivity = foodTariffIds.has(enrollment.activity_id);
+                    const isFoodActivity = foodTariffIds.has(
+                      enrollment.activity_id,
+                    );
                     return (
-                      <div key={enrollment.id} className="rounded-lg border p-3">
+                      <div
+                        key={enrollment.id}
+                        className="rounded-lg border p-3"
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span
                                 className="w-3 h-3 rounded-full"
-                                style={{ backgroundColor: enrollment.activities.color }}
+                                style={{
+                                  backgroundColor: enrollment.activities.color,
+                                }}
                               />
                               <span className="text-sm font-medium break-words">
-                                {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
+                                {isFoodActivity
+                                  ? `+ ${enrollment.activities.name}`
+                                  : enrollment.activities.name}
                               </span>
                             </div>
                             <div className="mt-1 text-xs text-muted-foreground">
@@ -423,7 +529,10 @@ export default function StudentDetail() {
                               <EnrollmentPriceDisplay enrollment={enrollment} />
                             </div>
                             <div className="text-xs text-muted-foreground mt-1">
-                              Знижка: {(enrollment.discount_percent ?? 0) > 0 ? `${enrollment.discount_percent}%` : '—'}
+                              Знижка:{" "}
+                              {(enrollment.discount_percent ?? 0) > 0
+                                ? `${enrollment.discount_percent}%`
+                                : "—"}
                             </div>
                           </div>
                           <div className="flex items-center gap-1">
@@ -450,66 +559,74 @@ export default function StudentDetail() {
               ) : (
                 <div className="overflow-x-auto">
                   <Table className="min-w-[560px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Активність</TableHead>
-                      <TableHead>Ціна</TableHead>
-                      <TableHead>Знижка</TableHead>
-                      <TableHead>Дата запису</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {activeEnrollments.map((enrollment) => {
-                      if (!enrollment.activities) return null;
-                      const isFoodActivity = foodTariffIds.has(enrollment.activity_id);
-                      return (
-                      <TableRow key={enrollment.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span 
-                              className="w-3 h-3 rounded-full" 
-                              style={{ backgroundColor: enrollment.activities.color }}
-                            />
-                            {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <EnrollmentPriceDisplay 
-                            enrollment={enrollment}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {(enrollment.discount_percent ?? 0) > 0 
-                            ? `${enrollment.discount_percent}%` 
-                            : '—'
-                          }
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(enrollment.enrolled_at)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => setEditingEnrollment(enrollment)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => setUnenrollingId(enrollment.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Активність</TableHead>
+                        <TableHead>Ціна</TableHead>
+                        <TableHead>Знижка</TableHead>
+                        <TableHead>Дата запису</TableHead>
+                        <TableHead></TableHead>
                       </TableRow>
-                      );
-                    })}
-                  </TableBody>
+                    </TableHeader>
+                    <TableBody>
+                      {activeEnrollments.map((enrollment) => {
+                        if (!enrollment.activities) return null;
+                        const isFoodActivity = foodTariffIds.has(
+                          enrollment.activity_id,
+                        );
+                        return (
+                          <TableRow key={enrollment.id}>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-3 h-3 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      enrollment.activities.color,
+                                  }}
+                                />
+                                {isFoodActivity
+                                  ? `+ ${enrollment.activities.name}`
+                                  : enrollment.activities.name}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <EnrollmentPriceDisplay enrollment={enrollment} />
+                            </TableCell>
+                            <TableCell>
+                              {(enrollment.discount_percent ?? 0) > 0
+                                ? `${enrollment.discount_percent}%`
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatDate(enrollment.enrolled_at)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() =>
+                                    setEditingEnrollment(enrollment)
+                                  }
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() =>
+                                    setUnenrollingId(enrollment.id)
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
                   </Table>
                 </div>
               )}
@@ -523,34 +640,39 @@ export default function StudentDetail() {
                     <TableBody>
                       {pastEnrollments.map((enrollment) => {
                         if (!enrollment.activities) return null;
-                        const isFoodActivity = foodTariffIds.has(enrollment.activity_id);
+                        const isFoodActivity = foodTariffIds.has(
+                          enrollment.activity_id,
+                        );
                         return (
-                        <TableRow key={enrollment.id} className="opacity-60">
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <span 
-                                className="w-3 h-3 rounded-full" 
-                                style={{ backgroundColor: enrollment.activities.color }}
-                              />
-                              {isFoodActivity ? `+ ${enrollment.activities.name}` : enrollment.activities.name}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <EnrollmentPriceDisplay 
-                              enrollment={enrollment}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            {(enrollment.discount_percent ?? 0) > 0 
-                              ? `${enrollment.discount_percent}%` 
-                              : '—'
-                            }
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {enrollment.unenrolled_at && formatDate(enrollment.unenrolled_at)}
-                          </TableCell>
-                          <TableCell></TableCell>
-                        </TableRow>
+                          <TableRow key={enrollment.id} className="opacity-60">
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className="w-3 h-3 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      enrollment.activities.color,
+                                  }}
+                                />
+                                {isFoodActivity
+                                  ? `+ ${enrollment.activities.name}`
+                                  : enrollment.activities.name}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <EnrollmentPriceDisplay enrollment={enrollment} />
+                            </TableCell>
+                            <TableCell>
+                              {(enrollment.discount_percent ?? 0) > 0
+                                ? `${enrollment.discount_percent}%`
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {enrollment.unenrolled_at &&
+                                formatDate(enrollment.unenrolled_at)}
+                            </TableCell>
+                            <TableCell></TableCell>
+                          </TableRow>
                         );
                       })}
                     </TableBody>
@@ -576,7 +698,7 @@ export default function StudentDetail() {
         onSubmit={handleEnroll}
         studentName={student.full_name}
         isLoading={createEnrollment.isPending}
-        excludeActivityIds={activeEnrollments.map(e => e.activity_id)}
+        excludeActivityIds={activeEnrollments.map((e) => e.activity_id)}
       />
 
       <TransactionForm
@@ -606,12 +728,16 @@ export default function StudentDetail() {
         />
       )}
 
-      <AlertDialog open={!!unenrollingId} onOpenChange={() => setUnenrollingId(null)}>
+      <AlertDialog
+        open={!!unenrollingId}
+        onOpenChange={() => setUnenrollingId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Відписати від активності?</AlertDialogTitle>
             <AlertDialogDescription>
-              Дитину буде відписано, але історія відвідуваності збережеться для розрахунку балансу.
+              Дитину буде відписано, але історія відвідуваності збережеться для
+              розрахунку балансу.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -627,16 +753,16 @@ export default function StudentDetail() {
 }
 
 // Component to display student balance
-function StudentBalanceDisplay({ 
-  studentId, 
-  month, 
+function StudentBalanceDisplay({
+  studentId,
+  month,
   year,
   excludeActivityIds = [],
   foodTariffIds = [],
-  cumulative = false
-}: { 
-  studentId: string; 
-  month?: number; 
+  cumulative = false,
+}: {
+  studentId: string;
+  month?: number;
   year?: number;
   excludeActivityIds?: string[];
   foodTariffIds?: string[];
@@ -648,32 +774,41 @@ function StudentBalanceDisplay({
     year,
     excludeActivityIds,
     foodTariffIds,
-    cumulative
+    cumulative,
   );
 
   // Debug logging
   if (cumulative && accountBalances) {
-    console.log('[Cumulative Balance Debug]', {
+    console.log("[Cumulative Balance Debug]", {
       month,
       year,
       cumulative,
       accountBalances,
-      totalBalance: accountBalances.reduce((sum, item) => sum + (item.balance || 0), 0)
+      totalBalance: accountBalances.reduce(
+        (sum, item) => sum + (item.balance || 0),
+        0,
+      ),
     });
   }
 
   if (isLoading) {
-    return <span className="text-sm text-muted-foreground">Завантаження...</span>;
+    return (
+      <span className="text-sm text-muted-foreground">Завантаження...</span>
+    );
   }
 
-  const balance = accountBalances?.reduce((sum, item) => sum + (item.balance || 0), 0) || 0;
+  const balance =
+    accountBalances?.reduce((sum, item) => sum + (item.balance || 0), 0) || 0;
 
   return (
-    <p className={cn(
-      "text-2xl font-bold",
-      balance >= 0 ? "text-success" : "text-destructive"
-    )}>
-      {balance > 0 ? '+' : ''}{formatCurrency(balance)}
+    <p
+      className={cn(
+        "text-2xl font-bold",
+        balance >= 0 ? "text-success" : "text-destructive",
+      )}
+    >
+      {balance > 0 ? "+" : ""}
+      {formatCurrency(balance)}
     </p>
   );
 }

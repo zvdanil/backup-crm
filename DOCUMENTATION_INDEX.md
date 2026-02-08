@@ -3,6 +3,7 @@
 ## Навигация по документам
 
 ### 🚀 Быстрый старт
+
 1. **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Краткая справка (начните здесь!)
    - Ключевая информация
    - Основные команды
@@ -12,6 +13,7 @@
 ### 📖 Основная документация
 
 #### Обзор проекта
+
 2. **[PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)** - Полный контекст проекта ⭐
    - Общая информация
    - Технологический стек
@@ -54,21 +56,25 @@
 #### Миграции и скрипты
 
 **Применение миграций:**
+
 - APPLY_MIGRATIONS.sql - Основные миграции
-- APPLY_ADVANCE_MIGRATIONS_*.sql - Миграции advance платежей
+- APPLY*ADVANCE_MIGRATIONS*\*.sql - Миграции advance платежей
 - APPLY_AUTO_CHARGE_SIMPLIFIED.sql - Упрощённый auto-charge
-- APPLY_DISTRIBUTE_FIX_*.sql - Исправления distribute функции
+- APPLY*DISTRIBUTE_FIX*\*.sql - Исправления distribute функции
 - APPLY_PER_WORKING_DAY_MIGRATIONS.sql - Миграции per working day
 - APPLY_REBUILD_FUNCTION.sql - Пересборка функций
 
 **Проверка данных:**
-- CHECK_*.sql - Множество скриптов для проверки данных
+
+- CHECK\_\*.sql - Множество скриптов для проверки данных
 
 **Исправления:**
-- FIX_*.sql - Исправления различных проблем
+
+- FIX\_\*.sql - Исправления различных проблем
 
 **Очистка:**
-- CLEANUP_*.sql - Скрипты очистки данных
+
+- CLEANUP\_\*.sql - Скрипты очистки данных
 
 ### 🔐 Аутентификация и авторизация
 
@@ -122,7 +128,7 @@
 28. **[BACKUP_INSTRUCTIONS.md](BACKUP_INSTRUCTIONS.md)** - Инструкции backup
 29. **[BACKUP_SOLUTIONS.md](BACKUP_SOLUTIONS.md)** - Решения backup
 30. **[BACKUP_FREE_PLAN.md](BACKUP_FREE_PLAN.md)** - Backup для free plan
-31. **[КАК_ЗАПУСТИТЬ_БЭКАП.md](КАК_ЗАПУСТИТЬ_БЭКАП.md)** - Как запустить backup (UA)
+31. **[КАК*ЗАПУСТИТЬ*БЭКАП.md](КАК_ЗАПУСТИТЬ_БЭКАП.md)** - Как запустить backup (UA)
 32. **[QUICK_BACKUP.md](QUICK_BACKUP.md)** - Быстрый backup
 
 ### 🔌 Подключение к БД
@@ -167,101 +173,117 @@
 ## 📂 Структура документов по категориям
 
 ### 1. Onboarding (начало работы)
+
 - QUICK_REFERENCE.md ⭐ **начните здесь**
 - README.md
 - PROJECT_CONTEXT.md
 
 ### 2. Архитектура и код
+
 - ARCHITECTURE.md
 - PROJECT_CONTEXT.md
 - database_schema.md
 
 ### 3. История и изменения
+
 - CHANGELOG.md
 - PROJECT_CONTEXT.md (раздел 7)
 
 ### 4. Deployment и CI/CD
+
 - DEPLOY_EDGE_FUNCTION.md
-- EDGE_FUNCTION_*.md
+- EDGE*FUNCTION*\*.md
 - Railway deployment (см. PROJECT_CONTEXT.md)
 
 ### 5. Troubleshooting
-- AUTH_*.md (проблемы с auth)
-- CORS_*.md (проблемы с CORS)
-- DASHBOARD_*.md (проблемы с dashboard)
-- FIX_*.md (различные исправления)
-- DBEAVER_*.md (подключение к БД)
+
+- AUTH\_\*.md (проблемы с auth)
+- CORS\_\*.md (проблемы с CORS)
+- DASHBOARD\_\*.md (проблемы с dashboard)
+- FIX\_\*.md (различные исправления)
+- DBEAVER\_\*.md (подключение к БД)
 
 ### 6. Database
+
 - database_schema.md
 - database_schema.sql
-- APPLY_*.sql (миграции)
+- APPLY\_\*.sql (миграции)
 
 ### 7. Финансы и логика
+
 - STAFF_FINANCIAL_CALENDAR_ROWS_LOGIC.md
 - DISTRIBUTE_FUNCTION_EXECUTION_FLOW.md
 - ANALYZE_AUTO_CHARGE_LOGIC.md
 
 ### 8. Backup и восстановление
-- BACKUP_*.md
-- create_backup*.ps1
+
+- BACKUP\_\*.md
+- create_backup\*.ps1
 
 ---
 
 ## 🔍 Где искать информацию
 
-| Вопрос | Где искать |
-|--------|------------|
-| **Как начать работу?** | [QUICK_REFERENCE.md](QUICK_REFERENCE.md) |
-| **Как устроен проект?** | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) |
-| **Как организован код?** | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| **Что изменилось?** | [CHANGELOG.md](CHANGELOG.md) |
-| **Схема базы данных?** | [database_schema.md](database_schema.md) |
-| **Проблемы с auth?** | AUTH_FIXES_README.md, FIX_USER_REGISTRATION_ISSUES.md |
-| **Проблемы с CORS?** | CORS_*.md |
-| **Как задеплоить?** | DEPLOY_EDGE_FUNCTION.md |
-| **Как сделать backup?** | BACKUP_INSTRUCTIONS.md, КАК_ЗАПУСТИТЬ_БЭКАП.md |
-| **Подключение к БД?** | SUPABASE_CONNECTION_GUIDE.md |
-| **Финансовая логика?** | STAFF_FINANCIAL_CALENDAR_ROWS_LOGIC.md |
-| **Как очистить данные?** | CLEANUP_README.md |
+| Вопрос                   | Где искать                                            |
+| ------------------------ | ----------------------------------------------------- |
+| **Как начать работу?**   | [QUICK_REFERENCE.md](QUICK_REFERENCE.md)              |
+| **Как устроен проект?**  | [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md)              |
+| **Как организован код?** | [ARCHITECTURE.md](ARCHITECTURE.md)                    |
+| **Что изменилось?**      | [CHANGELOG.md](CHANGELOG.md)                          |
+| **Схема базы данных?**   | [database_schema.md](database_schema.md)              |
+| **Проблемы с auth?**     | AUTH_FIXES_README.md, FIX_USER_REGISTRATION_ISSUES.md |
+| **Проблемы с CORS?**     | CORS\_\*.md                                           |
+| **Как задеплоить?**      | DEPLOY_EDGE_FUNCTION.md                               |
+| **Как сделать backup?**  | BACKUP*INSTRUCTIONS.md, КАК*ЗАПУСТИТЬ_БЭКАП.md        |
+| **Подключение к БД?**    | SUPABASE_CONNECTION_GUIDE.md                          |
+| **Финансовая логика?**   | STAFF_FINANCIAL_CALENDAR_ROWS_LOGIC.md                |
+| **Как очистить данные?** | CLEANUP_README.md                                     |
 
 ---
 
 ## 📝 PowerShell скрипты
 
-| Скрипт | Описание |
-|--------|----------|
-| create_backup.ps1 | Основной скрипт backup |
-| create_backup_simple.ps1 | Упрощённый backup |
-| create_backup_interactive.ps1 | Интерактивный backup |
-| run_backup.ps1 | Запуск backup |
+| Скрипт                        | Описание               |
+| ----------------------------- | ---------------------- |
+| create_backup.ps1             | Основной скрипт backup |
+| create_backup_simple.ps1      | Упрощённый backup      |
+| create_backup_interactive.ps1 | Интерактивный backup   |
+| run_backup.ps1                | Запуск backup          |
 
 ---
 
 ## 🗂️ SQL скрипты по типам
 
-### Миграции (APPLY_*.sql)
+### Миграции (APPLY\_\*.sql)
+
 Применение изменений к базе данных
 
-### Проверки (CHECK_*.sql)
+### Проверки (CHECK\_\*.sql)
+
 Проверка данных и состояния БД
 
-### Исправления (FIX_*.sql)
+### Исправления (FIX\_\*.sql)
+
 Исправление конкретных проблем
 
-### Очистка (CLEANUP_*.sql, cleanup_*.sql)
+### Очистка (CLEANUP*\*.sql, cleanup*\*.sql)
+
 Удаление неиспользуемых данных
 
-### Тесты (TEST_*.sql)
+### Тесты (TEST\_\*.sql)
+
 Тестирование функций БД
 
-### Отладка (DEBUG_*.sql)
+### Отладка (DEBUG\_\*.sql)
+
 Отладка сложной логики
 
-### Поиск (FIND_*.sql)
+### Поиск (FIND\_\*.sql)
+
 Поиск конкретных данных
 
-### Проверка (VERIFY_*.sql)
+### Проверка (VERIFY\_\*.sql)
+
 Верификация результатов
 
 ---
@@ -269,6 +291,7 @@
 ## 🎯 Рекомендуемый порядок чтения
 
 ### Для новых разработчиков:
+
 1. ✅ [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Краткая справка
 2. ✅ [README.md](README.md) - Базовая информация
 3. ✅ [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) - Полный контекст
@@ -277,12 +300,14 @@
 6. ✅ [CHANGELOG.md](CHANGELOG.md) - Последние изменения
 
 ### Для решения проблем:
+
 1. Определите категорию (auth, CORS, dashboard, etc.)
-2. Найдите соответствующие [категория]_*.md файлы
+2. Найдите соответствующие [категория]\_\*.md файлы
 3. Проверьте CHANGELOG.md на похожие проблемы
 4. Смотрите PROJECT_CONTEXT.md раздел "Проблемы и решения"
 
 ### Для работы с БД:
+
 1. database_schema.md - понять структуру
 2. SUPABASE_CONNECTION_GUIDE.md - подключиться
 3. Соответствующие SQL скрипты - применить изменения
