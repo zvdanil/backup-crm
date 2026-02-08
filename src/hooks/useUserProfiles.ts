@@ -12,6 +12,7 @@ export interface UserProfile {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  email: string | null;
 }
 
 export function useUserProfiles() {
@@ -19,9 +20,7 @@ export function useUserProfiles() {
     queryKey: ["user_profiles"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+        .rpc('get_user_profiles_with_email');
 
       if (error) throw error;
       return data as UserProfile[];

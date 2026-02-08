@@ -83,10 +83,8 @@ export default function Login() {
     setIsSubmitting(true);
     try {
       await signUp(data.email, data.password, data.parentName, data.childName);
-      // После успешной регистрации ждем немного, чтобы профиль создался, затем редирект
-      setTimeout(() => {
-        navigate('/pending', { replace: true });
-      }, 1000);
+      // После успешной регистрации сразу редирект на страницу с инструкциями
+      navigate('/pending', { replace: true });
     } catch (error) {
       // Ошибка уже обработана в signUp
       console.error('[Login] Sign up error', error);

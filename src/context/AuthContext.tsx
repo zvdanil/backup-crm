@@ -716,11 +716,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         logAuth("signUp:success", { userId: data.user?.id });
-        toast({
-          title: "Реєстрація успішна",
-          description:
-            "Ваш акаунт створено. Очікуйте активації адміністратором.",
-        });
+        // Не показываем toast - будет редирект на страницу с инструкциями
         // Автоматически обработается через onAuthStateChange
       } catch (err: any) {
         logAuth("signUp:exception", { message: err?.message });

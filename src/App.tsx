@@ -55,12 +55,13 @@ if (typeof window !== "undefined") {
 
 const AppRoutes = () => {
   const location = useLocation();
-  const isLogin = location.pathname === "/login";
+  const isPublicPage = location.pathname === "/login" || location.pathname === "/pending";
 
-  if (isLogin) {
+  if (isPublicPage) {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/pending" element={<PendingActivation />} />
         <Route path="*" element={<Login />} />
       </Routes>
     );
@@ -330,24 +331,6 @@ const AppRoutes = () => {
               ]}
             >
               <DebtorsRegistry />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/pending"
-          element={
-            <ProtectedRoute
-              allowedRoles={[
-                "owner",
-                "admin",
-                "manager",
-                "accountant",
-                "viewer",
-                "parent",
-                "newregistration",
-              ]}
-            >
-              <PendingActivation />
             </ProtectedRoute>
           }
         />

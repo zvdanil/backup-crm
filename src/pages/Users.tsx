@@ -318,6 +318,7 @@ export default function Users() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Користувач</TableHead>
+                  <TableHead>E-mail</TableHead>
                   <TableHead>Роль</TableHead>
                   <TableHead>Активний</TableHead>
                 </TableRow>
@@ -331,6 +332,11 @@ export default function Users() {
                       </div>
                       <div className="text-xs text-muted-foreground break-all">
                         {profile.id}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {profile.email || "—"}
                       </div>
                     </TableCell>
                     <TableCell>
