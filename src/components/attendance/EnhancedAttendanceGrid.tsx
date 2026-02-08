@@ -70,6 +70,7 @@ import {
 } from "@/hooks/useActivities";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/context/AuthContext";
 
 const MONTHS = [
   "Січень",
@@ -95,6 +96,7 @@ export function EnhancedAttendanceGrid({
   activityId,
   initialDate,
 }: AttendanceGridProps) {
+  const { role } = useAuth();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -1752,22 +1754,24 @@ export function EnhancedAttendanceGrid({
             <div>Н: {dailyTotals[selectedDateStr]?.absent || 0}</div>
             <div>Σ: {dailyTotals[selectedDateStr]?.values || 0}</div>
           </div>
-          <div className="mt-2 text-sm font-medium">
-            {teachersForActivity.length > 0 ? (
-              <>
-                Оплата педагогу{" "}
-                <span className="text-xs font-normal">
-                  ({teachersForActivity.join(", ")})
-                </span>
-                :{" "}
-                {teacherPayments[selectedDateStr]
-                  ? formatCurrency(teacherPayments[selectedDateStr])
-                  : "—"}
-              </>
-            ) : (
-              `Оплата педагогу: ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : "—"}`
-            )}
-          </div>
+          {role !== 'manager' && (
+            <div className="mt-2 text-sm font-medium">
+              {teachersForActivity.length > 0 ? (
+                <>
+                  Оплата педагогу{" "}
+                  <span className="text-xs font-normal">
+                    ({teachersForActivity.join(", ")})
+                  </span>
+                  :{" "}
+                  {teacherPayments[selectedDateStr]
+                    ? formatCurrency(teacherPayments[selectedDateStr])
+                    : "—"}
+                </>
+              ) : (
+                `Оплата педагогу: ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : "—"}`
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -2042,43 +2046,45 @@ export function EnhancedAttendanceGrid({
                 ))}
 
                 {/* Рядок оплати педагогу */}
-                <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
-                  <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">
-                    {teachersForActivity.length > 0 ? (
-                      <>
-                        Оплата педагогу:{" "}
-                        <span className="text-xs font-normal">
-                          {teachersForActivity.join(", ")}
-                        </span>
-                      </>
-                    ) : (
-                      "Оплата педагогу"
-                    )}
-                  </th>
-                  {days.map((day) => {
-                    const dateStr = formatDateString(day);
-                    const payment = teacherPayments[dateStr] || 0;
-                    return (
-                      <th
-                        key={dateStr}
-                        className={cn(
-                          "px-1 py-1 text-center text-xs font-medium",
-                          isWeekend(day) && WEEKEND_BG_COLOR,
-                        )}
-                      >
-                        {payment > 0 ? formatCurrency(payment) : ""}
-                      </th>
-                    );
-                  })}
-                  <th className="sticky right-0 z-20 bg-primary/10 px-2 py-1 text-center text-xs font-medium">
-                    {formatCurrency(
-                      Object.values(teacherPayments).reduce(
-                        (sum, p) => sum + p,
-                        0,
-                      ),
-                    )}
-                  </th>
-                </tr>
+                {role !== 'manager' && (
+                  <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
+                    <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">
+                      {teachersForActivity.length > 0 ? (
+                        <>
+                          Оплата педагогу:{" "}
+                          <span className="text-xs font-normal">
+                            {teachersForActivity.join(", ")}
+                          </span>
+                        </>
+                      ) : (
+                        "Оплата педагогу"
+                      )}
+                    </th>
+                    {days.map((day) => {
+                      const dateStr = formatDateString(day);
+                      const payment = teacherPayments[dateStr] || 0;
+                      return (
+                        <th
+                          key={dateStr}
+                          className={cn(
+                            "px-1 py-1 text-center text-xs font-medium",
+                            isWeekend(day) && WEEKEND_BG_COLOR,
+                          )}
+                        >
+                          {payment > 0 ? formatCurrency(payment) : ""}
+                        </th>
+                      );
+                    })}
+                    <th className="sticky right-0 z-20 bg-primary/10 px-2 py-1 text-center text-xs font-medium">
+                      {formatCurrency(
+                        Object.values(teacherPayments).reduce(
+                          (sum, p) => sum + p,
+                          0,
+                        ),
+                      )}
+                    </th>
+                  </tr>
+                )}
               </thead>
             </table>
           </div>
