@@ -1,10 +1,18 @@
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 
 export default function PendingActivation() {
-  const { user, profile } = useAuth();
+  const { user, profile, role } = useAuth();
   const navigate = useNavigate();
+
+  // Если пользователь активен - редирект на главную
+  useEffect(() => {
+    if (user && profile && profile.is_active && role !== 'newregistration') {
+      navigate(role === 'parent' ? '/parent' : '/', { replace: true });
+    }
+  }, [user, profile, role, navigate]);
 
   // Если пользователь авторизован и email подтвержден
   const isEmailConfirmed = user?.email_confirmed_at != null;

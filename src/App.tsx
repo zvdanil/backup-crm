@@ -55,30 +55,14 @@ if (typeof window !== "undefined") {
 
 const AppRoutes = () => {
   const location = useLocation();
-  const isPublicPage = location.pathname === "/login";
+  const isPublicPage = location.pathname === "/login" || location.pathname === "/pending";
 
   if (isPublicPage) {
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/pending" element={<PendingActivation />} />
         <Route path="*" element={<Login />} />
-      </Routes>
-    );
-  }
-
-  // Страница ожидания активации - без AppLayout
-  if (location.pathname === "/pending") {
-    return (
-      <Routes>
-        <Route
-          path="/pending"
-          element={
-            <ProtectedRoute>
-              <PendingActivation />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<PendingActivation />} />
       </Routes>
     );
   }

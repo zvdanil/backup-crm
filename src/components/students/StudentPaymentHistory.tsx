@@ -1,6 +1,6 @@
 import { useFinanceTransactions, useDeletePaymentTransaction } from '@/hooks/useFinanceTransactions';
 import { formatCurrency, formatDate } from '@/lib/attendance';
-import { useActivities } from '@/hooks/useActivities';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import {
   Table,
   TableBody,
@@ -35,7 +35,7 @@ export function StudentPaymentHistory({
     month,
     year,
   });
-  const { data: activities = [] } = useActivities();
+  const { data: accounts = [] } = usePaymentAccounts();
   const isMobile = useIsMobile();
   const { role } = useAuth();
   const deletePayment = useDeletePaymentTransaction();
@@ -97,8 +97,8 @@ export function StudentPaymentHistory({
       {isMobile ? (
         <div className="space-y-3">
           {payments.map((payment) => {
-            const activity = payment.activity_id
-              ? activities.find(a => a.id === payment.activity_id)
+            const account = payment.account_id
+              ? accounts.find(a => a.id === payment.account_id)
               : null;
 
             return (
@@ -107,14 +107,8 @@ export function StudentPaymentHistory({
                   <div className="min-w-0 flex-1">
                     <div className="text-xs text-muted-foreground">{formatDate(payment.date)}</div>
                     <div className="mt-1 text-sm font-medium">
-                      {activity ? (
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: activity.color }}
-                          />
-                          <span className="break-words">{activity.name}</span>
-                        </div>
+                      {account ? (
+                        <span className="break-words">{account.name}</span>
                       ) : (
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
@@ -151,7 +145,7 @@ export function StudentPaymentHistory({
           <TableHeader>
               <TableRow>
                 <TableHead>Дата</TableHead>
-                <TableHead>Активність</TableHead>
+                <TableHead>Рахунок</TableHead>
                 <TableHead>Опис</TableHead>
                 <TableHead className="text-right">Сума</TableHead>
                 {canDelete && <TableHead className="w-[50px]"></TableHead>}
@@ -159,8 +153,8 @@ export function StudentPaymentHistory({
           </TableHeader>
           <TableBody>
             {payments.map((payment) => {
-              const activity = payment.activity_id 
-                ? activities.find(a => a.id === payment.activity_id)
+              const account = payment.account_id 
+                ? accounts.find(a => a.id === payment.account_id)
                 : null;
               
               return (
@@ -169,14 +163,8 @@ export function StudentPaymentHistory({
                     {formatDate(payment.date)}
                   </TableCell>
                   <TableCell>
-                    {activity ? (
-                      <div className="flex items-center gap-2">
-                        <span 
-                          className="w-3 h-3 rounded-full" 
-                          style={{ backgroundColor: activity.color }}
-                        />
-                        <span className="text-sm">{activity.name}</span>
-                      </div>
+                    {account ? (
+                      <span className="text-sm">{account.name}</span>
                     ) : (
                       <span className="text-sm text-muted-foreground">—</span>
                     )}
