@@ -45,7 +45,7 @@ export default function DebtorsRegistry() {
   const [balanceSort, setBalanceSort] = useState<"desc" | "asc">("desc");
   const [nameSort, setNameSort] = useState<"asc" | "desc">("asc");
   const [activeSort, setActiveSort] = useState<"name" | "balance">("balance");
-  const [displayMode, setDisplayMode] = useState<'debtors' | 'all'>('debtors');
+  const [displayMode, setDisplayMode] = useState<"debtors" | "all">("debtors");
 
   const { data: rows = [], isLoading } = useDebtorsRegistry(
     filterMonth,
@@ -109,7 +109,10 @@ export default function DebtorsRegistry() {
   ]);
 
   const totalDebt = useMemo(
-    () => filteredRows.filter(row => row.is_debtor).reduce((sum, row) => sum + row.balance_all_time, 0),
+    () =>
+      filteredRows
+        .filter((row) => row.is_debtor)
+        .reduce((sum, row) => sum + row.balance_all_time, 0),
     [filteredRows],
   );
 
@@ -120,8 +123,11 @@ export default function DebtorsRegistry() {
         description={`Поточний місяць: ${MONTHS[filterMonth]} ${filterYear}`}
         actions={
           <>
-            <Select              value={displayMode}
-              onValueChange={(value: 'debtors' | 'all') => setDisplayMode(value)}
+            <Select
+              value={displayMode}
+              onValueChange={(value: "debtors" | "all") =>
+                setDisplayMode(value)
+              }
             >
               <SelectTrigger className="h-8 w-[180px]">
                 <SelectValue />
@@ -131,7 +137,8 @@ export default function DebtorsRegistry() {
                 <SelectItem value="all">Всі діти</SelectItem>
               </SelectContent>
             </Select>
-            <Select              value={filterMonth.toString()}
+            <Select
+              value={filterMonth.toString()}
               onValueChange={(value) => setFilterMonth(parseInt(value))}
             >
               <SelectTrigger className="h-8 w-[160px]">
@@ -258,14 +265,20 @@ export default function DebtorsRegistry() {
             <TableBody>
               {filteredRows.map((row) => {
                 const isDebtor = row.is_debtor;
-                const rowClassName = displayMode === 'all' && !isDebtor ? 'text-muted-foreground' : '';
-                
+                const rowClassName =
+                  displayMode === "all" && !isDebtor
+                    ? "text-muted-foreground"
+                    : "";
+
                 return (
-                  <TableRow key={`${row.student_id}-${row.account_id || "none"}`} className={rowClassName}>
+                  <TableRow
+                    key={`${row.student_id}-${row.account_id || "none"}`}
+                    className={rowClassName}
+                  >
                     <TableCell>
                       <Link
                         to={`/students/${row.student_id}`}
-                        className={`font-medium hover:underline ${displayMode === 'all' && !isDebtor ? 'text-muted-foreground hover:text-primary' : 'text-primary'}`}
+                        className={`font-medium hover:underline ${displayMode === "all" && !isDebtor ? "text-muted-foreground hover:text-primary" : "text-primary"}`}
                       >
                         {row.student_name}
                       </Link>
@@ -277,7 +290,9 @@ export default function DebtorsRegistry() {
                     <TableCell className="text-right">
                       {formatCurrency(row.month_payments)}
                     </TableCell>
-                    <TableCell className={`text-right font-semibold ${isDebtor ? 'text-destructive' : 'text-success'}`}>
+                    <TableCell
+                      className={`text-right font-semibold ${isDebtor ? "text-destructive" : "text-success"}`}
+                    >
                       {formatCurrency(row.balance_all_time)}
                     </TableCell>
                   </TableRow>

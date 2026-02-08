@@ -24,7 +24,11 @@ type StudentRow = {
   full_name: string | null;
 };
 
-export function useDebtorsRegistry(month: number, year: number, mode: 'debtors' | 'all' = 'debtors') {
+export function useDebtorsRegistry(
+  month: number,
+  year: number,
+  mode: "debtors" | "all" = "debtors",
+) {
   return useQuery({
     queryKey: ["debtors_registry", month, year, mode],
     queryFn: async () => {
@@ -85,9 +89,9 @@ export function useDebtorsRegistry(month: number, year: number, mode: 'debtors' 
             balance.payments -
             balance.charges +
             balance.refunds;
-          
+
           // В режиме "debtors" пропускаем недолжников
-          if (mode === 'debtors' && endBalance >= 0) return;
+          if (mode === "debtors" && endBalance >= 0) return;
 
           const accountName = balance.account_id
             ? accountMap.get(balance.account_id) || "Без рахунку"
