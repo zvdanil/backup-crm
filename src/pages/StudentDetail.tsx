@@ -13,6 +13,7 @@ import { useCreateFinanceTransaction, useStudentAccountBalances, useStudentTotal
 import { formatCurrency, formatDate } from '@/lib/attendance';
 import { StudentActivityBalanceRow } from '@/components/students/StudentActivityBalanceRow';
 import { StudentPaymentHistory } from '@/components/students/StudentPaymentHistory';
+import { StudentAccountBalance } from '@/components/students/StudentAccountBalance';
 import { EnrollmentPriceDisplay } from '@/components/enrollments/EnrollmentPriceDisplay';
 import { cn } from '@/lib/utils';
 import { useActivities } from '@/hooks/useActivities';
@@ -123,49 +124,6 @@ export default function StudentDetail() {
     return enrollments.filter(e => !e.is_active);
   }, [enrollments]);
 
-  const balanceEnrollments = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const isFutureMonth = balanceYear > currentYear || (balanceYear === currentYear && balanceMonth > currentMonth);
-    
-    return enrollments.filter((enrollment) => {
-      const activity = allActivities.find(a => a.id === enrollment.activity_id);
-      if (activity && isGardenAttendanceController(activity)) return false;
-      
-      // Фильтруем по месяцу архивации:
-      // - Для будущих месяцев: только активные enrollments
-      // - Для текущего/прошлого месяца: активные + архивные, которые были заархивированы в этом месяце
-      if (isFutureMonth) {
-        return enrollment.is_active === true;
-      } else {
-        if (enrollment.is_active === true) return true;
-        // Архивные: показываем только если были заархивированы в этом месяце
-        if (enrollment.is_active === false && enrollment.unenrolled_at) {
-          const unenrolledDate = new Date(enrollment.unenrolled_at);
-          const monthStart = new Date(balanceYear, balanceMonth, 1);
-          const monthEnd = new Date(balanceYear, balanceMonth + 1, 0, 23, 59, 59, 999);
-          return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
-        }
-        return false;
-      }
-    });
-  }, [enrollments, allActivities, balanceMonth, balanceYear]);
-
-  const accountLabelMap = useMemo(() => {
-    const map = new Map<string, string>();
-    accounts.forEach((account) => map.set(account.id, account.name));
-    return map;
-  }, [accounts]);
-
-  const accountBalanceMap = useMemo(() => {
-    const map = new Map<string, typeof accountBalances[number]>();
-    accountBalances.forEach((balance) => {
-      map.set(balance.account_id || 'none', balance);
-    });
-    return map;
-  }, [accountBalances]);
-
   const parentOptions = useMemo(() => {
     const linkedIds = new Set(parentLinks.map((link) => link.parent_id));
     return userProfiles
@@ -175,36 +133,6 @@ export default function StudentDetail() {
         label: profile.full_name || profile.id,
       }));
   }, [parentLinks, userProfiles]);
-
-  const accountGroups = useMemo(() => {
-    const groups = new Map<string, { id: string; label: string; enrollments: EnrollmentWithRelations[] }>();
-    balanceEnrollments.forEach((enrollment) => {
-      // Приоритет: enrollment.account_id ?? activity.account_id
-      const accountId = enrollment.account_id || enrollment.activities.account_id || 'none';
-      const label = accountId === 'none'
-        ? 'Без рахунку'
-        : (accountLabelMap.get(accountId) || 'Без рахунку');
-      if (!groups.has(accountId)) {
-        groups.set(accountId, { id: accountId, label, enrollments: [] });
-      }
-      groups.get(accountId)!.enrollments.push(enrollment);
-    });
-    accountBalances.forEach((balance) => {
-      const accountId = balance.account_id || 'none';
-      if (!groups.has(accountId)) {
-        const label = accountId === 'none'
-          ? 'Без рахунку'
-          : (accountLabelMap.get(accountId) || 'Без рахунку');
-        groups.set(accountId, { id: accountId, label, enrollments: [] });
-      }
-    });
-    return Array.from(groups.values()).sort((a, b) => {
-      const aIsNone = a.id === 'none';
-      const bIsNone = b.id === 'none';
-      if (aIsNone !== bIsNone) return aIsNone ? 1 : -1;
-      return a.label.localeCompare(b.label, 'uk-UA');
-    });
-  }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
   const handleEnroll = async (data: { activity_id: string; custom_price: number | null; discount_percent: number; account_id: string | null }) => {
     // Используем mutateAsync для ожидания завершения мутации
@@ -438,164 +366,18 @@ export default function StudentDetail() {
             </div>
 
             {/* Balance by activities */}
-            {balanceEnrollments.length > 0 && (
-              <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Баланс по рахунках</h3>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Select
-                      value={balanceMonth.toString()}
-                      onValueChange={(value) => setBalanceMonth(parseInt(value))}
-                    >
-                      <SelectTrigger className="w-full sm:w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MONTHS.map((month, idx) => (
-                          <SelectItem key={idx} value={idx.toString()}>
-                            {month}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      value={balanceYear}
-                      onChange={(e) => setBalanceYear(parseInt(e.target.value))}
-                      className="w-full sm:w-24"
-                    />
-                  </div>
-                </div>
-                
-                {/* Balance Summary - hidden per user request */}
-                {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                  <div className="rounded-lg border border-border p-4">
-                    <p className="text-sm text-muted-foreground mb-2">За місяць</p>
-                    <StudentBalanceDisplay
-                      studentId={id!}
-                      month={balanceMonth}
-                      year={balanceYear}
-                      excludeActivityIds={controllerActivityIds}
-                      foodTariffIds={Array.from(foodTariffIds)}
-                    />
-                  </div>
-                  <div className="rounded-lg border border-border p-4">
-                    <p className="text-sm text-muted-foreground mb-2">Загальний баланс</p>
-                    <StudentBalanceDisplay
-                      studentId={id!}
-                      month={balanceMonth}
-                      year={balanceYear}
-                      excludeActivityIds={controllerActivityIds}
-                      foodTariffIds={Array.from(foodTariffIds)}
-                      cumulative={true}
-                    />
-                  </div>
-                </div> */}
-                
-                <div className="space-y-4">
-                  {accountBalancesLoading ? (
-                    <div className="text-sm text-muted-foreground">Завантаження...</div>
-                  ) : accountGroups.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Немає нарахувань</div>
-                  ) : (
-                    <div className="space-y-4">
-                      {accountGroups.map((group) => {
-                        const accountBalance = accountBalanceMap.get(group.id);
-                        const previousBalance = accountBalance?.previous_balance || 0;
-                        const charges = accountBalance?.charges || 0;
-                        const payments = accountBalance?.payments || 0;
-                        const refunds = accountBalance?.refunds || 0;
-                        const endBalance = previousBalance + payments - charges + refunds;
-                        const startLabel = previousBalance < 0
-                          ? 'Борг на початок'
-                          : previousBalance > 0
-                            ? 'Залишок на початок'
-                            : 'Баланс на початок';
-                        return (
-                          <div key={group.id} className="rounded-lg border border-border p-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                              <div className="text-sm font-semibold">{group.label}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {MONTHS[balanceMonth]} {balanceYear}
-                              </div>
-                            </div>
-
-                            <div className="space-y-2 text-sm mb-3">
-                              <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground">{startLabel}</span>
-                                <span
-                                  className={cn(
-                                    "font-semibold",
-                                    previousBalance < 0
-                                      ? "text-destructive"
-                                      : previousBalance > 0
-                                        ? "text-success"
-                                        : "text-muted-foreground"
-                                  )}
-                                >
-                                  {previousBalance > 0 ? '+' : ''}{formatCurrency(Math.abs(previousBalance))}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground">Нараховано за місяць</span>
-                                <span className="font-medium">{formatCurrency(charges)}</span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground">Оплачено за місяць</span>
-                                <span className="font-medium">{formatCurrency(payments)}</span>
-                              </div>
-                              <div className="border-t border-border my-1"></div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-muted-foreground">Ітого</span>
-                                {endBalance < 0 ? (
-                                  <span className="font-semibold text-destructive">
-                                    До сплати: {formatCurrency(Math.abs(endBalance))}
-                                  </span>
-                                ) : endBalance > 0 ? (
-                                  <span className="font-semibold text-success">
-                                    Переплата: +{formatCurrency(endBalance)}
-                                  </span>
-                                ) : (
-                                  <span className="font-semibold text-muted-foreground">
-                                    {formatCurrency(0)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {group.enrollments.length === 0 ? (
-                              <div className="text-sm text-muted-foreground">Немає рядків за вибраний період</div>
-                            ) : (
-                              <div className="space-y-3">
-                                {group.enrollments.map((enrollment) => (
-                                  <StudentActivityBalanceRow
-                                    key={enrollment.id}
-                                    studentId={id!}
-                                    enrollment={enrollment}
-                                    month={balanceMonth}
-                                    year={balanceYear}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                            {group.id === 'none' && (accountBalanceMap.get('none')?.unassigned_payments || 0) > 0 && (
-                              <div className="mt-3 rounded-md border border-dashed border-muted-foreground/40 p-3">
-                                <div className="flex items-center justify-between text-sm">
-                                  <span className="text-muted-foreground">Оплата без активності</span>
-                                  <span className="font-semibold text-success">
-                                    +{formatCurrency(accountBalanceMap.get('none')?.unassigned_payments || 0)}
-                                  </span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <StudentAccountBalance
+              studentId={id!}
+              enrollments={enrollments}
+              allActivities={allActivities}
+              accounts={accounts}
+              accountBalances={accountBalances}
+              accountBalancesLoading={accountBalancesLoading}
+              month={balanceMonth}
+              year={balanceYear}
+              onMonthChange={setBalanceMonth}
+              onYearChange={setBalanceYear}
+            />
           </div>
 
           {/* Enrollments */}
