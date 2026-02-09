@@ -1,0 +1,6 @@
+node_modules/
+.git/
+dist/
+build/
+*.log
+database_schema.md  # Якщо він занадто великий і не потрібен зараз

@@ -10,7 +10,6 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // import { supabase } from "@/integrations/supabase/client";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __supabase: SupabaseClient<Database> | undefined;
 }
 

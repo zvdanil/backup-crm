@@ -1,97 +1,90 @@
-import type { UserRole } from '@/context/AuthContext';
+import type { UserRole } from "@/context/AuthContext";
 
 export type AppSection =
-  | 'dashboard'
-  | 'students'
-  | 'activities'
-  | 'accounts'
-  | 'groups'
-  | 'attendance'
-  | 'group_lessons_journal'
-  | 'garden_attendance'
-  | 'nutrition'
-  | 'staff'
-  | 'staff_expenses'
-  | 'staff_payroll'
-  | 'users'
-  | 'summary_report';
+  | "dashboard"
+  | "calendar" // Added calendar section
+  | "students"
+  | "activities"
+  | "accounts"
+  | "groups"
+  | "attendance"
+  | "group_lessons_journal"
+  | "garden_attendance"
+  | "nutrition"
+  | "staff"
+  | "staff_expenses"
+  | "staff_payroll"
+  | "users"
+  | "summary_report"
+  | "debtors";
 
 const roleAccess: Record<UserRole, AppSection[]> = {
   owner: [
-    'dashboard',
-    'students',
-    'activities',
-    'accounts',
-    'groups',
-    'attendance',
-    'group_lessons_journal',
-    'garden_attendance',
-    'nutrition',
-    'staff',
-    'staff_expenses',
-    'staff_payroll',
-    'users',
-    'summary_report',
+    "dashboard",
+    "calendar",
+    "students",
+    "activities",
+    "accounts",
+    "groups",
+    "attendance",
+    "group_lessons_journal",
+    "garden_attendance",
+    "nutrition",
+    "staff",
+    "staff_expenses",
+    "staff_payroll",
+    "users",
+    "summary_report",
   ],
   admin: [
-    'dashboard',
-    'students',
-    'activities',
-    'accounts',
-    'groups',
-    'attendance',
-    'group_lessons_journal',
-    'garden_attendance',
-    'nutrition',
-    'staff',
-    'staff_expenses',
-    'staff_payroll',
-    'users',
-    'summary_report',
+    "dashboard",
+    "calendar",
+    "students",
+    "activities",
+    "accounts",
+    "groups",
+    "attendance",
+    "group_lessons_journal",
+    "garden_attendance",
+    "nutrition",
+    "staff",
+    "staff_expenses",
+    "staff_payroll",
+    "users",
+    "summary_report",
   ],
   manager: [
-    'students',
-    'activities',
-    'groups',
-    'attendance',
-    'group_lessons_journal',
-    'garden_attendance',
-    'nutrition',
-    'staff_expenses',
+    "calendar",
+    "attendance",
+    "group_lessons_journal",
+    "garden_attendance",
   ],
-  accountant: [
-    'students',
-    'activities',
-    'accounts',
-    'groups',
-    'attendance',
-    'group_lessons_journal',
-    'garden_attendance',
-    'nutrition',
-    'staff',
-    'staff_expenses',
-    'staff_payroll',
-    'summary_report',
-  ],
+  accountant: ["students", "debtors"],
   viewer: [
-    'dashboard',
-    'students',
-    'activities',
-    'groups',
-    'attendance',
-    'group_lessons_journal',
-    'garden_attendance',
-    'nutrition',
-    'staff',
-    'staff_expenses',
-    'staff_payroll',
-    'summary_report',
+    "dashboard",
+    "calendar",
+    "students",
+    "activities",
+    "groups",
+    "attendance",
+    "group_lessons_journal",
+    "garden_attendance",
+    "nutrition",
+    "staff",
+    "staff_expenses",
+    "staff_payroll",
+    "summary_report",
   ],
   parent: [],
   newregistration: [],
 };
 
-export function canAccessSection(role: UserRole | null, section: AppSection): boolean {
+export function canAccessSection(
+  role: UserRole | null,
+  section: AppSection,
+): boolean {
   if (!role) return false;
+  // Handle potential new sections not defined in every role
+  if (!roleAccess[role]) return false;
   return roleAccess[role].includes(section);
 }

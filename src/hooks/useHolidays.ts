@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { getMonthEndDate } from '@/lib/attendance';
 
 export interface Holiday {
   id: string;
@@ -34,7 +35,8 @@ export async function getWorkingDaysInMonthWithHolidays(
   month: number
 ): Promise<number> {
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endDate = `${year}-${String(month).padStart(2, '0')}-31`;
+  // Корректно вычисляем последний день месяца
+  const endDate = getMonthEndDate(year, month - 1); // month - 1, т.к. getMonthEndDate ожидает 0-индексированный месяц
   
   const { data: holidays, error } = await supabase
     .from('holidays')

@@ -239,7 +239,7 @@ async function calculateIncomeForPeriod(
       if (!isActive) return;
 
       let baseMonthlyCharge = 0;
-      if (enrollment.custom_price !== null && enrollment.custom_price > 0) {
+      if (enrollment.custom_price !== null && enrollment.custom_price !== undefined) {
         const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
         baseMonthlyCharge = Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
       } else if (presentRule?.rate && presentRule.rate > 0) {

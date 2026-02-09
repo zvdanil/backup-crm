@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Textarea } from '@/components/ui/textarea';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useStaff } from '@/hooks/useStaff';
 import { Link } from 'react-router-dom';
-import { useAllStaffJournalEntries, useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, getStaffManualRateForDate, StaffManualRateHistory } from '@/hooks/useStaffBilling';
+import { useAllStaffJournalEntries, useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, getStaffManualRateForDate, StaffManualRateHistory, useCreateStaffManualRateHistory } from '@/hooks/useStaffBilling';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAttendance } from '@/hooks/useAttendance';
@@ -22,8 +23,12 @@ import {
   formatDateString,
   formatDate,
   filterDaysByPeriod,
-  type PeriodFilter
+  type PeriodFilter,
+  calculateManualRateAmount,
+  getMonthStartDate,
+  getMonthEndDate
 } from '@/lib/attendance';
+import { getWorkingDaysInMonthWithHolidays } from '@/hooks/useHolidays';
 import { calculateStaffSalary } from '@/lib/staffSalary';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -49,6 +54,15 @@ export default function StaffExpenseJournal() {
   const [editingCell, setEditingCell] = useState<{ staffId: string; activityId: string | null; date: string } | null>(null);
   const [manualValue, setManualValue] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('all');
+  // Состояние для ручного режима per_working_day
+  const [perWorkingDayState, setPerWorkingDayState] = useState({
+    attendanceStatus: null,
+    manualAmount: '',
+    bonus: '',
+    bonusNotes: '',
+  });
+  // Фільтр для відображення типів рядків
+  const [rowTypeFilter, setRowTypeFilter] = useState<string[]>(['auto', 'manual', 'payouts']);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +75,7 @@ export default function StaffExpenseJournal() {
   const { data: salaryTransactions = [] } = useFinanceTransactions({ type: 'salary', month, year });
   const upsertJournalEntry = useUpsertStaffJournalEntry();
   const deleteJournalEntry = useDeleteStaffJournalEntry();
+  const createManualRateHistory = useCreateStaffManualRateHistory();
 
   const expenseActivities = useMemo(() => {
     return activities.filter(
@@ -358,7 +373,7 @@ export default function StaffExpenseJournal() {
     }
   };
 
-  const handleSaveManualEntry = () => {
+  const handleSaveManualEntry = async () => {
     if (!editingCell) return;
 
     const staffMember = activeStaff.find(s => s.id === editingCell.staffId);
@@ -370,7 +385,62 @@ export default function StaffExpenseJournal() {
     const rateType = currentRate?.manual_rate_type || null;
     const rateValue = currentRate?.manual_rate_value || 0;
 
-    if (rateType === 'hourly') {
+    // Проверка: если ставки на дату нет — показываем ошибку и не сохраняем запись
+    if (!rateType || rateValue === 0) {
+      alert('Для цієї дати не налаштована ставка для ручного режиму. Додайте ставку в картці педагога.');
+      return;
+    }
+
+    if (rateType === 'per_working_day') {
+      // Обработка ручного режима по рабочим дням
+      const { attendanceStatus, manualAmount, bonus, bonusNotes } = perWorkingDayState;
+      if (!attendanceStatus) return;
+
+      const dateObj = new Date(editingCell.date);
+      const year = dateObj.getFullYear();
+      const month = dateObj.getMonth() + 1;
+      let amount = 0;
+      let notes = '';
+      if (attendanceStatus === 'present') {
+        amount = await calculateManualRateAmount({
+          rateValue,
+          year,
+          month,
+          getWorkingDaysInMonthWithHolidaysFn: getWorkingDaysInMonthWithHolidays
+        });
+        notes = 'Присутній (робочий день)';
+      } else if (attendanceStatus === 'manual') {
+        if (!manualAmount || isNaN(parseFloat(manualAmount))) return;
+        amount = parseFloat(manualAmount);
+        notes = 'Ручне введення';
+      } else if (attendanceStatus === 'absent') {
+        amount = 0;
+        notes = 'Відсутній (робочий день)';
+      }
+
+      upsertJournalEntry.mutate({
+        staff_id: editingCell.staffId,
+        activity_id: editingCell.activityId,
+        date: editingCell.date,
+        amount,
+        base_amount: rateValue,
+        hours_worked: null,
+        deductions_applied: [],
+        is_manual_override: true,
+        notes,
+        bonus: bonus ? parseFloat(bonus) : null,
+        bonus_notes: bonusNotes || null,
+      });
+
+      setEditingCell(null);
+      setManualValue('');
+      setPerWorkingDayState({
+        attendanceStatus: null,
+        manualAmount: '',
+        bonus: '',
+        bonusNotes: '',
+      });
+    } else if (rateType === 'hourly') {
       // Почасово: вводимо кількість годин, нарахування = години * ставка
       if (!manualValue || manualValue.trim() === '') {
         // Якщо поле порожнє - видаляємо запис
@@ -407,6 +477,8 @@ export default function StaffExpenseJournal() {
         deductions_applied: [],
         is_manual_override: true,
         notes: `${hours} год. × ${rateValue} ₴`,
+        bonus: null,
+        bonus_notes: null,
       });
 
       setEditingCell(null);
@@ -444,9 +516,12 @@ export default function StaffExpenseJournal() {
         date: editingCell.date,
         amount,
         base_amount: rateValue,
+        hours_worked: null,
         deductions_applied: [],
         is_manual_override: true,
         notes: sessions === 0 ? '0 зан. (відмітка про відсутність)' : `${sessions} зан. × ${rateValue} ₴`,
+        bonus: null,
+        bonus_notes: null,
       });
 
       setEditingCell(null);
@@ -463,9 +538,12 @@ export default function StaffExpenseJournal() {
         date: editingCell.date,
         amount,
         base_amount: null,
+        hours_worked: null,
         deductions_applied: [],
         is_manual_override: true,
         notes: null,
+        bonus: null,
+        bonus_notes: null,
       });
 
       setEditingCell(null);
@@ -636,8 +714,139 @@ export default function StaffExpenseJournal() {
                 const rateType = currentRate?.manual_rate_type || null;
                 const rateValue = currentRate?.manual_rate_value || 0;
 
-                if (rateType === 'hourly') {
-                  return (
+                let manualPopupContent = null;
+                if (rateType === 'per_working_day') {
+                  manualPopupContent = (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            id={`present-${editingCell?.date}`}
+                            name={`attendance-${editingCell?.date}`}
+                            checked={perWorkingDayState.attendanceStatus === 'present'}
+                            onChange={() => setPerWorkingDayState({
+                              ...perWorkingDayState,
+                              attendanceStatus: 'present',
+                              manualAmount: '',
+                            })}
+                            className="h-4 w-4"
+                          />
+                          <label htmlFor={`present-${editingCell?.date}`} className="text-sm">
+                            Присутній
+                          </label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            id={`absent-${editingCell?.date}`}
+                            name={`attendance-${editingCell?.date}`}
+                            checked={perWorkingDayState.attendanceStatus === 'absent'}
+                            onChange={() => setPerWorkingDayState({
+                              ...perWorkingDayState,
+                              attendanceStatus: 'absent',
+                              manualAmount: '',
+                            })}
+                            className="h-4 w-4"
+                          />
+                          <label htmlFor={`absent-${editingCell?.date}`} className="text-sm">
+                            Відсутній
+                          </label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            id={`manual-${editingCell?.date}`}
+                            name={`attendance-${editingCell?.date}`}
+                            checked={perWorkingDayState.attendanceStatus === 'manual'}
+                            onChange={() => setPerWorkingDayState({
+                              ...perWorkingDayState,
+                              attendanceStatus: 'manual',
+                            })}
+                            className="h-4 w-4"
+                          />
+                          <label htmlFor={`manual-${editingCell?.date}`} className="text-sm">
+                            Ручне введення
+                          </label>
+                        </div>
+                      </div>
+                      {perWorkingDayState.attendanceStatus === 'manual' && (
+                        <div>
+                          <label className="text-sm font-medium">Сума (₴)</label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={perWorkingDayState.manualAmount}
+                            onChange={(e) => setPerWorkingDayState({
+                              ...perWorkingDayState,
+                              manualAmount: e.target.value,
+                            })}
+                            placeholder="0"
+                            className="mt-1"
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <label className="text-sm font-medium">Бонус (₴)</label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={perWorkingDayState.bonus}
+                          onChange={(e) => setPerWorkingDayState({
+                            ...perWorkingDayState,
+                            bonus: e.target.value,
+                          })}
+                          placeholder="0"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Примітка для бонусу</label>
+                        <Textarea
+                          value={perWorkingDayState.bonusNotes}
+                          onChange={(e) => setPerWorkingDayState({
+                            ...perWorkingDayState,
+                            bonusNotes: e.target.value,
+                          })}
+                          placeholder="Примітка..."
+                          rows={2}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            // Логика сохранения аналогична StaffDetail
+                            // Здесь можно вызвать отдельную функцию сохранения
+                            handleSaveManualEntry();
+                          }}
+                          className="flex-1"
+                          disabled={perWorkingDayState.attendanceStatus === null || (perWorkingDayState.attendanceStatus === 'manual' && (!perWorkingDayState.manualAmount || isNaN(parseFloat(perWorkingDayState.manualAmount))))}
+                        >
+                          Зберегти
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingCell(null);
+                            setManualValue('');
+                            setPerWorkingDayState({
+                              attendanceStatus: null,
+                              manualAmount: '',
+                              bonus: '',
+                              bonusNotes: '',
+                            });
+                          }}
+                        >
+                          Скасувати
+                        </Button>
+                      </div>
+                    </>
+                  );
+                } else if (rateType === 'hourly') {
+                  manualPopupContent = (
                     <>
                       <div>
                         <label className="text-sm font-medium">Кількість годин</label>
@@ -681,10 +890,8 @@ export default function StaffExpenseJournal() {
                       </div>
                     </>
                   );
-                }
-
-                if (rateType === 'per_session') {
-                  return (
+                } else if (rateType === 'per_session') {
+                  manualPopupContent = (
                     <>
                       <div>
                         <label className="text-sm font-medium">Кількість занять</label>
@@ -728,44 +935,45 @@ export default function StaffExpenseJournal() {
                       </div>
                     </>
                   );
+                } else {
+                  manualPopupContent = (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">Сума (₴)</label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={manualValue}
+                          onChange={(e) => setManualValue(e.target.value)}
+                          placeholder="0"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleSaveManualEntry}
+                          className="flex-1"
+                          disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
+                        >
+                          Зберегти
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingCell(null);
+                            setManualValue('');
+                          }}
+                        >
+                          Скасувати
+                        </Button>
+                      </div>
+                    </>
+                  );
                 }
-
-                return (
-                  <>
-                    <div>
-                      <label className="text-sm font-medium">Сума (₴)</label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={manualValue}
-                        onChange={(e) => setManualValue(e.target.value)}
-                        placeholder="0"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={handleSaveManualEntry}
-                        className="flex-1"
-                        disabled={!manualValue || isNaN(parseFloat(manualValue)) || parseFloat(manualValue) < 0}
-                      >
-                        Зберегти
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setEditingCell(null);
-                          setManualValue('');
-                        }}
-                      >
-                        Скасувати
-                      </Button>
-                    </div>
-                  </>
-                );
+                return manualPopupContent;
               })()}
             </div>
           </PopoverContent>
@@ -838,6 +1046,60 @@ export default function StaffExpenseJournal() {
           />
         </div>
 
+        {/* Row type filter */}
+        <div className="mb-4 flex flex-wrap gap-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium">Фільтр рядків:</span>
+            <div className="flex gap-2">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={rowTypeFilter.includes('auto')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRowTypeFilter(prev => [...prev, 'auto']);
+                    } else {
+                      setRowTypeFilter(prev => prev.filter(type => type !== 'auto'));
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">Авто нарахування</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={rowTypeFilter.includes('manual')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRowTypeFilter(prev => [...prev, 'manual']);
+                    } else {
+                      setRowTypeFilter(prev => prev.filter(type => type !== 'manual'));
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">Ручні нарахування</span>
+              </label>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={rowTypeFilter.includes('payouts')}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setRowTypeFilter(prev => [...prev, 'payouts']);
+                    } else {
+                      setRowTypeFilter(prev => prev.filter(type => type !== 'payouts'));
+                    }
+                  }}
+                  className="h-4 w-4"
+                />
+                <span className="text-sm">Виплати</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         {/* Grid */}
         <div className="sticky top-16 z-30 bg-card">
           <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
@@ -880,7 +1142,7 @@ export default function StaffExpenseJournal() {
                 return (
                   <React.Fragment key={staffMember.id}>
                     {/* Staff row with all activities combined - only if has automatic rates */}
-                    {hasAutoRates && (
+                    {hasAutoRates && rowTypeFilter.includes('auto') && (
                   <tr className="border-t hover:bg-muted/20">
                       <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
                         <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
@@ -930,7 +1192,7 @@ export default function StaffExpenseJournal() {
                       })}
                     </tr>
                     )}
-                    {(manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
+                    {rowTypeFilter.includes('manual') && (manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
                       <tr key={`${staffMember.id}-${manualActivity.activityId || 'null'}`} className="border-t bg-muted/10">
                         <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
                           <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
@@ -949,29 +1211,31 @@ export default function StaffExpenseJournal() {
                         )}
                       </tr>
                     ))}
-                    <tr className="border-t bg-muted/20">
-                      <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
-                        <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
-                          {staffMember.full_name}
-                        </Link>
-                        {' — Виплати'}
-                      </td>
-                      {days.map((day) => {
-                        const dateStr = formatDateString(day);
-                        const amount = payoutMap.get(`${staffMember.id}-${dateStr}`) || 0;
-                        return (
-                          <td
-                            key={dateStr}
-                            className={cn(
-                              "p-0.5 text-center text-red-600 font-medium",
-                              isWeekend(day) && WEEKEND_BG_COLOR
-                            )}
-                          >
-                            {amount > 0 ? formatCurrency(amount) : '—'}
-                          </td>
-                        );
-                      })}
-                    </tr>
+                    {rowTypeFilter.includes('payouts') && (
+                      <tr className="border-t bg-muted/20">
+                        <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
+                          <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                            {staffMember.full_name}
+                          </Link>
+                          {' — Виплати'}
+                        </td>
+                        {days.map((day) => {
+                          const dateStr = formatDateString(day);
+                          const amount = payoutMap.get(`${staffMember.id}-${dateStr}`) || 0;
+                          return (
+                            <td
+                              key={dateStr}
+                              className={cn(
+                                "p-0.5 text-center text-red-600 font-medium",
+                                isWeekend(day) && WEEKEND_BG_COLOR
+                              )}
+                            >
+                              {amount > 0 ? formatCurrency(amount) : '—'}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
                   </React.Fragment>
                 );
               })}

@@ -1,14 +1,19 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from '@/hooks/use-toast';
-import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { getMonthStartDate, getMonthEndDate } from "@/lib/attendance";
 
 export interface StaffBillingRule {
   id: string;
   staff_id: string;
   activity_id: string | null;
   group_lesson_id?: string | null;
-  rate_type: 'fixed' | 'percent' | 'per_session' | 'subscription' | 'per_student';
+  rate_type:
+    | "fixed"
+    | "percent"
+    | "per_session"
+    | "subscription"
+    | "per_student";
   rate: number; // Changed from rate_value to rate
   lesson_limit?: number | null;
   penalty_percent?: number | null;
@@ -33,6 +38,7 @@ export interface StaffJournalEntry {
   deductions_applied: DeductionApplied[];
   is_manual_override: boolean;
   notes: string | null;
+  description: string | null;
   bonus: number | null;
   bonus_notes: string | null;
   created_at: string;
@@ -46,13 +52,13 @@ export interface StaffJournalEntryWithRelations extends StaffJournalEntry {
 
 export interface Deduction {
   name: string;
-  type: 'percent' | 'fixed';
+  type: "percent" | "fixed";
   value: number;
 }
 
 export interface DeductionApplied {
   name: string;
-  type: 'percent' | 'fixed';
+  type: "percent" | "fixed";
   value: number;
   amount: number; // Сума комісії
 }
@@ -61,7 +67,7 @@ export interface StaffManualRateHistory {
   id: string;
   staff_id: string;
   activity_id: string | null;
-  manual_rate_type: 'hourly' | 'per_session' | 'per_working_day';
+  manual_rate_type: "hourly" | "per_session" | "per_working_day";
   manual_rate_value: number;
   effective_from: string;
   effective_to: string | null;
@@ -82,35 +88,53 @@ export interface StaffPayout {
   deleted_note?: string | null;
 }
 
-export type StaffPayoutInsert = Omit<StaffPayout, 'id' | 'created_at' | 'updated_at'>;
+export type StaffPayoutInsert = Omit<
+  StaffPayout,
+  "id" | "created_at" | "updated_at"
+>;
 export type StaffPayoutUpdate = Partial<StaffPayoutInsert>;
 
-export type StaffBillingRuleInsert = Omit<StaffBillingRule, 'id' | 'created_at' | 'updated_at' | 'activity'>;
-export type StaffManualRateHistoryInsert = Omit<StaffManualRateHistory, 'id' | 'created_at' | 'updated_at'>;
-export type StaffBillingRuleUpdate = Partial<Omit<StaffBillingRule, 'id' | 'staff_id' | 'created_at' | 'updated_at'>>;
-export type StaffJournalEntryInsert = Omit<StaffJournalEntry, 'id' | 'created_at' | 'updated_at'>;
-export type StaffJournalEntryUpdate = Partial<Omit<StaffJournalEntry, 'id' | 'staff_id' | 'created_at' | 'updated_at'>>;
+export type StaffBillingRuleInsert = Omit<
+  StaffBillingRule,
+  "id" | "created_at" | "updated_at" | "activity"
+>;
+export type StaffManualRateHistoryInsert = Omit<
+  StaffManualRateHistory,
+  "id" | "created_at" | "updated_at"
+>;
+export type StaffBillingRuleUpdate = Partial<
+  Omit<StaffBillingRule, "id" | "staff_id" | "created_at" | "updated_at">
+>;
+export type StaffJournalEntryInsert = Omit<
+  StaffJournalEntry,
+  "id" | "created_at" | "updated_at"
+>;
+export type StaffJournalEntryUpdate = Partial<
+  Omit<StaffJournalEntry, "id" | "staff_id" | "created_at" | "updated_at">
+>;
 
 // Get staff billing rules for a specific staff member
 export function useStaffBillingRules(staffId: string | undefined) {
   return useQuery({
-    queryKey: ['staff-billing-rules', staffId],
+    queryKey: ["staff-billing-rules", staffId],
     queryFn: async () => {
       if (!staffId) return [];
-      
+
       const { data, error } = await supabase
-        .from('staff_billing_rules' as any)
-        .select(`
+        .from("staff_billing_rules" as any)
+        .select(
+          `
           *,
           activity:activities(name)
-        `)
-        .eq('staff_id', staffId)
-        .order('effective_from', { ascending: false });
-      
+        `,
+        )
+        .eq("staff_id", staffId)
+        .order("effective_from", { ascending: false });
+
       if (error) throw error;
       // Map rate_value from DB to rate for TypeScript interface
       // Важно: сохраняем все поля, включая group_lesson_id
-      return ((data as any[]) || []).map(rule => ({
+      return ((data as any[]) || []).map((rule) => ({
         ...rule,
         rate: rule.rate_value ?? rule.rate ?? 0,
         activity: rule.activity || null,
@@ -122,26 +146,31 @@ export function useStaffBillingRules(staffId: string | undefined) {
 }
 
 // Get staff billing rules for a specific activity
-export function useStaffBillingRulesByActivity(staffId: string | undefined, activityId: string | undefined) {
+export function useStaffBillingRulesByActivity(
+  staffId: string | undefined,
+  activityId: string | undefined,
+) {
   return useQuery({
-    queryKey: ['staff-billing-rules', staffId, activityId],
+    queryKey: ["staff-billing-rules", staffId, activityId],
     queryFn: async () => {
       if (!staffId || !activityId) return [];
-      
+
       const { data, error } = await supabase
-        .from('staff_billing_rules' as any)
-        .select(`
+        .from("staff_billing_rules" as any)
+        .select(
+          `
           *,
           activity:activities(name)
-        `)
-        .eq('staff_id', staffId)
-        .eq('activity_id', activityId)
-        .order('effective_from', { ascending: false });
-      
+        `,
+        )
+        .eq("staff_id", staffId)
+        .eq("activity_id", activityId)
+        .order("effective_from", { ascending: false });
+
       if (error) throw error;
       // Map rate_value from DB to rate for TypeScript interface
       // Важно: сохраняем все поля, включая group_lesson_id
-      return ((data as any[]) || []).map(rule => ({
+      return ((data as any[]) || []).map((rule) => ({
         ...rule,
         rate: rule.rate_value ?? rule.rate ?? 0,
         activity: rule.activity || null,
@@ -153,25 +182,29 @@ export function useStaffBillingRulesByActivity(staffId: string | undefined, acti
 }
 
 // Get all staff billing rules for an activity (for all staff members)
-export function useAllStaffBillingRulesForActivity(activityId: string | undefined) {
+export function useAllStaffBillingRulesForActivity(
+  activityId: string | undefined,
+) {
   return useQuery({
-    queryKey: ['staff-billing-rules-activity', activityId],
+    queryKey: ["staff-billing-rules-activity", activityId],
     queryFn: async () => {
       if (!activityId) return [];
-      
+
       const { data, error } = await supabase
-        .from('staff_billing_rules' as any)
-        .select(`
+        .from("staff_billing_rules" as any)
+        .select(
+          `
           *,
           activity:activities(name)
-        `)
+        `,
+        )
         .or(`activity_id.eq.${activityId},activity_id.is.null`) // Rules for this activity or global rules
-        .order('effective_from', { ascending: false });
-      
+        .order("effective_from", { ascending: false });
+
       if (error) throw error;
       // Map rate_value from DB to rate for TypeScript interface
       // Важно: сохраняем все поля, включая group_lesson_id
-      return ((data as any[]) || []).map(rule => ({
+      return ((data as any[]) || []).map((rule) => ({
         ...rule,
         rate: rule.rate_value ?? rule.rate ?? 0,
         activity: rule.activity || null,
@@ -185,26 +218,26 @@ export function useAllStaffBillingRulesForActivity(activityId: string | undefine
 // Create staff billing rule
 export function useCreateStaffBillingRule() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (rule: StaffBillingRuleInsert) => {
       // Close previous rule if exists
       // Важно: закрываем только ставки с совпадающим activity_id И group_lesson_id
       // Это позволяет иметь одновременно активные ставки для одной активности, но для разных журналов
       let query = supabase
-        .from('staff_billing_rules' as any)
-        .select('id')
-        .eq('staff_id', rule.staff_id)
-        .eq('activity_id', rule.activity_id)
-        .is('effective_to', null);
+        .from("staff_billing_rules" as any)
+        .select("id")
+        .eq("staff_id", rule.staff_id)
+        .eq("activity_id", rule.activity_id)
+        .is("effective_to", null);
 
       // Добавляем проверку на совпадение group_lesson_id
       // Если group_lesson_id IS NULL - ищем только ставки с NULL
       // Если group_lesson_id IS NOT NULL - ищем только ставки с тем же UUID
       if (rule.group_lesson_id === null || rule.group_lesson_id === undefined) {
-        query = query.is('group_lesson_id', null);
+        query = query.is("group_lesson_id", null);
       } else {
-        query = query.eq('group_lesson_id', rule.group_lesson_id);
+        query = query.eq("group_lesson_id", rule.group_lesson_id);
       }
 
       const { data: previousRuleArray, error: findError } = await query;
@@ -216,16 +249,16 @@ export function useCreateStaffBillingRule() {
       if (previousRuleArray && previousRuleArray.length > 0) {
         const effectiveToDate = new Date(rule.effective_from);
         effectiveToDate.setDate(effectiveToDate.getDate() - 1);
-        const effectiveToStr = effectiveToDate.toISOString().split('T')[0];
-        
+        const effectiveToStr = effectiveToDate.toISOString().split("T")[0];
+
         // Закрываем все найденные ставки (может быть несколько, если были созданы с одинаковыми параметрами)
         const ruleIds = previousRuleArray.map((r: any) => r.id);
-        
+
         const { error: updateError } = await supabase
-          .from('staff_billing_rules' as any)
+          .from("staff_billing_rules" as any)
           .update({ effective_to: effectiveToStr })
-          .in('id', ruleIds);
-        
+          .in("id", ruleIds);
+
         if (updateError) throw updateError;
       }
 
@@ -239,22 +272,31 @@ export function useCreateStaffBillingRule() {
       delete insertData.rate;
 
       const { data, error } = await supabase
-        .from('staff_billing_rules' as any)
+        .from("staff_billing_rules" as any)
         .insert(insertData)
         .select()
         .single();
-      
+
       if (error) throw error;
       // Map rate_value back to rate for TypeScript interface
       const result = data as any;
-      return { ...result, rate: result.rate_value ?? result.rate ?? 0 } as StaffBillingRule;
+      return {
+        ...result,
+        rate: result.rate_value ?? result.rate ?? 0,
+      } as StaffBillingRule;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-billing-rules', data.staff_id] });
-      toast({ title: 'Правило розрахунку збережено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-billing-rules", data.staff_id],
+      });
+      toast({ title: "Правило розрахунку збережено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -262,33 +304,45 @@ export function useCreateStaffBillingRule() {
 // Update staff billing rule
 export function useUpdateStaffBillingRule() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: async ({ id, ...rule }: { id: string } & StaffBillingRuleUpdate) => {
+    mutationFn: async ({
+      id,
+      ...rule
+    }: { id: string } & StaffBillingRuleUpdate) => {
       // Map rate to rate_value for database if present
       const updateData: any = { ...rule };
-      if ('rate' in updateData) {
+      if ("rate" in updateData) {
         updateData.rate_value = updateData.rate;
         delete updateData.rate;
       }
-      
+
       const { data, error } = await supabase
-        .from('staff_billing_rules' as any)
+        .from("staff_billing_rules" as any)
         .update(updateData)
-        .eq('id', id)
+        .eq("id", id)
         .select()
         .single();
-      
+
       if (error) throw error;
       const result = data as any;
-      return { ...result, rate: result.rate_value ?? result.rate ?? 0 } as StaffBillingRule;
+      return {
+        ...result,
+        rate: result.rate_value ?? result.rate ?? 0,
+      } as StaffBillingRule;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-billing-rules', data.staff_id] });
-      toast({ title: 'Правило розрахунку оновлено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-billing-rules", data.staff_id],
+      });
+      toast({ title: "Правило розрахунку оновлено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -296,51 +350,61 @@ export function useUpdateStaffBillingRule() {
 // Delete staff billing rule
 export function useDeleteStaffBillingRule() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ id, staffId }: { id: string; staffId: string }) => {
       const { error } = await supabase
-        .from('staff_billing_rules' as any)
+        .from("staff_billing_rules" as any)
         .delete()
-        .eq('id', id);
-      
+        .eq("id", id);
+
       if (error) throw error;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-billing-rules', variables.staffId] });
-      toast({ title: 'Правило розрахунку видалено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-billing-rules", variables.staffId],
+      });
+      toast({ title: "Правило розрахунку видалено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
 
 // Get staff journal entries
-export function useStaffJournalEntries(staffId: string | undefined, month?: number, year?: number) {
+export function useStaffJournalEntries(
+  staffId: string | undefined,
+  month?: number,
+  year?: number,
+) {
   return useQuery({
-    queryKey: ['staff-journal-entries', staffId, month, year],
+    queryKey: ["staff-journal-entries", staffId, month, year],
     queryFn: async () => {
       if (!staffId) return [];
-      
+
       let query = supabase
-        .from('staff_journal_entries' as any)
-        .select('*')
-        .eq('staff_id', staffId);
-      
+        .from("staff_journal_entries" as any)
+        .select("*")
+        .eq("staff_id", staffId);
+
       if (month !== undefined && year !== undefined) {
         const startDate = getMonthStartDate(year, month);
         const endDate = getMonthEndDate(year, month);
-        query = query.gte('date', startDate).lte('date', endDate);
+        query = query.gte("date", startDate).lte("date", endDate);
       }
-      
-      query = query.order('date', { ascending: false });
-      
+
+      query = query.order("date", { ascending: false });
+
       const { data, error } = await query;
-      
+
       if (error) throw error;
       if (!data || !Array.isArray(data)) return [];
-      return (data as any[]).map(entry => ({
+      return (data as any[]).map((entry) => ({
         ...entry,
         deductions_applied: entry.deductions_applied || [],
         bonus: entry.bonus ?? null,
@@ -354,38 +418,42 @@ export function useStaffJournalEntries(staffId: string | undefined, month?: numb
 // Get all staff journal entries for a month (for expense journal)
 export function useAllStaffJournalEntries(month: number, year: number) {
   return useQuery({
-    queryKey: ['staff-journal-entries-all', month, year],
+    queryKey: ["staff-journal-entries-all", month, year],
     queryFn: async () => {
       const startDate = getMonthStartDate(year, month);
       const endDate = getMonthEndDate(year, month);
-      
+
       const { data, error } = await supabase
-        .from('staff_journal_entries' as any)
-        .select(`
+        .from("staff_journal_entries" as any)
+        .select(
+          `
           *,
           staff:staff(id, full_name),
           activity:activities(id, name)
-        `)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date', { ascending: true });
-      
+        `,
+        )
+        .gte("date", startDate)
+        .lte("date", endDate)
+        .order("date", { ascending: true });
+
       if (error) throw error;
-      
+
       // Map database results to our interface
-      if (!data || Array.isArray(data) && data.length === 0) return [];
-      return ((data as any[]) || []).map(entry => {
-        if (entry && typeof entry === 'object' && 'id' in entry) {
-          return {
-            ...entry,
-            staff: entry.staff || null,
-            activity: entry.activity || null,
-            bonus: entry.bonus ?? null,
-            bonus_notes: entry.bonus_notes ?? null,
-          };
-        }
-        return null;
-      }).filter(Boolean) as StaffJournalEntryWithRelations[];
+      if (!data || (Array.isArray(data) && data.length === 0)) return [];
+      return ((data as any[]) || [])
+        .map((entry) => {
+          if (entry && typeof entry === "object" && "id" in entry) {
+            return {
+              ...entry,
+              staff: entry.staff || null,
+              activity: entry.activity || null,
+              bonus: entry.bonus ?? null,
+              bonus_notes: entry.bonus_notes ?? null,
+            };
+          }
+          return null;
+        })
+        .filter(Boolean) as StaffJournalEntryWithRelations[];
     },
   });
 }
@@ -393,44 +461,49 @@ export function useAllStaffJournalEntries(month: number, year: number) {
 // Create or update staff journal entry
 export function useUpsertStaffJournalEntry() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (entry: StaffJournalEntryInsert) => {
       // Спочатку перевіряємо, чи існує запис з такими staff_id, activity_id (включно з NULL) та date
       // Використовуємо .limit(1), щоб обмежити кількість результатів на випадок дублікатів
       let query = supabase
-        .from('staff_journal_entries' as any)
-        .select('id')
-        .eq('staff_id', entry.staff_id)
-        .eq('date', entry.date)
-        .eq('is_manual_override', entry.is_manual_override)
+        .from("staff_journal_entries" as any)
+        .select("id")
+        .eq("staff_id", entry.staff_id)
+        .eq("date", entry.date)
+        .eq("is_manual_override", entry.is_manual_override)
         .limit(1);
-      
+
       if (entry.activity_id === null) {
-        query = query.is('activity_id', null);
+        query = query.is("activity_id", null);
       } else {
-        query = query.eq('activity_id', entry.activity_id);
+        query = query.eq("activity_id", entry.activity_id);
       }
 
-      if (entry.group_lesson_id === null || entry.group_lesson_id === undefined) {
-        query = query.is('group_lesson_id', null);
+      if (
+        entry.group_lesson_id === null ||
+        entry.group_lesson_id === undefined
+      ) {
+        query = query.is("group_lesson_id", null);
       } else {
-        query = query.eq('group_lesson_id', entry.group_lesson_id);
+        query = query.eq("group_lesson_id", entry.group_lesson_id);
       }
-      
+
       // Використовуємо масив замість maybeSingle, щоб уникнути помилки "multiple rows"
       const { data: existingArray, error: checkError } = await query;
-      
+
       if (checkError) throw checkError;
 
       let result;
       // Беремо перший запис з масиву (якщо він існує)
-      const existing = (existingArray && existingArray.length > 0 ? existingArray[0] : null) as { id: string } | null;
-      
-      if (existing && typeof existing === 'object' && 'id' in existing) {
+      const existing = (
+        existingArray && existingArray.length > 0 ? existingArray[0] : null
+      ) as { id: string } | null;
+
+      if (existing && typeof existing === "object" && "id" in existing) {
         // Якщо запис існує - оновлюємо його
         const { data: updateData, error: updateError } = await supabase
-          .from('staff_journal_entries' as any)
+          .from("staff_journal_entries" as any)
           .update({
             amount: entry.amount,
             base_amount: entry.base_amount,
@@ -440,17 +513,18 @@ export function useUpsertStaffJournalEntry() {
             notes: entry.notes,
             bonus: entry.bonus ?? null,
             bonus_notes: entry.bonus_notes ?? null,
+            description: entry.description ?? null,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', existing.id)
+          .eq("id", existing.id)
           .select()
           .maybeSingle();
-        
+
         if (updateError) throw updateError;
         if (!updateData) {
           // Якщо рядок не знайдено (можливо, був видалений між перевіркою та оновленням), створюємо новий
           const { data: insertData, error: insertError } = await supabase
-            .from('staff_journal_entries' as any)
+            .from("staff_journal_entries" as any)
             .insert({
               staff_id: entry.staff_id,
               activity_id: entry.activity_id,
@@ -464,10 +538,11 @@ export function useUpsertStaffJournalEntry() {
               notes: entry.notes,
               bonus: entry.bonus ?? null,
               bonus_notes: entry.bonus_notes ?? null,
+              description: entry.description ?? null,
             })
             .select()
             .single();
-          
+
           if (insertError) throw insertError;
           result = insertData;
         } else {
@@ -476,11 +551,11 @@ export function useUpsertStaffJournalEntry() {
       } else {
         // Якщо запис не існує - створюємо новий
         const { data, error } = await supabase
-          .from('staff_journal_entries' as any)
-        .insert({
+          .from("staff_journal_entries" as any)
+          .insert({
             staff_id: entry.staff_id,
             activity_id: entry.activity_id,
-          group_lesson_id: entry.group_lesson_id ?? null,
+            group_lesson_id: entry.group_lesson_id ?? null,
             date: entry.date,
             amount: entry.amount,
             base_amount: entry.base_amount,
@@ -490,18 +565,19 @@ export function useUpsertStaffJournalEntry() {
             notes: entry.notes,
             bonus: entry.bonus ?? null,
             bonus_notes: entry.bonus_notes ?? null,
+            description: entry.description ?? null,
           })
           .select()
           .single();
-        
+
         if (error) throw error;
         result = data;
       }
 
-      if (!result || typeof result !== 'object' || !('id' in (result as any))) {
-        throw new Error('Invalid response from database');
+      if (!result || typeof result !== "object" || !("id" in (result as any))) {
+        throw new Error("Invalid response from database");
       }
-      
+
       const mappedResult = result as any;
       return {
         ...mappedResult,
@@ -509,17 +585,23 @@ export function useUpsertStaffJournalEntry() {
       } as StaffJournalEntry;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries', data.staff_id] });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries", data.staff_id],
+      });
       // Invalidate all month/year combinations for staff-journal-entries-all
       // This ensures the expense journal refreshes regardless of which month/year is displayed
-      queryClient.invalidateQueries({ 
-        queryKey: ['staff-journal-entries-all'],
-        exact: false // This will match all queries starting with this key
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries-all"],
+        exact: false, // This will match all queries starting with this key
       });
-      toast({ title: 'Запис збережено' });
+      toast({ title: "Запис збережено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -527,66 +609,73 @@ export function useUpsertStaffJournalEntry() {
 // Delete staff journal entry
 export function useDeleteStaffJournalEntry() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: async ({ 
-      id, 
-      staff_id, 
-      activity_id, 
+    mutationFn: async ({
+      id,
+      staff_id,
+      activity_id,
       date,
       group_lesson_id,
-      is_manual_override
-    }: { 
-      id?: string; 
-      staff_id?: string; 
-      activity_id?: string; 
+      is_manual_override,
+    }: {
+      id?: string;
+      staff_id?: string;
+      activity_id?: string;
       date?: string;
       group_lesson_id?: string | null;
       is_manual_override?: boolean;
       staffId?: string; // Legacy support
     }) => {
-      let query = supabase
-        .from('staff_journal_entries' as any)
-        .delete();
-      
+      let query = supabase.from("staff_journal_entries" as any).delete();
+
       if (id) {
-        query = query.eq('id', id);
+        query = query.eq("id", id);
       } else if (staff_id && activity_id && date) {
-        query = query.eq('staff_id', staff_id)
-                     .eq('activity_id', activity_id)
-                     .eq('date', date);
-        if (typeof is_manual_override === 'boolean') {
-          query = query.eq('is_manual_override', is_manual_override);
+        query = query
+          .eq("staff_id", staff_id)
+          .eq("activity_id", activity_id)
+          .eq("date", date);
+        if (typeof is_manual_override === "boolean") {
+          query = query.eq("is_manual_override", is_manual_override);
         }
         if (group_lesson_id === null) {
-          query = query.is('group_lesson_id', null);
+          query = query.is("group_lesson_id", null);
         } else if (group_lesson_id) {
-          query = query.eq('group_lesson_id', group_lesson_id);
+          query = query.eq("group_lesson_id", group_lesson_id);
         }
       } else {
-        throw new Error('Either id or (staff_id, activity_id, date) must be provided');
+        throw new Error(
+          "Either id or (staff_id, activity_id, date) must be provided",
+        );
       }
-      
+
       const { error } = await query;
-      
+
       if (error) throw error;
-      
+
       return { staff_id: staff_id || id };
     },
     onSuccess: (_, variables) => {
       const staffId = variables.staff_id || variables.staffId;
       if (staffId) {
-        queryClient.invalidateQueries({ queryKey: ['staff-journal-entries', staffId] });
+        queryClient.invalidateQueries({
+          queryKey: ["staff-journal-entries", staffId],
+        });
       }
       // Invalidate all month/year combinations for staff-journal-entries-all
-      queryClient.invalidateQueries({ 
-        queryKey: ['staff-journal-entries-all'],
-        exact: false // This will match all queries starting with this key
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries-all"],
+        exact: false, // This will match all queries starting with this key
       });
-      toast({ title: 'Запис видалено' });
+      toast({ title: "Запис видалено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -596,14 +685,18 @@ export function getStaffBillingRuleForDate(
   rules: StaffBillingRule[] | undefined,
   date: string,
   activityId: string | null = null,
-  groupLessonId: string | null = null
+  groupLessonId: string | null = null,
 ): StaffBillingRule | null {
   if (!rules || rules.length === 0) return null;
 
   const dateObj = new Date(date);
 
   const matchesActivity = (rule: StaffBillingRule) => {
-    if (activityId !== null && rule.activity_id !== activityId && rule.activity_id !== null) {
+    if (
+      activityId !== null &&
+      rule.activity_id !== activityId &&
+      rule.activity_id !== null
+    ) {
       return false;
     }
     return true;
@@ -620,29 +713,36 @@ export function getStaffBillingRuleForDate(
 
   if (groupLessonId) {
     const lessonRule = findApplicable(
-      rules.filter((rule) => matchesActivity(rule) && rule.group_lesson_id === groupLessonId)
+      rules.filter(
+        (rule) =>
+          matchesActivity(rule) && rule.group_lesson_id === groupLessonId,
+      ),
     );
     if (lessonRule) return lessonRule;
   }
 
   return findApplicable(
-    rules.filter((rule) => matchesActivity(rule) && (rule.group_lesson_id === null || rule.group_lesson_id === undefined))
+    rules.filter(
+      (rule) =>
+        matchesActivity(rule) &&
+        (rule.group_lesson_id === null || rule.group_lesson_id === undefined),
+    ),
   );
 }
 
 // Get staff manual rate history for a specific staff member
 export function useStaffManualRateHistory(staffId: string | undefined) {
   return useQuery({
-    queryKey: ['staff-manual-rate-history', staffId],
+    queryKey: ["staff-manual-rate-history", staffId],
     queryFn: async () => {
       if (!staffId) return [];
-      
+
       const { data, error } = await supabase
-        .from('staff_manual_rate_history' as any)
-        .select('*')
-        .eq('staff_id', staffId)
-        .order('effective_from', { ascending: false });
-      
+        .from("staff_manual_rate_history" as any)
+        .select("*")
+        .eq("staff_id", staffId)
+        .order("effective_from", { ascending: false });
+
       if (error) throw error;
       return ((data as any) || []) as StaffManualRateHistory[];
     },
@@ -654,26 +754,30 @@ export function useStaffManualRateHistory(staffId: string | undefined) {
 export function getStaffManualRateForDate(
   history: StaffManualRateHistory[] | undefined,
   date: string,
-  activityId: string | null = null
+  activityId: string | null = null,
 ): StaffManualRateHistory | null {
   if (!history || history.length === 0) return null;
 
   const dateObj = new Date(date);
 
-  const applicableEntry = history.find(entry => {
-    if (activityId !== null && entry.activity_id !== activityId && entry.activity_id !== null) {
+  const applicableEntry = history.find((entry) => {
+    if (
+      activityId !== null &&
+      entry.activity_id !== activityId &&
+      entry.activity_id !== null
+    ) {
       return false;
     }
     const fromDate = new Date(entry.effective_from);
     const toDate = entry.effective_to ? new Date(entry.effective_to) : null;
-    
+
     return dateObj >= fromDate && (!toDate || dateObj < toDate);
   });
-  
+
   if (!applicableEntry) return null;
   if (activityId === null) return applicableEntry;
 
-  const specific = history.find(entry => {
+  const specific = history.find((entry) => {
     if (entry.activity_id !== activityId) return false;
     const fromDate = new Date(entry.effective_from);
     const toDate = entry.effective_to ? new Date(entry.effective_to) : null;
@@ -686,86 +790,96 @@ export function getStaffManualRateForDate(
 // Create staff manual rate history entry
 export function useCreateStaffManualRateHistory() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (entry: StaffManualRateHistoryInsert) => {
       // Check if entry with same effective_from and activity_id already exists (UNIQUE constraint)
       // The constraint is now (staff_id, activity_id, effective_from), so we need to check for exact match
       let existingQuery = supabase
-        .from('staff_manual_rate_history' as any)
-        .select('id, effective_to')
-        .eq('staff_id', entry.staff_id)
-        .eq('effective_from', entry.effective_from);
+        .from("staff_manual_rate_history" as any)
+        .select("id, effective_to")
+        .eq("staff_id", entry.staff_id)
+        .eq("effective_from", entry.effective_from);
 
-      existingQuery = entry.activity_id === null
-        ? existingQuery.is('activity_id', null)
-        : existingQuery.eq('activity_id', entry.activity_id);
+      existingQuery =
+        entry.activity_id === null
+          ? existingQuery.is("activity_id", null)
+          : existingQuery.eq("activity_id", entry.activity_id);
 
-      const { data: existingEntry, error: findExistingError } = await existingQuery.maybeSingle();
+      const { data: existingEntry, error: findExistingError } =
+        await existingQuery.maybeSingle();
 
       if (findExistingError) throw findExistingError;
 
       // If entry with same effective_from and activity_id exists, update it instead of creating new
       if (existingEntry && (existingEntry as any).id) {
         const { data: updatedData, error: updateError } = await supabase
-          .from('staff_manual_rate_history' as any)
+          .from("staff_manual_rate_history" as any)
           .update({
             manual_rate_type: entry.manual_rate_type,
             manual_rate_value: entry.manual_rate_value,
             effective_to: entry.effective_to,
           })
-          .eq('id', (existingEntry as any).id)
+          .eq("id", (existingEntry as any).id)
           .select()
           .single();
-        
+
         if (updateError) throw updateError;
-        return (updatedData as any) as StaffManualRateHistory;
+        return updatedData as any as StaffManualRateHistory;
       }
 
       // Close previous active entry if exists
       let previousQuery = supabase
-        .from('staff_manual_rate_history' as any)
-        .select('id')
-        .eq('staff_id', entry.staff_id)
-        .is('effective_to', null);
+        .from("staff_manual_rate_history" as any)
+        .select("id")
+        .eq("staff_id", entry.staff_id)
+        .is("effective_to", null);
 
-      previousQuery = entry.activity_id === null
-        ? previousQuery.is('activity_id', null)
-        : previousQuery.eq('activity_id', entry.activity_id);
+      previousQuery =
+        entry.activity_id === null
+          ? previousQuery.is("activity_id", null)
+          : previousQuery.eq("activity_id", entry.activity_id);
 
-      const { data: previousEntry, error: findError } = await previousQuery.maybeSingle();
+      const { data: previousEntry, error: findError } =
+        await previousQuery.maybeSingle();
 
       if (findError) throw findError;
 
       if (previousEntry && (previousEntry as any).id) {
         const effectiveToDate = new Date(entry.effective_from);
         effectiveToDate.setDate(effectiveToDate.getDate() - 1);
-        const effectiveToStr = effectiveToDate.toISOString().split('T')[0];
-        
+        const effectiveToStr = effectiveToDate.toISOString().split("T")[0];
+
         const { error: updateError } = await supabase
-          .from('staff_manual_rate_history' as any)
+          .from("staff_manual_rate_history" as any)
           .update({ effective_to: effectiveToStr })
-          .eq('id', (previousEntry as any).id);
-        
+          .eq("id", (previousEntry as any).id);
+
         if (updateError) throw updateError;
       }
 
       // Create new entry
       const { data, error } = await supabase
-        .from('staff_manual_rate_history' as any)
+        .from("staff_manual_rate_history" as any)
         .insert(entry)
         .select()
         .single();
-      
+
       if (error) throw error;
-      return (data as any) as StaffManualRateHistory;
+      return data as any as StaffManualRateHistory;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-manual-rate-history', data.staff_id] });
-      toast({ title: 'Ставку збережено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-manual-rate-history", data.staff_id],
+      });
+      toast({ title: "Ставку збережено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -773,22 +887,28 @@ export function useCreateStaffManualRateHistory() {
 // Delete staff manual rate history entry
 export function useDeleteStaffManualRateHistory() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ id, staffId }: { id: string; staffId: string }) => {
       const { error } = await supabase
-        .from('staff_manual_rate_history' as any)
+        .from("staff_manual_rate_history" as any)
         .delete()
-        .eq('id', id);
-      
+        .eq("id", id);
+
       if (error) throw error;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-manual-rate-history', variables.staffId] });
-      toast({ title: 'Ставку видалено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-manual-rate-history", variables.staffId],
+      });
+      toast({ title: "Ставку видалено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -807,23 +927,28 @@ export interface StaffPayout {
   updated_at: string;
 }
 
-export type StaffPayoutInsert = Omit<StaffPayout, 'id' | 'created_at' | 'updated_at'>;
-export type StaffPayoutUpdate = Partial<Omit<StaffPayout, 'id' | 'staff_id' | 'created_at'>>;
+export type StaffPayoutInsert = Omit<
+  StaffPayout,
+  "id" | "created_at" | "updated_at"
+>;
+export type StaffPayoutUpdate = Partial<
+  Omit<StaffPayout, "id" | "staff_id" | "created_at">
+>;
 
 // Get all payouts for a specific staff member
 export function useStaffPayouts(staffId: string | undefined) {
   return useQuery({
-    queryKey: ['staff-payouts', staffId],
+    queryKey: ["staff-payouts", staffId],
     queryFn: async () => {
       if (!staffId) return [];
-      
+
       const { data, error } = await supabase
-        .from('staff_payouts' as any)
-        .select('*')
-        .eq('staff_id', staffId)
-        .or('is_deleted.is.null,is_deleted.eq.false')
-        .order('payout_date', { ascending: false });
-      
+        .from("staff_payouts" as any)
+        .select("*")
+        .eq("staff_id", staffId)
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .order("payout_date", { ascending: false });
+
       if (error) throw error;
       return ((data as any) || []) as StaffPayout[];
     },
@@ -834,14 +959,14 @@ export function useStaffPayouts(staffId: string | undefined) {
 // Get all payouts for all staff (for payroll registry)
 export function useAllStaffPayouts() {
   return useQuery({
-    queryKey: ['staff-payouts-all'],
+    queryKey: ["staff-payouts-all"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('staff_payouts' as any)
-        .select('*')
-        .or('is_deleted.is.null,is_deleted.eq.false')
-        .order('payout_date', { ascending: false });
-      
+        .from("staff_payouts" as any)
+        .select("*")
+        .or("is_deleted.is.null,is_deleted.eq.false")
+        .order("payout_date", { ascending: false });
+
       if (error) throw error;
       return ((data as any) || []) as StaffPayout[];
     },
@@ -851,27 +976,40 @@ export function useAllStaffPayouts() {
 // Create staff payout
 export function useCreateStaffPayout() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (payout: StaffPayoutInsert) => {
       const { data, error } = await supabase
-        .from('staff_payouts' as any)
+        .from("staff_payouts" as any)
         .insert(payout)
         .select()
         .single();
-      
+
       if (error) throw error;
-      return (data as any) as StaffPayout;
+      return data as any as StaffPayout;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-payouts', data.staff_id], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['staff-payouts-all'], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts", data.staff_id],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
       // Also invalidate journal entries to update calendar in StaffDetail
-      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries', data.staff_id], exact: false });
-      toast({ title: 'Виплату збережено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries", data.staff_id],
+        exact: false,
+      });
+      toast({ title: "Виплату збережено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -879,28 +1017,44 @@ export function useCreateStaffPayout() {
 // Update staff payout
 export function useUpdateStaffPayout() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: async ({ id, ...updates }: StaffPayoutUpdate & { id: string }) => {
+    mutationFn: async ({
+      id,
+      ...updates
+    }: StaffPayoutUpdate & { id: string }) => {
       const { data, error } = await supabase
-        .from('staff_payouts' as any)
+        .from("staff_payouts" as any)
         .update(updates)
-        .eq('id', id)
+        .eq("id", id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      return (data as any) as StaffPayout;
+      return data as any as StaffPayout;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-payouts', data.staff_id], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['staff-payouts-all'], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts", data.staff_id],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
       // Also invalidate journal entries to update calendar in StaffDetail
-      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries', data.staff_id], exact: false });
-      toast({ title: 'Виплату оновлено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries", data.staff_id],
+        exact: false,
+      });
+      toast({ title: "Виплату оновлено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }
@@ -908,29 +1062,50 @@ export function useUpdateStaffPayout() {
 // Delete staff payout
 export function useDeleteStaffPayout() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationFn: async ({ id, staffId, deleteNote }: { id: string; staffId: string; deleteNote?: string | null }) => {
+    mutationFn: async ({
+      id,
+      staffId,
+      deleteNote,
+    }: {
+      id: string;
+      staffId: string;
+      deleteNote?: string | null;
+    }) => {
       const { error } = await supabase
-        .from('staff_payouts' as any)
+        .from("staff_payouts" as any)
         .update({
           is_deleted: true,
           deleted_at: new Date().toISOString(),
           deleted_note: deleteNote || null,
         })
-        .eq('id', id);
-      
+        .eq("id", id);
+
       if (error) throw error;
     },
     onSuccess: (_, { staffId }) => {
-      queryClient.invalidateQueries({ queryKey: ['staff-payouts', staffId], exact: false });
-      queryClient.invalidateQueries({ queryKey: ['staff-payouts-all'], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts", staffId],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
       // Also invalidate journal entries to update calendar in StaffDetail
-      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries', staffId], exact: false });
-      toast({ title: 'Виплату видалено' });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries", staffId],
+        exact: false,
+      });
+      toast({ title: "Виплату видалено" });
     },
     onError: (error: any) => {
-      toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
+      toast({
+        title: "Помилка",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 }

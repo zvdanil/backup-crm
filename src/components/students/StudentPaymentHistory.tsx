@@ -1,6 +1,9 @@
-import { useFinanceTransactions, useDeletePaymentTransaction } from '@/hooks/useFinanceTransactions';
-import { formatCurrency, formatDate } from '@/lib/attendance';
-import { useActivities } from '@/hooks/useActivities';
+import {
+  useFinanceTransactions,
+  useDeletePaymentTransaction,
+} from "@/hooks/useFinanceTransactions";
+import { formatCurrency, formatDate } from "@/lib/attendance";
+import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
 import {
   Table,
   TableBody,
@@ -8,15 +11,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { cn } from '@/lib/utils';
-import { Wallet, Trash2 } from 'lucide-react';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { useAuth } from '@/context/AuthContext';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { DeleteTransactionDialog } from './DeleteTransactionDialog';
-import { toast } from '@/hooks/use-toast';
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import { Wallet, Trash2 } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/context/AuthContext";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { DeleteTransactionDialog } from "./DeleteTransactionDialog";
+import { toast } from "@/hooks/use-toast";
 
 interface StudentPaymentHistoryProps {
   studentId: string;
@@ -24,50 +27,53 @@ interface StudentPaymentHistoryProps {
   year?: number;
 }
 
-export function StudentPaymentHistory({ 
-  studentId, 
-  month, 
-  year 
+export function StudentPaymentHistory({
+  studentId,
+  month,
+  year,
 }: StudentPaymentHistoryProps) {
   const { data: payments = [], isLoading } = useFinanceTransactions({
     studentId,
-    type: 'payment',
+    type: "payment",
     month,
     year,
   });
-  const { data: activities = [] } = useActivities();
+  const { data: accounts = [] } = usePaymentAccounts();
   const isMobile = useIsMobile();
   const { role } = useAuth();
   const deletePayment = useDeletePaymentTransaction();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<{ id: string; amount: number } | null>(null);
-  
-  const canDelete = role === 'owner' || role === 'admin';
-  
+  const [selectedPayment, setSelectedPayment] = useState<{
+    id: string;
+    amount: number;
+  } | null>(null);
+
+  const canDelete = role === "owner" || role === "admin";
+
   const handleDeleteClick = (paymentId: string, amount: number) => {
     setSelectedPayment({ id: paymentId, amount });
     setDeleteDialogOpen(true);
   };
-  
+
   const handleDeleteConfirm = async (reason: string) => {
     if (!selectedPayment) return;
-    
+
     try {
       await deletePayment.mutateAsync({
         transactionId: selectedPayment.id,
         reason,
       });
       toast({
-        title: 'Успішно',
-        description: 'Платіж видалено',
+        title: "Успішно",
+        description: "Платіж видалено",
       });
       setDeleteDialogOpen(false);
       setSelectedPayment(null);
     } catch (error: any) {
       toast({
-        title: 'Помилка',
-        description: error.message || 'Не вдалося видалити платіж',
-        variant: 'destructive',
+        title: "Помилка",
+        description: error.message || "Не вдалося видалити платіж",
+        variant: "destructive",
       });
     }
   };
@@ -97,30 +103,26 @@ export function StudentPaymentHistory({
       {isMobile ? (
         <div className="space-y-3">
           {payments.map((payment) => {
-            const activity = payment.activity_id
-              ? activities.find(a => a.id === payment.activity_id)
+            const account = payment.account_id
+              ? accounts.find((a) => a.id === payment.account_id)
               : null;
 
             return (
               <div key={payment.id} className="rounded-lg border p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs text-muted-foreground">{formatDate(payment.date)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatDate(payment.date)}
+                    </div>
                     <div className="mt-1 text-sm font-medium">
-                      {activity ? (
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: activity.color }}
-                          />
-                          <span className="break-words">{activity.name}</span>
-                        </div>
+                      {account ? (
+                        <span className="break-words">{account.name}</span>
                       ) : (
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground break-words">
-                      {payment.description || '—'}
+                      {payment.description || "—"}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -134,7 +136,9 @@ export function StudentPaymentHistory({
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => handleDeleteClick(payment.id, payment.amount || 0)}
+                        onClick={() =>
+                          handleDeleteClick(payment.id, payment.amount || 0)
+                        }
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -148,70 +152,63 @@ export function StudentPaymentHistory({
       ) : (
         <div className="overflow-x-auto">
           <Table className="min-w-[520px]">
-          <TableHeader>
+            <TableHeader>
               <TableRow>
                 <TableHead>Дата</TableHead>
-                <TableHead>Активність</TableHead>
+                <TableHead>Рахунок</TableHead>
                 <TableHead>Опис</TableHead>
                 <TableHead className="text-right">Сума</TableHead>
                 {canDelete && <TableHead className="w-[50px]"></TableHead>}
               </TableRow>
-          </TableHeader>
-          <TableBody>
-            {payments.map((payment) => {
-              const activity = payment.activity_id 
-                ? activities.find(a => a.id === payment.activity_id)
-                : null;
-              
-              return (
-                <TableRow key={payment.id}>
-                  <TableCell className="text-muted-foreground">
-                    {formatDate(payment.date)}
-                  </TableCell>
-                  <TableCell>
-                    {activity ? (
-                      <div className="flex items-center gap-2">
-                        <span 
-                          className="w-3 h-3 rounded-full" 
-                          style={{ backgroundColor: activity.color }}
-                        />
-                        <span className="text-sm">{activity.name}</span>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {payment.description || '—'}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <span className={cn(
-                      "font-semibold",
-                      "text-success"
-                    )}>
-                      +{formatCurrency(payment.amount || 0)}
-                    </span>
-                  </TableCell>
-                  {canDelete && (
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => handleDeleteClick(payment.id, payment.amount || 0)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+            </TableHeader>
+            <TableBody>
+              {payments.map((payment) => {
+                const account = payment.account_id
+                  ? accounts.find((a) => a.id === payment.account_id)
+                  : null;
+
+                return (
+                  <TableRow key={payment.id}>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(payment.date)}
                     </TableCell>
-                  )}
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
+                    <TableCell>
+                      {account ? (
+                        <span className="text-sm">{account.name}</span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {payment.description || "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span className={cn("font-semibold", "text-success")}>
+                        +{formatCurrency(payment.amount || 0)}
+                      </span>
+                    </TableCell>
+                    {canDelete && (
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() =>
+                            handleDeleteClick(payment.id, payment.amount || 0)
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
       )}
-      
+
       {payments.length > 0 && (
         <div className="flex justify-end pt-2 border-t">
           <div className="text-sm">
@@ -222,7 +219,7 @@ export function StudentPaymentHistory({
           </div>
         </div>
       )}
-      
+
       {selectedPayment && (
         <DeleteTransactionDialog
           open={deleteDialogOpen}

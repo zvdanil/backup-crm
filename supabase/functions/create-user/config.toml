@@ -1,0 +1,2 @@
+# Disable JWT verification at the edge gateway for this function.
+verify_jwt = false

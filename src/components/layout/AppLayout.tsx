@@ -45,7 +45,8 @@ const referenceItems = [
 // Основные пункты меню (остаются в верхнем меню)
 const navigation = [
   { name: 'Дашборд', href: '/', icon: LayoutDashboard, section: 'dashboard' },
-  { name: 'Додаткові заняття', href: '/attendance', icon: Calendar, section: 'attendance' },
+  { name: 'Календар', href: '/calendar', icon: Calendar, section: 'calendar' },
+  { name: 'Журнал занять', href: '/attendance', icon: BookOpenCheck, section: 'attendance' },
   { name: 'Групові заняття', href: '/group-lessons', icon: ClipboardList, section: 'group_lessons_journal' },
   { name: 'Журнал відвідування', href: '/garden-attendance', icon: ClipboardList, section: 'garden_attendance' },
   { name: 'Відомість харчування', href: '/nutrition-report', icon: UtensilsCrossed, section: 'nutrition' },

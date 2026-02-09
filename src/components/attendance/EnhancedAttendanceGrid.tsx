@@ -1,41 +1,59 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
+import { Link } from "react-router-dom";
+import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { EnhancedAttendanceCell } from './EnhancedAttendanceCell';
-import { useEnrollments, useCreateEnrollment } from '@/hooks/useEnrollments';
-import { useAttendance, useSetAttendance, useDeleteAttendance } from '@/hooks/useAttendance';
-import { useActivity } from '@/hooks/useActivities';
-import { useGroups } from '@/hooks/useGroups';
-import { useStaff } from '@/hooks/useStaff';
-import { useStudents } from '@/hooks/useStudents';
-import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate } from '@/hooks/useStaffBilling';
-import { calculateMonthlyStaffAccruals, type AttendanceRecord } from '@/lib/salaryCalculator';
-import { applyDeductionsToAmount } from '@/lib/staffSalary';
-import { 
-  getDaysInMonth, 
-  formatShortDate, 
-  getWeekdayShort, 
+} from "@/components/ui/select";
+import { EnhancedAttendanceCell } from "./EnhancedAttendanceCell";
+import { useEnrollments, useCreateEnrollment } from "@/hooks/useEnrollments";
+import {
+  useAttendance,
+  useSetAttendance,
+  useDeleteAttendance,
+} from "@/hooks/useAttendance";
+import { useActivity } from "@/hooks/useActivities";
+import { useGroups } from "@/hooks/useGroups";
+import { useStaff } from "@/hooks/useStaff";
+import { useStudents } from "@/hooks/useStudents";
+import {
+  useUpsertStaffJournalEntry,
+  useDeleteStaffJournalEntry,
+  useAllStaffBillingRulesForActivity,
+  getStaffBillingRuleForDate,
+} from "@/hooks/useStaffBilling";
+import {
+  calculateMonthlyStaffAccruals,
+  type AttendanceRecord,
+} from "@/lib/salaryCalculator";
+import { applyDeductionsToAmount } from "@/lib/staffSalary";
+import {
+  getDaysInMonth,
+  formatShortDate,
+  getWeekdayShort,
   isWeekend,
   WEEKEND_BG_COLOR,
-  calculateChargedAmount, 
+  calculateChargedAmount,
   formatCurrency,
   calculateValueFromBillingRules,
   calculateHourlyValueFromRule,
@@ -43,34 +61,55 @@ import {
   filterDaysByPeriod,
   getMonthStartDate,
   getMonthEndDate,
-  type PeriodFilter
-} from '@/lib/attendance';
-import type { AttendanceStatus } from '@/lib/attendance';
-import { useActivityPriceHistory, getBillingRulesForDate } from '@/hooks/useActivities';
-import { cn } from '@/lib/utils';
-import { useIsMobile } from '@/hooks/use-mobile';
+  type PeriodFilter,
+} from "@/lib/attendance";
+import type { AttendanceStatus } from "@/lib/attendance";
+import {
+  useActivityPriceHistory,
+  getBillingRulesForDate,
+} from "@/hooks/useActivities";
+import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/context/AuthContext";
 
 const MONTHS = [
-  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
-  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
+  "Січень",
+  "Лютий",
+  "Березень",
+  "Квітень",
+  "Травень",
+  "Червень",
+  "Липень",
+  "Серпень",
+  "Вересень",
+  "Жовтень",
+  "Листопад",
+  "Грудень",
 ];
 
 interface AttendanceGridProps {
   activityId: string;
+  initialDate?: Date;
 }
 
-export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
+export function EnhancedAttendanceGrid({
+  activityId,
+  initialDate,
+}: AttendanceGridProps) {
+  const { role } = useAuth();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
-  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
-  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("month");
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(
+    new Set(["all"]),
+  );
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
   const isMobile = useIsMobile();
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
-  const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [customPrice, setCustomPrice] = useState('');
-  const [discountPercent, setDiscountPercent] = useState('0');
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+  const [discountPercent, setDiscountPercent] = useState("0");
   const [isRecalculating, setIsRecalculating] = useState(false);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const totalsScrollRef = useRef<HTMLDivElement>(null);
@@ -78,33 +117,37 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const { data: activity } = useActivity(activityId);
   const { data: priceHistory } = useActivityPriceHistory(activityId);
-  
+
   // Debug logging для проверки загрузки activity
   useEffect(() => {
     if (activity) {
-      console.log('[EnhancedAttendanceGrid] Activity loaded:', {
+      console.log("[EnhancedAttendanceGrid] Activity loaded:", {
         id: activity.id,
         name: activity.name,
         billing_rules: activity.billing_rules,
         custom_statuses: activity.billing_rules?.custom_statuses,
-        custom_statuses_length: activity.billing_rules?.custom_statuses?.length || 0,
+        custom_statuses_length:
+          activity.billing_rules?.custom_statuses?.length || 0,
       });
     } else {
-      console.log('[EnhancedAttendanceGrid] Activity is null/undefined');
+      console.log("[EnhancedAttendanceGrid] Activity is null/undefined");
     }
   }, [activity]);
-  const { data: allStaffBillingRules = [] } = useAllStaffBillingRulesForActivity(activityId);
+  const { data: allStaffBillingRules = [] } =
+    useAllStaffBillingRulesForActivity(activityId);
   const { data: groups = [] } = useGroups();
   const { data: students = [] } = useStudents();
   const { data: staff = [] } = useStaff();
-  const { data: enrollments = [], isLoading: enrollmentsLoading } = useEnrollments({ 
-    activityId
-  });
-  const { data: attendanceData = [], isLoading: attendanceLoading } = useAttendance({ 
-    activityId, 
-    month, 
-    year,
-  });
+  const { data: enrollments = [], isLoading: enrollmentsLoading } =
+    useEnrollments({
+      activityId,
+    });
+  const { data: attendanceData = [], isLoading: attendanceLoading } =
+    useAttendance({
+      activityId,
+      month,
+      year,
+    });
   const setAttendance = useSetAttendance();
   const deleteAttendance = useDeleteAttendance();
   const upsertStaffJournalEntry = useUpsertStaffJournalEntry();
@@ -112,14 +155,32 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   const createEnrollment = useCreateEnrollment();
 
   const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
+  const days = useMemo(
+    () => filterDaysByPeriod(allDays, periodFilter, now),
+    [allDays, periodFilter, now],
+  );
   const selectedDay = allDays[selectedDayIndex] || allDays[0];
-  const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
+  const selectedDateStr = selectedDay ? formatDateString(selectedDay) : "";
+
+  useEffect(() => {
+    if (!initialDate) return;
+    const nextYear = initialDate.getFullYear();
+    const nextMonth = initialDate.getMonth();
+    const dayIndex = Math.max(0, initialDate.getDate() - 1);
+    const daysInTargetMonth = getDaysInMonth(nextYear, nextMonth);
+    setYear(nextYear);
+    setMonth(nextMonth);
+    setSelectedDayIndex(
+      Math.min(dayIndex, Math.max(0, daysInTargetMonth.length - 1)),
+    );
+  }, [initialDate]);
 
   useEffect(() => {
     const today = new Date();
     if (year === today.getFullYear() && month === today.getMonth()) {
-      setSelectedDayIndex(Math.max(0, Math.min(today.getDate() - 1, days.length - 1)));
+      setSelectedDayIndex(
+        Math.max(0, Math.min(today.getDate() - 1, days.length - 1)),
+      );
     } else {
       setSelectedDayIndex(0);
     }
@@ -129,7 +190,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     const set = new Set<string>();
     if (!attendanceData || !Array.isArray(attendanceData)) return set;
     attendanceData.forEach((entry: any) => {
-      const amount = entry.value ?? entry.charged_amount ?? 0;
+      const amount = entry.charged_amount ?? 0;
       if (amount > 0) {
         set.add(entry.enrollment_id);
       }
@@ -149,40 +210,47 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const eligibleStudents = useMemo(() => {
     return students.filter((student) => {
-      if (student.status !== 'active') return false;
+      if (student.status !== "active") return false;
       return !activeEnrollmentStudentIds.has(student.id);
     });
   }, [students, activeEnrollmentStudentIds]);
 
   const handleAddStudent = async () => {
-    if (!selectedStudentId || selectedStudentId === 'none') return;
+    if (!selectedStudentId || selectedStudentId === "none") return;
     await createEnrollment.mutateAsync({
       student_id: selectedStudentId,
       activity_id: activityId,
       custom_price: customPrice.trim() ? parseFloat(customPrice) : null,
-      discount_percent: discountPercent.trim() ? parseFloat(discountPercent) : 0,
+      discount_percent: discountPercent.trim()
+        ? parseFloat(discountPercent)
+        : 0,
     });
-    setSelectedStudentId('');
-    setCustomPrice('');
-    setDiscountPercent('0');
+    setSelectedStudentId("");
+    setCustomPrice("");
+    setDiscountPercent("0");
     setIsAddStudentOpen(false);
   };
 
-  const visibleEnrollments = useMemo(() => (
-    enrollments.filter(enrollment => enrollment.is_active || enrollmentsWithCharges.has(enrollment.id))
-  ), [enrollments, enrollmentsWithCharges]);
+  const visibleEnrollments = useMemo(
+    () =>
+      enrollments.filter(
+        (enrollment) =>
+          enrollment.is_active || enrollmentsWithCharges.has(enrollment.id),
+      ),
+    [enrollments, enrollmentsWithCharges],
+  );
 
   // Фільтрація записів по групах
   const filteredEnrollments = useMemo(() => {
-    if (selectedGroups.has('all')) {
+    if (selectedGroups.has("all")) {
       return visibleEnrollments;
     }
-    
-    return visibleEnrollments.filter(enrollment => {
+
+    return visibleEnrollments.filter((enrollment) => {
       const groupId = enrollment.students?.group_id;
       if (!groupId) {
         // Діти без групи показуються, якщо вибрано "Без групи"
-        return selectedGroups.has('none');
+        return selectedGroups.has("none");
       }
       return selectedGroups.has(groupId);
     });
@@ -193,7 +261,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     const groupsMap = new Map<string, typeof enrollments>();
     const noGroupEnrollments: typeof enrollments = [];
 
-    filteredEnrollments.forEach(enrollment => {
+    filteredEnrollments.forEach((enrollment) => {
       const groupId = enrollment.students?.group_id;
       if (!groupId) {
         noGroupEnrollments.push(enrollment);
@@ -207,14 +275,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
     // Сортуємо дітей в алфавітному порядку в кожній групі
     groupsMap.forEach((enrollments, groupId) => {
-      enrollments.sort((a, b) => 
-        a.students.full_name.localeCompare(b.students.full_name, 'uk-UA')
+      enrollments.sort((a, b) =>
+        a.students.full_name.localeCompare(b.students.full_name, "uk-UA"),
       );
     });
 
     // Сортуємо дітей без групи
-    noGroupEnrollments.sort((a, b) => 
-      a.students.full_name.localeCompare(b.students.full_name, 'uk-UA')
+    noGroupEnrollments.sort((a, b) =>
+      a.students.full_name.localeCompare(b.students.full_name, "uk-UA"),
     );
 
     return { groupsMap, noGroupEnrollments };
@@ -228,44 +296,58 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       if (totalsScrollRef.current) totalsScrollRef.current.scrollLeft = left;
       if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = left;
     };
-    header.addEventListener('scroll', sync, { passive: true });
+    header.addEventListener("scroll", sync, { passive: true });
     sync();
-    return () => header.removeEventListener('scroll', sync);
+    return () => header.removeEventListener("scroll", sync);
   }, [days.length, filteredEnrollments.length]);
 
-
-  const tableColGroup = useMemo(() => (
-    <colgroup>
-      <col style={{ width: '200px', minWidth: '200px' }} />
-      {days.map((day) => (
-        <col key={formatDateString(day)} style={{ width: '40px', minWidth: '40px' }} />
-      ))}
-      <col style={{ width: '120px', minWidth: '120px' }} />
-    </colgroup>
-  ), [days]);
+  const tableColGroup = useMemo(
+    () => (
+      <colgroup>
+        <col style={{ width: "200px", minWidth: "200px" }} />
+        {days.map((day) => (
+          <col
+            key={formatDateString(day)}
+            style={{ width: "40px", minWidth: "40px" }}
+          />
+        ))}
+        <col style={{ width: "120px", minWidth: "120px" }} />
+      </colgroup>
+    ),
+    [days],
+  );
 
   // Отримуємо список всіх груп, представлених у записах
   const representedGroups = useMemo(() => {
     const groupIds = new Set<string>();
-    visibleEnrollments.forEach(enrollment => {
+    visibleEnrollments.forEach((enrollment) => {
       if (enrollment.students?.group_id) {
         groupIds.add(enrollment.students.group_id);
       }
     });
-    return groups.filter(g => groupIds.has(g.id));
+    return groups.filter((g) => groupIds.has(g.id));
   }, [visibleEnrollments, groups]);
 
   const attendanceMap = useMemo(() => {
-    const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; notes: string | null; manual_value_edit: boolean }>();
+    const map = new Map<
+      string,
+      {
+        status: AttendanceStatus | null;
+        amount: number;
+        value: number | null;
+        notes: string | null;
+        manual_value_edit: boolean;
+      }
+    >();
     if (!attendanceData || !Array.isArray(attendanceData)) return map;
     attendanceData.forEach((a: any) => {
       const key = `${a.enrollment_id}-${a.date}`;
-      map.set(key, { 
-        status: a.status, 
+      map.set(key, {
+        status: a.status,
         amount: a.charged_amount || 0,
-        value: a.value || null,
+        value: a.value ?? null,
         notes: a.notes || null,
-        manual_value_edit: a.manual_value_edit || false
+        manual_value_edit: a.manual_value_edit || false,
       });
     });
     return map;
@@ -274,7 +356,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   // Створюємо мапу staff_billing_rules для швидкого доступу (по staff_id)
   const staffBillingRulesMap = useMemo(() => {
     const map = new Map<string, typeof allStaffBillingRules>();
-    allStaffBillingRules.forEach(rule => {
+    allStaffBillingRules.forEach((rule) => {
       const existing = map.get(rule.staff_id) || [];
       existing.push(rule);
       map.set(rule.staff_id, existing);
@@ -291,167 +373,233 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   }, [staff]);
 
   // Helper функция: проверяет, должен ли статус учитываться для расчёта ЗП
-  const isStatusForSalary = useCallback((status: AttendanceStatus | null): boolean => {
-    if (!status) return false;
-    if (status === 'present') return true;
-    // Проверяем кастомные статусы с use_for_salary: true
-    if (activity?.billing_rules?.custom_statuses) {
-      const customStatus = activity.billing_rules.custom_statuses.find(
-        (cs) => cs.id === status && cs.is_active !== false && cs.use_for_salary === true
-      );
-      return !!customStatus;
-    }
-    return false;
-  }, [activity]);
+  const isStatusForSalary = useCallback(
+    (status: AttendanceStatus | null): boolean => {
+      if (!status) return false;
+      if (status === "present") return true;
+      // Проверяем кастомные статусы с use_for_salary: true
+      if (activity?.billing_rules?.custom_statuses) {
+        const customStatus = activity.billing_rules.custom_statuses.find(
+          (cs) =>
+            cs.id === status &&
+            cs.is_active !== false &&
+            cs.use_for_salary === true,
+        );
+        return !!customStatus;
+      }
+      return false;
+    },
+    [activity],
+  );
 
-  const buildAttendanceRecordsFromMap = useCallback((mapOverride?: Map<string, { status: AttendanceStatus | null; amount: number; value: number | null; notes: string | null; manual_value_edit: boolean }>) => {
-    const map = mapOverride ?? attendanceMap;
-    const records: AttendanceRecord[] = [];
+  const isMarkedAttendance = useCallback(
+    (attendance?: {
+      status: AttendanceStatus | null;
+      value: number | null;
+    }): boolean => {
+      if (!attendance) return false;
+      if (attendance.status) return true;
+      if (attendance.value !== null && attendance.value !== undefined) {
+        return attendance.value !== 0;
+      }
+      return false;
+    },
+    [],
+  );
 
-    filteredEnrollments.forEach((enrollment) => {
-      const studentId = enrollment.students?.id || enrollment.student_id;
-      const studentName = enrollment.students?.full_name || '';
-
-      days.forEach((day) => {
-        const dateStr = formatDateString(day);
-        const key = `${enrollment.id}-${dateStr}`;
-        const attendance = map.get(key);
-
-        // Учитываем 'present' ИЛИ кастомные статусы с use_for_salary: true
-        if (attendance?.status && isStatusForSalary(attendance.status) && studentId) {
-          records.push({
-            date: dateStr,
-            enrollment_id: enrollment.id,
-            student_id: studentId,
-            student_name: studentName,
-            status: attendance.status, // Сохраняем реальный статус (может быть 'present' или UUID)
-            value: attendance.value ?? attendance.amount ?? 0,
-          });
+  const buildAttendanceRecordsFromMap = useCallback(
+    (
+      mapOverride?: Map<
+        string,
+        {
+          status: AttendanceStatus | null;
+          amount: number;
+          value: number | null;
+          notes: string | null;
+          manual_value_edit: boolean;
         }
-      });
-    });
+      >,
+    ) => {
+      const map = mapOverride ?? attendanceMap;
+      const records: AttendanceRecord[] = [];
 
-    return records;
-  }, [attendanceMap, days, filteredEnrollments, isStatusForSalary]);
+      filteredEnrollments.forEach((enrollment) => {
+        const studentId = enrollment.students?.id || enrollment.student_id;
+        const studentName = enrollment.students?.full_name || "";
+
+        days.forEach((day) => {
+          const dateStr = formatDateString(day);
+          const key = `${enrollment.id}-${dateStr}`;
+          const attendance = map.get(key);
+
+          // Учитываем 'present' ИЛИ кастомные статусы с use_for_salary: true
+          if (
+            attendance?.status &&
+            isStatusForSalary(attendance.status) &&
+            studentId
+          ) {
+            records.push({
+              date: dateStr,
+              enrollment_id: enrollment.id,
+              student_id: studentId,
+              student_name: studentName,
+              status: attendance.status, // Сохраняем реальный статус (может быть 'present' или UUID)
+              value: attendance.value ?? attendance.amount ?? 0,
+            });
+          }
+        });
+      });
+
+      return records;
+    },
+    [attendanceMap, days, filteredEnrollments, isStatusForSalary],
+  );
 
   // Створюємо мапу activity_id -> staff_id для швидкого пошуку вчителя за активністю
   // Функція для пошуку teacher_id через staff_billing_rules для конкретної активності та дати
-  const getTeacherIdForActivity = useCallback((activityId: string, date: string): string | null => {
-    // Знаходимо всі правила для цієї активності (де activity_id співпадає або null для глобальних)
-    const relevantRules = allStaffBillingRules.filter(rule => {
-      // Перевіряємо, чи правило відповідає активності (конкретна активність або глобальна)
-      if (rule.activity_id !== null && rule.activity_id !== activityId) {
-        return false;
+  const getTeacherIdForActivity = useCallback(
+    (activityId: string, date: string): string | null => {
+      // Знаходимо всі правила для цієї активності (де activity_id співпадає або null для глобальних)
+      const relevantRules = allStaffBillingRules.filter((rule) => {
+        // Перевіряємо, чи правило відповідає активності (конкретна активність або глобальна)
+        if (rule.activity_id !== null && rule.activity_id !== activityId) {
+          return false;
+        }
+
+        // Перевіряємо, чи правило активне на цю дату
+        const dateObj = new Date(date);
+        const fromDate = new Date(rule.effective_from);
+        const toDate = rule.effective_to ? new Date(rule.effective_to) : null;
+
+        return dateObj >= fromDate && (!toDate || dateObj < toDate);
+      });
+
+      if (relevantRules.length === 0) return null;
+
+      // Пріоритет: спочатку шукаємо конкретні правила для активності, потім глобальні
+      const specificRule = relevantRules.find(
+        (r) => r.activity_id === activityId,
+      );
+      if (specificRule) {
+        return specificRule.staff_id;
       }
-      
-      // Перевіряємо, чи правило активне на цю дату
-      const dateObj = new Date(date);
-      const fromDate = new Date(rule.effective_from);
-      const toDate = rule.effective_to ? new Date(rule.effective_to) : null;
-      
-      return dateObj >= fromDate && (!toDate || dateObj < toDate);
-    });
 
-    if (relevantRules.length === 0) return null;
+      // Якщо немає конкретного правила, беремо перше глобальне (activity_id === null)
+      const globalRule = relevantRules.find((r) => r.activity_id === null);
+      return globalRule ? globalRule.staff_id : null;
+    },
+    [allStaffBillingRules],
+  );
 
-    // Пріоритет: спочатку шукаємо конкретні правила для активності, потім глобальні
-    const specificRule = relevantRules.find(r => r.activity_id === activityId);
-    if (specificRule) {
-      return specificRule.staff_id;
-    }
+  const getBillingRuleForDate = useCallback(
+    (date: string) => {
+      const teacherId = getTeacherIdForActivity(activityId, date);
+      if (!teacherId) return null;
+      const staffRules = staffBillingRulesMap.get(teacherId) || [];
+      return getStaffBillingRuleForDate(staffRules, date, activityId);
+    },
+    [activityId, getTeacherIdForActivity, staffBillingRulesMap],
+  );
 
-    // Якщо немає конкретного правила, беремо перше глобальне (activity_id === null)
-    const globalRule = relevantRules.find(r => r.activity_id === null);
-    return globalRule ? globalRule.staff_id : null;
-  }, [allStaffBillingRules]);
+  const syncStaffJournalEntriesForMonth = useCallback(
+    async (recordsOverride?: AttendanceRecord[]) => {
+      const records = recordsOverride ?? buildAttendanceRecordsFromMap();
+      const monthStartDate = getMonthStartDate(year, month);
+      const monthEndDate = getMonthEndDate(year, month);
+      const fixedRules = allStaffBillingRules.filter(
+        (rule) =>
+          rule.rate_type === "fixed" &&
+          (rule.activity_id === null || rule.activity_id === activityId),
+      );
 
-  const getBillingRuleForDate = useCallback((date: string) => {
-    const teacherId = getTeacherIdForActivity(activityId, date);
-    if (!teacherId) return null;
-    const staffRules = staffBillingRulesMap.get(teacherId) || [];
-    return getStaffBillingRuleForDate(staffRules, date, activityId);
-  }, [activityId, getTeacherIdForActivity, staffBillingRulesMap]);
+      const accruals = calculateMonthlyStaffAccruals({
+        attendanceRecords: records,
+        getRuleForDate: getBillingRuleForDate,
+        monthStartDate,
+        monthEndDate,
+        fixedRules,
+        customStatuses: activity?.billing_rules?.custom_statuses,
+      });
 
-  const syncStaffJournalEntriesForMonth = useCallback(async (recordsOverride?: AttendanceRecord[]) => {
-    const records = recordsOverride ?? buildAttendanceRecordsFromMap();
-    const monthStartDate = getMonthStartDate(year, month);
-    const monthEndDate = getMonthEndDate(year, month);
-    const fixedRules = allStaffBillingRules.filter(
-      rule => rule.rate_type === 'fixed' && (rule.activity_id === null || rule.activity_id === activityId)
-    );
-    
-    const accruals = calculateMonthlyStaffAccruals({
-      attendanceRecords: records,
-      getRuleForDate: getBillingRuleForDate,
-      monthStartDate,
-      monthEndDate,
-      fixedRules,
-      customStatuses: activity?.billing_rules?.custom_statuses,
-    });
+      const dateStrings = days.map((day) => formatDateString(day));
+      const staffIds = new Set<string>();
 
-    const dateStrings = days.map((day) => formatDateString(day));
-    const staffIds = new Set<string>();
-
-    allStaffBillingRules.forEach((rule) => {
-      if (rule.activity_id === null || rule.activity_id === activityId) {
-        staffIds.add(rule.staff_id);
-      }
-    });
-
-    accruals.forEach((_, staffId) => staffIds.add(staffId));
-
-    const promises: Promise<any>[] = [];
-    staffIds.forEach((staffId) => {
-      dateStrings.forEach((date) => {
-        const dayAccrual = accruals.get(staffId)?.get(date);
-        if (dayAccrual && dayAccrual.amount > 0) {
-          const staffMember = staffMap.get(staffId);
-          const { finalAmount, deductionsApplied } = applyDeductionsToAmount(
-            dayAccrual.amount,
-            (staffMember?.deductions as any) || []
-          );
-
-          promises.push(
-            upsertStaffJournalEntry.mutateAsync({
-              staff_id: staffId,
-              activity_id: activityId,
-              date,
-              amount: finalAmount,
-              base_amount: dayAccrual.amount,
-              deductions_applied: deductionsApplied,
-              is_manual_override: false,
-              notes: dayAccrual.notes.join('; ') || null,
-            })
-          );
-        } else {
-          promises.push(
-            deleteStaffJournalEntry.mutateAsync({
-              staff_id: staffId,
-              activity_id: activityId,
-              date,
-              is_manual_override: false,
-            })
-          );
+      allStaffBillingRules.forEach((rule) => {
+        if (rule.activity_id === null || rule.activity_id === activityId) {
+          staffIds.add(rule.staff_id);
         }
       });
-    });
 
-    if (promises.length > 0) {
-      await Promise.allSettled(promises);
-    }
-  }, [activityId, allStaffBillingRules, buildAttendanceRecordsFromMap, days, deleteStaffJournalEntry, getBillingRuleForDate, staffMap, upsertStaffJournalEntry, year, month]);
+      accruals.forEach((_, staffId) => staffIds.add(staffId));
+
+      const promises: Promise<any>[] = [];
+      staffIds.forEach((staffId) => {
+        dateStrings.forEach((date) => {
+          const dayAccrual = accruals.get(staffId)?.get(date);
+          if (dayAccrual && dayAccrual.amount > 0) {
+            const staffMember = staffMap.get(staffId);
+            const { finalAmount, deductionsApplied } = applyDeductionsToAmount(
+              dayAccrual.amount,
+              (staffMember?.deductions as any) || [],
+            );
+
+            promises.push(
+              upsertStaffJournalEntry.mutateAsync({
+                staff_id: staffId,
+                activity_id: activityId,
+                date,
+                amount: finalAmount,
+                base_amount: dayAccrual.amount,
+                deductions_applied: deductionsApplied,
+                is_manual_override: false,
+                notes: dayAccrual.notes.join("; ") || null,
+              }),
+            );
+          } else {
+            promises.push(
+              deleteStaffJournalEntry.mutateAsync({
+                staff_id: staffId,
+                activity_id: activityId,
+                date,
+                is_manual_override: false,
+              }),
+            );
+          }
+        });
+      });
+
+      if (promises.length > 0) {
+        await Promise.allSettled(promises);
+      }
+    },
+    [
+      activityId,
+      allStaffBillingRules,
+      buildAttendanceRecordsFromMap,
+      days,
+      deleteStaffJournalEntry,
+      getBillingRuleForDate,
+      staffMap,
+      upsertStaffJournalEntry,
+      year,
+      month,
+    ],
+  );
 
   // Отримуємо billing rules для активності на дату
-  const getActivityBillingRulesForDate = useCallback((date: string) => {
-    if (!activity) return null;
-    return priceHistory 
-      ? getBillingRulesForDate(activity, priceHistory, date)
-      : activity.billing_rules;
-  }, [activity, priceHistory]);
+  const getActivityBillingRulesForDate = useCallback(
+    (date: string) => {
+      if (!activity) return null;
+      return priceHistory
+        ? getBillingRulesForDate(activity, priceHistory, date)
+        : activity.billing_rules;
+    },
+    [activity, priceHistory],
+  );
 
   // Auto-journal: автоматично проставляти "П" у робочі дні
   useEffect(() => {
-    console.log('[Auto-journal] useEffect triggered', {
+    console.log("[Auto-journal] useEffect triggered", {
       activityId,
       auto_journal: activity?.auto_journal,
       enrollmentsLoading,
@@ -459,25 +607,33 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       filteredEnrollmentsCount: filteredEnrollments.length,
       attendanceMapSize: attendanceMap.size,
       daysCount: days.length,
-      activity: activity ? { id: activity.id, name: activity.name, auto_journal: activity.auto_journal } : null,
+      activity: activity
+        ? {
+            id: activity.id,
+            name: activity.name,
+            auto_journal: activity.auto_journal,
+          }
+        : null,
     });
 
     if (!activity?.auto_journal) {
-      console.log('[Auto-journal] SKIP: auto_journal is false or activity is undefined');
+      console.log(
+        "[Auto-journal] SKIP: auto_journal is false or activity is undefined",
+      );
       return;
     }
 
     if (enrollmentsLoading) {
-      console.log('[Auto-journal] SKIP: enrollmentsLoading is true');
+      console.log("[Auto-journal] SKIP: enrollmentsLoading is true");
       return;
     }
 
     if (attendanceLoading) {
-      console.log('[Auto-journal] SKIP: attendanceLoading is true');
+      console.log("[Auto-journal] SKIP: attendanceLoading is true");
       return;
     }
 
-    console.log('[Auto-journal] Starting auto-fill process');
+    console.log("[Auto-journal] Starting auto-fill process");
 
     const autoFillPromises: Promise<any>[] = [];
     const optimisticMap = new Map(attendanceMap);
@@ -496,11 +652,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           skippedWeekends++;
           return;
         }
-        
+
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
         const existing = attendanceMap.get(key);
-        
+
         // Не перезаписуємо ручні відмітки (ні статус, ні значення)
         // Якщо є статус або значення - пропускаємо
         if (existing) {
@@ -508,9 +664,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             skippedExistingWithStatus++;
             return;
           }
-          if (existing.value !== null && existing.value !== undefined && existing.value !== 0) {
+          if (
+            existing.value !== null &&
+            existing.value !== undefined &&
+            existing.value !== 0
+          ) {
             skippedExistingWithValue++;
-            console.log('[Auto-journal] SKIP cell (existing value):', {
+            console.log("[Auto-journal] SKIP cell (existing value):", {
               key,
               enrollmentId: enrollment.id,
               date: dateStr,
@@ -522,54 +682,73 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           skippedExisting++;
         }
 
-        if (!existing || (!existing.status && (existing.value === null || existing.value === undefined || existing.value === 0))) {
+        if (
+          !existing ||
+          (!existing.status &&
+            (existing.value === null ||
+              existing.value === undefined ||
+              existing.value === 0))
+        ) {
           addedToPromises++;
           // Отримуємо billing_rules для дати (з урахуванням історії)
-          const billingRulesForDate = activity && priceHistory 
-            ? getBillingRulesForDate(activity, priceHistory, dateStr)
-            : activity?.billing_rules;
-          
+          const billingRulesForDate =
+            activity && priceHistory
+              ? getBillingRulesForDate(activity, priceHistory, dateStr)
+              : activity?.billing_rules;
+
           // Розраховуємо value на основі billing_rules для статусу 'present'
           const calculatedValue = calculateValueFromBillingRules(
             dateStr,
-            'present',
+            "present",
             null,
             enrollment.custom_price,
             enrollment.discount_percent || 0,
-            billingRulesForDate || null
+            billingRulesForDate || null,
           );
-          
+
           // Використовуємо calculatedValue для charged_amount
           const chargedAmount = calculatedValue !== null ? calculatedValue : 0;
-          
-          console.log('[Auto-journal] Adding attendance mutation:', {
+
+          console.log("[Auto-journal] Adding attendance mutation:", {
             key,
             enrollmentId: enrollment.id,
             date: dateStr,
             calculatedValue,
             chargedAmount,
-            billingRulesForDate: billingRulesForDate ? 'present' : null,
+            billingRulesForDate: billingRulesForDate ? "present" : null,
             customPrice: enrollment.custom_price,
           });
-          
+
           autoFillPromises.push(
-            setAttendance.mutateAsync({
-              enrollment_id: enrollment.id,
-              date: dateStr,
-              status: 'present',
-              charged_amount: chargedAmount,
-              value: calculatedValue,
-              notes: null,
-              manual_value_edit: false,
-            }).then(() => {
-              console.log('[Auto-journal] Successfully created attendance:', { key, enrollmentId: enrollment.id, date: dateStr });
-            }).catch((error) => {
-              console.error('[Auto-journal] Failed to create attendance:', { key, enrollmentId: enrollment.id, date: dateStr, error });
-            })
+            setAttendance
+              .mutateAsync({
+                enrollment_id: enrollment.id,
+                date: dateStr,
+                status: "present",
+                charged_amount: chargedAmount,
+                value: calculatedValue,
+                notes: null,
+                manual_value_edit: false,
+              })
+              .then(() => {
+                console.log("[Auto-journal] Successfully created attendance:", {
+                  key,
+                  enrollmentId: enrollment.id,
+                  date: dateStr,
+                });
+              })
+              .catch((error) => {
+                console.error("[Auto-journal] Failed to create attendance:", {
+                  key,
+                  enrollmentId: enrollment.id,
+                  date: dateStr,
+                  error,
+                });
+              }),
           );
 
           optimisticMap.set(key, {
-            status: 'present',
+            status: "present",
             amount: chargedAmount,
             value: calculatedValue,
             manual_value_edit: false,
@@ -579,7 +758,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     });
 
     // Виконуємо всі запити одночасно
-    console.log('[Auto-journal] Processing summary:', {
+    console.log("[Auto-journal] Processing summary:", {
       processedCells,
       skippedWeekends,
       skippedExisting,
@@ -590,100 +769,174 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     });
 
     if (autoFillPromises.length > 0) {
-      console.log('[Auto-journal] Executing', autoFillPromises.length, 'attendance mutations');
+      console.log(
+        "[Auto-journal] Executing",
+        autoFillPromises.length,
+        "attendance mutations",
+      );
       Promise.allSettled(autoFillPromises).then((results) => {
-        const fulfilled = results.filter(r => r.status === 'fulfilled').length;
-        const rejected = results.filter(r => r.status === 'rejected').length;
-        console.log('[Auto-journal] Attendance mutations completed:', {
+        const fulfilled = results.filter(
+          (r) => r.status === "fulfilled",
+        ).length;
+        const rejected = results.filter((r) => r.status === "rejected").length;
+        console.log("[Auto-journal] Attendance mutations completed:", {
           fulfilled,
           rejected,
           total: results.length,
         });
         if (rejected > 0) {
-          console.error('[Auto-journal] Some attendance mutations failed:', results.filter(r => r.status === 'rejected'));
+          console.error(
+            "[Auto-journal] Some attendance mutations failed:",
+            results.filter((r) => r.status === "rejected"),
+          );
         }
         const optimisticRecords = buildAttendanceRecordsFromMap(optimisticMap);
         syncStaffJournalEntriesForMonth(optimisticRecords).catch((error) => {
-          console.error('[Auto-journal] Failed to sync staff journal entries:', error);
+          console.error(
+            "[Auto-journal] Failed to sync staff journal entries:",
+            error,
+          );
         });
       });
     } else {
-      console.log('[Auto-journal] No attendance mutations to execute');
+      console.log("[Auto-journal] No attendance mutations to execute");
     }
-  }, [activity?.auto_journal, days, filteredEnrollments, attendanceMap, setAttendance, enrollmentsLoading, attendanceLoading, activity, getActivityBillingRulesForDate, activityId, buildAttendanceRecordsFromMap, syncStaffJournalEntriesForMonth]);
+  }, [
+    activity?.auto_journal,
+    days,
+    filteredEnrollments,
+    attendanceMap,
+    setAttendance,
+    enrollmentsLoading,
+    attendanceLoading,
+    activity,
+    getActivityBillingRulesForDate,
+    activityId,
+    buildAttendanceRecordsFromMap,
+    syncStaffJournalEntriesForMonth,
+  ]);
 
   // Підсумки для кожного учня
   const studentTotals = useMemo(() => {
-    const totals: Record<string, { present: number; sick: number; absent: number; values: number }> = {};
-    
+    const totals: Record<
+      string,
+      {
+        present: number;
+        sick: number;
+        absent: number;
+        values: number;
+        marked: number;
+      }
+    > = {};
+
     filteredEnrollments.forEach((enrollment) => {
-      totals[enrollment.id] = { present: 0, sick: 0, absent: 0, values: 0 };
-      
+      totals[enrollment.id] = {
+        present: 0,
+        sick: 0,
+        absent: 0,
+        values: 0,
+        marked: 0,
+      };
+
       days.forEach((day) => {
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = attendanceMap.get(key);
-        
+
+        if (isMarkedAttendance(attendance)) {
+          totals[enrollment.id].marked++;
+        }
+
         // Якщо є статус - рахуємо статус
         if (attendance?.status) {
-          if (attendance.status === 'present') totals[enrollment.id].present++;
-          else if (attendance.status === 'sick') totals[enrollment.id].sick++;
-          else if (attendance.status === 'absent') totals[enrollment.id].absent++;
+          if (attendance.status === "present") totals[enrollment.id].present++;
+          else if (attendance.status === "sick") totals[enrollment.id].sick++;
+          else if (attendance.status === "absent")
+            totals[enrollment.id].absent++;
         }
         // Якщо немає статусу, але є значення - рахуємо значення
-        else if (attendance?.value !== null && attendance?.value !== undefined && attendance.value !== 0) {
+        else if (
+          attendance?.value !== null &&
+          attendance?.value !== undefined &&
+          attendance.value !== 0
+        ) {
           totals[enrollment.id].values += attendance.value;
         }
       });
     });
-    
+
     return totals;
-  }, [filteredEnrollments, days, attendanceMap]);
+  }, [filteredEnrollments, days, attendanceMap, isMarkedAttendance]);
 
   // Ітоги за день
   const dailyTotals = useMemo(() => {
-    const totals: Record<string, { present: number; sick: number; absent: number; values: number }> = {};
-    
+    const totals: Record<
+      string,
+      {
+        present: number;
+        sick: number;
+        absent: number;
+        values: number;
+        marked: number;
+      }
+    > = {};
+
     days.forEach((day) => {
       const dateStr = formatDateString(day);
-      totals[dateStr] = { present: 0, sick: 0, absent: 0, values: 0 };
-      
+      totals[dateStr] = {
+        present: 0,
+        sick: 0,
+        absent: 0,
+        values: 0,
+        marked: 0,
+      };
+
       filteredEnrollments.forEach((enrollment) => {
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = attendanceMap.get(key);
-        
+
+        if (isMarkedAttendance(attendance)) {
+          totals[dateStr].marked++;
+        }
+
         // Якщо є статус - рахуємо статус
         if (attendance?.status) {
-          if (attendance.status === 'present') totals[dateStr].present++;
-          else if (attendance.status === 'sick') totals[dateStr].sick++;
-          else if (attendance.status === 'absent') totals[dateStr].absent++;
+          if (attendance.status === "present") totals[dateStr].present++;
+          else if (attendance.status === "sick") totals[dateStr].sick++;
+          else if (attendance.status === "absent") totals[dateStr].absent++;
         }
         // Якщо немає статусу, але є значення - рахуємо значення
-        else if (attendance?.value !== null && attendance?.value !== undefined && attendance.value !== 0) {
+        else if (
+          attendance?.value !== null &&
+          attendance?.value !== undefined &&
+          attendance.value !== 0
+        ) {
           totals[dateStr].values += attendance.value;
         }
       });
     });
-    
+
     return totals;
-  }, [filteredEnrollments, days, attendanceMap]);
+  }, [filteredEnrollments, days, attendanceMap, isMarkedAttendance]);
 
   const visibleGroupRows = useMemo(() => {
     const ids = new Set<string>();
 
-    if (selectedGroups.has('all')) {
-      Array.from(groupedEnrollments.groupsMap.keys()).forEach((id) => ids.add(id));
-      if (groupedEnrollments.noGroupEnrollments.length > 0) ids.add('none');
+    if (selectedGroups.has("all")) {
+      Array.from(groupedEnrollments.groupsMap.keys()).forEach((id) =>
+        ids.add(id),
+      );
+      if (groupedEnrollments.noGroupEnrollments.length > 0) ids.add("none");
     } else {
       selectedGroups.forEach((id) => {
-        if (id !== 'all') ids.add(id);
+        if (id !== "all") ids.add(id);
       });
     }
 
     const rows: Array<{ id: string; name: string; color?: string }> = [];
     Array.from(ids.values()).forEach((id) => {
-      if (id === 'none') {
-        rows.push({ id, name: 'Без групи', color: '#94a3b8' });
+      if (id === "none") {
+        rows.push({ id, name: "Без групи", color: "#94a3b8" });
         return;
       }
       const group = groups.find((g) => g.id === id);
@@ -699,38 +952,46 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     const totals: Record<string, Record<string, number>> = {};
     const initDates = (groupId: string) => {
       if (!totals[groupId]) totals[groupId] = {};
-    days.forEach((day) => {
+      days.forEach((day) => {
         totals[groupId][formatDateString(day)] = 0;
       });
     };
 
     visibleGroupRows.forEach((row) => initDates(row.id));
-      
-      filteredEnrollments.forEach((enrollment) => {
-      const groupId = enrollment.students?.group_id || 'none';
+
+    filteredEnrollments.forEach((enrollment) => {
+      const groupId = enrollment.students?.group_id || "none";
       if (!totals[groupId]) initDates(groupId);
       days.forEach((day) => {
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
         const attendance = attendanceMap.get(key);
-        // Учитываем 'present' ИЛИ кастомные статусы с use_for_salary: true для отображения в журнале
-        if (attendance?.status && isStatusForSalary(attendance.status)) {
+        // Учитываем любые отметки: статусы, числовые значения, кастомные статусы
+        if (isMarkedAttendance(attendance)) {
           totals[groupId][dateStr] = (totals[groupId][dateStr] || 0) + 1;
         }
       });
     });
 
     return totals;
-  }, [visibleGroupRows, filteredEnrollments, days, attendanceMap, isStatusForSalary]);
+  }, [
+    visibleGroupRows,
+    filteredEnrollments,
+    days,
+    attendanceMap,
+    isStatusForSalary,
+  ]);
 
   const monthlyAccruals = useMemo(() => {
     const records = buildAttendanceRecordsFromMap();
     const monthStartDate = getMonthStartDate(year, month);
     const monthEndDate = getMonthEndDate(year, month);
     const fixedRules = allStaffBillingRules.filter(
-      rule => rule.rate_type === 'fixed' && (rule.activity_id === null || rule.activity_id === activityId)
+      (rule) =>
+        rule.rate_type === "fixed" &&
+        (rule.activity_id === null || rule.activity_id === activityId),
     );
-    
+
     return calculateMonthlyStaffAccruals({
       attendanceRecords: records,
       getRuleForDate: getBillingRuleForDate,
@@ -739,7 +1000,14 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       fixedRules,
       customStatuses: activity?.billing_rules?.custom_statuses,
     });
-  }, [buildAttendanceRecordsFromMap, getBillingRuleForDate, year, month, allStaffBillingRules, activityId]);
+  }, [
+    buildAttendanceRecordsFromMap,
+    getBillingRuleForDate,
+    year,
+    month,
+    allStaffBillingRules,
+    activityId,
+  ]);
 
   // Оплата педагогу за день - сума нарахувань за правилами
   const teacherPayments = useMemo(() => {
@@ -755,18 +1023,21 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       const deductions = (staffMember?.deductions as any) || [];
 
       staffMapForDay.forEach((accrual, date) => {
-        const { finalAmount } = applyDeductionsToAmount(accrual.amount, deductions);
+        const { finalAmount } = applyDeductionsToAmount(
+          accrual.amount,
+          deductions,
+        );
         payments[date] = (payments[date] || 0) + finalAmount;
       });
     });
-    
+
     return payments;
   }, [days, monthlyAccruals, staffMap]);
 
   // Собираем уникальных педагогов для активности за месяц
   const teachersForActivity = useMemo(() => {
     const teacherIds = new Set<string>();
-    
+
     days.forEach((day) => {
       const dateStr = formatDateString(day);
       const teacherId = getTeacherIdForActivity(activityId, dateStr);
@@ -777,8 +1048,8 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
     // Получаем ФИО педагогов
     const teacherNames = Array.from(teacherIds)
-      .map(id => {
-        const teacher = staff.find(s => s.id === id);
+      .map((id) => {
+        const teacher = staff.find((s) => s.id === id);
         return teacher?.full_name || null;
       })
       .filter((name): name is string => name !== null)
@@ -806,21 +1077,26 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
   };
 
   const handleStatusChange = async (
-    enrollmentId: string, 
-    date: string, 
+    enrollmentId: string,
+    date: string,
     status: AttendanceStatus | null,
     value: number | null,
     notes: string | null = null,
     _activityPrice: number = 0, // Deprecated: не використовується, залишено для сумісності
     customPrice: number | null = null,
     discountPercent: number = 0,
-    enrollment?: any
+    enrollment?: any,
   ) => {
     // Получаем существующую запись для проверки изменений
     const existing = attendanceMap.get(`${enrollmentId}-${date}`);
-    
+
     // Если изменяется только примечание (статус и value не изменились), сохраняем только notes
-    if (existing && existing.status === status && existing.value === value && existing.notes !== notes) {
+    if (
+      existing &&
+      existing.status === status &&
+      existing.value === value &&
+      existing.notes !== notes
+    ) {
       try {
         await setAttendance.mutateAsync({
           enrollment_id: enrollmentId,
@@ -831,7 +1107,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           notes: notes || null,
           manual_value_edit: existing.manual_value_edit,
         });
-        
+
         // Обновляем локальную карту
         const updatedMap = new Map(attendanceMap);
         updatedMap.set(`${enrollmentId}-${date}`, {
@@ -840,17 +1116,20 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         });
         // Не нужно вызывать syncStaffJournalEntriesForMonth, так как статус и value не изменились
       } catch (error) {
-        console.error('Failed to update notes:', error);
+        console.error("Failed to update notes:", error);
       }
       return;
     }
-    
+
     // Якщо обидва null - видаляємо запис
-    if (status === null && (value === null || value === undefined || value === 0)) {
+    if (
+      status === null &&
+      (value === null || value === undefined || value === 0)
+    ) {
       try {
         await deleteAttendance.mutateAsync({ enrollmentId, date });
       } catch (error) {
-        console.error('Failed to delete attendance:', error);
+        console.error("Failed to delete attendance:", error);
       }
 
       const updatedMap = new Map(attendanceMap);
@@ -861,42 +1140,44 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
     }
 
     // Якщо є значення, але немає статусу - зберігаємо тільки значення
-    if ((status === null) && value !== null && value !== undefined && value !== 0) {
+    if (
+      status === null &&
+      value !== null &&
+      value !== undefined &&
+      value !== 0
+    ) {
       // Отримуємо існуючу відмітку для перевірки manual_value_edit
       const existing = attendanceMap.get(`${enrollmentId}-${date}`);
-      
+
       // Отримуємо billing_rules для дати (з урахуванням історії)
-      const billingRulesForDate = activity && priceHistory 
-        ? getBillingRulesForDate(activity, priceHistory, date)
-        : activity?.billing_rules;
-      
-      // Розраховуємо value на основі billing_rules для "value" (hourly)
-      const calculatedValue = calculateHourlyValueFromRule(
-        date,
-        value,
-        customPrice,
-        discountPercent,
-        billingRulesForDate || null
-      );
-      
-      // Перевіряємо чи був це ручний ввід (value не співпадає з розрахованим)
-      const isManualEdit = existing?.manual_value_edit || (calculatedValue !== null && Math.abs((calculatedValue || 0) - value) > 0.01);
-      
+      const billingRulesForDate =
+        activity && priceHistory
+          ? getBillingRulesForDate(activity, priceHistory, date)
+          : activity?.billing_rules;
+
+      // Значение, введённое пользователем (первичка)
+      const inputValue = value;
+
+      // Ручний числовий ввід = сума в гривнях без перерахунку
+      // Не застосовуємо billing_rules.value, щоб уникнути множників/коефіцієнтів
+      const chargedAmount = inputValue;
+      const isManualEdit = true;
+
       try {
         await setAttendance.mutateAsync({
           enrollment_id: enrollmentId,
           date,
           status: null,
-          charged_amount: 0,
-          value: calculatedValue !== null ? calculatedValue : value,
+          charged_amount: chargedAmount,
+          value: inputValue,
           notes: notes || null,
           manual_value_edit: isManualEdit,
         });
         const updatedMap = new Map(attendanceMap);
         updatedMap.set(`${enrollmentId}-${date}`, {
           status: null,
-          amount: 0,
-          value: calculatedValue !== null ? calculatedValue : value,
+          amount: chargedAmount,
+          value: inputValue,
           notes: notes || null,
           manual_value_edit: isManualEdit,
         });
@@ -913,26 +1194,38 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
       // Якщо value вже передано з компонента - використовуємо його
       // Інакше розраховуємо value на основі billing_rules
       let finalValue = value;
-      
+
       if (finalValue === null || finalValue === undefined) {
         // Отримуємо billing_rules для дати (з урахуванням історії)
-        const billingRulesForDate = activity && priceHistory 
-          ? getBillingRulesForDate(activity, priceHistory, date)
-          : activity?.billing_rules;
-        
+        const billingRulesForDate =
+          activity && priceHistory
+            ? getBillingRulesForDate(activity, priceHistory, date)
+            : activity?.billing_rules;
+
         // Перевіряємо чи це subscription_with_logic
         let visitCountBefore = 0;
         const customStatus = billingRulesForDate?.custom_statuses?.find(
-          (cs: any) => cs.id === status && cs.is_active !== false && cs.type === 'subscription_with_logic'
+          (cs: any) =>
+            cs.id === status &&
+            cs.is_active !== false &&
+            cs.type === "subscription_with_logic",
         );
-        
+
         if (customStatus) {
           // Рахуємо кількість відвідувань з цим статусом за місяць ДО поточної дати
           // ВАЖЛИВО: використовуємо attendanceData з бази + оптимістичні оновлення
-          const dateParts = date.split('-').map(Number);
-          const dateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
-          const monthStart = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
-          
+          const dateParts = date.split("-").map(Number);
+          const dateObj = new Date(
+            dateParts[0],
+            dateParts[1] - 1,
+            dateParts[2],
+          );
+          const monthStart = new Date(
+            dateObj.getFullYear(),
+            dateObj.getMonth(),
+            1,
+          );
+
           // Спочатку рахуємо з attendanceData (завантажені з бази)
           attendanceData.forEach((att: any) => {
             if (att.enrollment_id !== enrollmentId) return;
@@ -942,7 +1235,7 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
               visitCountBefore++;
             }
           });
-          
+
           // Потім додаємо оптимістичні оновлення з attendanceMap (які ще не збережені в базі)
           attendanceMap.forEach((att, key) => {
             // Перевіряємо що це той самий enrollment
@@ -950,20 +1243,30 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             // Перевіряємо що статус співпадає
             if (att.status !== status) return;
             // Перевіряємо що дата в межах місяця і ДО поточної
-            const attDateParts = key.split('-').slice(1).join('-').split('-').map(Number);
-            const attDate = new Date(attDateParts[0], attDateParts[1] - 1, attDateParts[2]);
+            const attDateParts = key
+              .split("-")
+              .slice(1)
+              .join("-")
+              .split("-")
+              .map(Number);
+            const attDate = new Date(
+              attDateParts[0],
+              attDateParts[1] - 1,
+              attDateParts[2],
+            );
             // Перевіряємо що ця запис ще не врахована в attendanceData
-            const alreadyCounted = attendanceData.some((attData: any) => 
-              attData.enrollment_id === enrollmentId && 
-              attData.date === key.split('-').slice(1).join('-') &&
-              attData.status === status
+            const alreadyCounted = attendanceData.some(
+              (attData: any) =>
+                attData.enrollment_id === enrollmentId &&
+                attData.date === key.split("-").slice(1).join("-") &&
+                attData.status === status,
             );
             if (!alreadyCounted && attDate >= monthStart && attDate < dateObj) {
               visitCountBefore++;
             }
           });
         }
-        
+
         // Розраховуємо value на основі billing_rules для статусу
         finalValue = calculateValueFromBillingRules(
           date,
@@ -972,30 +1275,35 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           customPrice,
           discountPercent,
           billingRulesForDate || null,
-          visitCountBefore
+          visitCountBefore,
         );
       }
-      
+
       // Використовуємо finalValue для charged_amount (завжди з billing_rules)
       // Якщо finalValue є null - використовуємо 0 (не має бути fallback на стару логіку)
       const chargedAmount = finalValue !== null ? finalValue : 0;
-      
+
       // Перевіряємо чи була це ручна зміна (якщо раніше було manual_value_edit)
       // І перевіряємо попередній статус ДО збереження
       const existing = attendanceMap.get(`${enrollmentId}-${date}`);
       const isManualEdit = existing?.manual_value_edit || false;
-      const wasPresentForSalary = existing?.status ? isStatusForSalary(existing.status) : false;
-      
-      console.log('[Dashboard Debug] EnhancedAttendanceGrid.handleStatusChange calling mutateAsync', {
-        enrollmentId,
-        date,
-        status,
-        chargedAmount,
-        finalValue,
-        isManualEdit,
-        timestamp: new Date().toISOString(),
-      });
-      
+      const wasPresentForSalary = existing?.status
+        ? isStatusForSalary(existing.status)
+        : false;
+
+      console.log(
+        "[Dashboard Debug] EnhancedAttendanceGrid.handleStatusChange calling mutateAsync",
+        {
+          enrollmentId,
+          date,
+          status,
+          chargedAmount,
+          finalValue,
+          isManualEdit,
+          timestamp: new Date().toISOString(),
+        },
+      );
+
       try {
         const result = await setAttendance.mutateAsync({
           enrollment_id: enrollmentId,
@@ -1006,12 +1314,15 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           notes: notes || null,
           manual_value_edit: isManualEdit,
         });
-        
-        console.log('[Dashboard Debug] EnhancedAttendanceGrid.handleStatusChange mutateAsync success', {
-          result,
-          timestamp: new Date().toISOString(),
-        });
-        
+
+        console.log(
+          "[Dashboard Debug] EnhancedAttendanceGrid.handleStatusChange mutateAsync success",
+          {
+            result,
+            timestamp: new Date().toISOString(),
+          },
+        );
+
         const updatedMap = new Map(attendanceMap);
         updatedMap.set(`${enrollmentId}-${date}`, {
           status,
@@ -1040,47 +1351,54 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
 
   const handleGroupToggle = (groupId: string) => {
     const newSelected = new Set(selectedGroups);
-    
-    if (groupId === 'all') {
-      if (newSelected.has('all')) {
+
+    if (groupId === "all") {
+      if (newSelected.has("all")) {
         newSelected.clear();
       } else {
         newSelected.clear();
-        newSelected.add('all');
+        newSelected.add("all");
       }
     } else {
-      newSelected.delete('all');
+      newSelected.delete("all");
       if (newSelected.has(groupId)) {
         newSelected.delete(groupId);
       } else {
         newSelected.add(groupId);
       }
-      
+
       // Якщо всі групи вибрані окрім 'all', автоматично додаємо 'all'
-      if (newSelected.size === representedGroups.length + (groupedEnrollments.noGroupEnrollments.length > 0 ? 1 : 0)) {
+      if (
+        newSelected.size ===
+        representedGroups.length +
+          (groupedEnrollments.noGroupEnrollments.length > 0 ? 1 : 0)
+      ) {
         newSelected.clear();
-        newSelected.add('all');
+        newSelected.add("all");
       }
     }
-    
+
     setSelectedGroups(newSelected);
   };
 
   // Функція для пересчёту всіх відміток за місяць
   const handleRecalculateMonth = async () => {
     if (!activity || isRecalculating) return;
-    
+
     setIsRecalculating(true);
-    
+
     try {
       // Групуємо attendance по enrollment_id
-      const attendanceByEnrollment = new Map<string, Array<{ date: string; status: AttendanceStatus | null; key: string }>>();
-      
+      const attendanceByEnrollment = new Map<
+        string,
+        Array<{ date: string; status: AttendanceStatus | null; key: string }>
+      >();
+
       attendanceMap.forEach((att, key) => {
-        const parts = key.split('-');
+        const parts = key.split("-");
         const enrollmentId = parts[0];
-        const date = parts.slice(1).join('-');
-        
+        const date = parts.slice(1).join("-");
+
         if (!attendanceByEnrollment.has(enrollmentId)) {
           attendanceByEnrollment.set(enrollmentId, []);
         }
@@ -1090,40 +1408,47 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           key,
         });
       });
-      
+
       const updatePromises: Promise<any>[] = [];
-      
+
       // Для кожного enrollment
       for (const [enrollmentId, records] of attendanceByEnrollment) {
         // Знаходимо enrollment для отримання custom_price та discount
-        const enrollment = filteredEnrollments.find(e => e.id === enrollmentId);
+        const enrollment = filteredEnrollments.find(
+          (e) => e.id === enrollmentId,
+        );
         if (!enrollment) continue;
-        
+
         // Сортуємо записи по даті
-        const sortedRecords = records.sort((a, b) => a.date.localeCompare(b.date));
-        
+        const sortedRecords = records.sort((a, b) =>
+          a.date.localeCompare(b.date),
+        );
+
         // Підраховуємо відвідування для subscription_with_logic по кожному статусу
         const visitCountByStatus = new Map<string, number>();
-        
+
         for (const record of sortedRecords) {
           if (!record.status) continue;
-          
+
           // Отримуємо billing_rules ДЛЯ ДАТИ ВІДМІТКИ (з урахуванням історії)
-          const billingRulesForDate = priceHistory 
+          const billingRulesForDate = priceHistory
             ? getBillingRulesForDate(activity, priceHistory, record.date)
             : activity.billing_rules;
-          
+
           // Перевіряємо чи це subscription_with_logic
           const customStatus = billingRulesForDate?.custom_statuses?.find(
-            (cs: any) => cs.id === record.status && cs.is_active !== false && cs.type === 'subscription_with_logic'
+            (cs: any) =>
+              cs.id === record.status &&
+              cs.is_active !== false &&
+              cs.type === "subscription_with_logic",
           );
-          
+
           let visitCountBefore = 0;
           if (customStatus) {
             visitCountBefore = visitCountByStatus.get(record.status) || 0;
             visitCountByStatus.set(record.status, visitCountBefore + 1);
           }
-          
+
           // Розраховуємо нове value на основі ПОТОЧНИХ правил для цієї дати
           const newValue = calculateValueFromBillingRules(
             record.date,
@@ -1132,14 +1457,17 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             enrollment.custom_price,
             enrollment.discount_percent || 0,
             billingRulesForDate || null,
-            visitCountBefore
+            visitCountBefore,
           );
-          
+
           const chargedAmount = newValue !== null ? newValue : 0;
           const existing = attendanceMap.get(record.key);
-          
+
           // Оновлюємо тільки якщо значення змінилось
-          if (existing && (existing.value !== newValue || existing.amount !== chargedAmount)) {
+          if (
+            existing &&
+            (existing.value !== newValue || existing.amount !== chargedAmount)
+          ) {
             updatePromises.push(
               setAttendance.mutateAsync({
                 enrollment_id: enrollmentId,
@@ -1149,30 +1477,30 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 value: newValue,
                 notes: existing.notes || null,
                 manual_value_edit: false,
-              })
+              }),
             );
           }
         }
       }
-      
+
       if (updatePromises.length > 0) {
         await Promise.allSettled(updatePromises);
         toast({
-          title: 'Перерахунок завершено',
+          title: "Перерахунок завершено",
           description: `Оновлено ${updatePromises.length} записів`,
         });
       } else {
         toast({
-          title: 'Перерахунок не потрібен',
-          description: 'Всі записи вже актуальні',
+          title: "Перерахунок не потрібен",
+          description: "Всі записи вже актуальні",
         });
       }
     } catch (error) {
-      console.error('Error recalculating:', error);
+      console.error("Error recalculating:", error);
       toast({
-        title: 'Помилка перерахунку',
-        description: 'Спробуйте ще раз',
-        variant: 'destructive',
+        title: "Помилка перерахунку",
+        description: "Спробуйте ще раз",
+        variant: "destructive",
       });
     } finally {
       setIsRecalculating(false);
@@ -1200,7 +1528,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             {MONTHS[month]} {year}
           </h2>
           <div className="w-[140px]">
-            <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+            <Select
+              value={periodFilter}
+              onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}
+            >
               <SelectTrigger className="h-9">
                 <SelectValue />
               </SelectTrigger>
@@ -1228,10 +1559,13 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="filter-all"
-                checked={selectedGroups.has('all')}
-                onCheckedChange={() => handleGroupToggle('all')}
+                checked={selectedGroups.has("all")}
+                onCheckedChange={() => handleGroupToggle("all")}
               />
-              <Label htmlFor="filter-all" className="cursor-pointer font-normal">
+              <Label
+                htmlFor="filter-all"
+                className="cursor-pointer font-normal"
+              >
                 Всі групи
               </Label>
             </div>
@@ -1242,8 +1576,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                   checked={selectedGroups.has(group.id)}
                   onCheckedChange={() => handleGroupToggle(group.id)}
                 />
-                <Label htmlFor={`filter-${group.id}`} className="cursor-pointer font-normal flex items-center gap-2">
-                  <div 
+                <Label
+                  htmlFor={`filter-${group.id}`}
+                  className="cursor-pointer font-normal flex items-center gap-2"
+                >
+                  <div
                     className="h-3 w-3 rounded-full"
                     style={{ backgroundColor: group.color }}
                   />
@@ -1255,17 +1592,19 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="filter-none"
-                  checked={selectedGroups.has('none')}
-                  onCheckedChange={() => handleGroupToggle('none')}
+                  checked={selectedGroups.has("none")}
+                  onCheckedChange={() => handleGroupToggle("none")}
                 />
-                <Label htmlFor="filter-none" className="cursor-pointer font-normal">
+                <Label
+                  htmlFor="filter-none"
+                  className="cursor-pointer font-normal"
+                >
                   Без групи
                 </Label>
               </div>
             )}
           </div>
         </div>
-
 
         <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
           <p>Немає дітей за обраними фільтрами</p>
@@ -1286,7 +1625,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         </h2>
         <div className="flex items-center gap-2">
           <div className="w-[140px]">
-            <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}>
+            <Select
+              value={periodFilter}
+              onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}
+            >
               <SelectTrigger className="h-9">
                 <SelectValue />
               </SelectTrigger>
@@ -1297,15 +1639,17 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
               </SelectContent>
             </Select>
           </div>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             size="sm"
             onClick={handleRecalculateMonth}
             disabled={isRecalculating}
             title="Перерахувати всі відмітки за місяць"
           >
-            <RefreshCw className={`h-4 w-4 mr-1 ${isRecalculating ? 'animate-spin' : ''}`} />
-            {isRecalculating ? 'Перерахунок...' : 'Перерахувати'}
+            <RefreshCw
+              className={`h-4 w-4 mr-1 ${isRecalculating ? "animate-spin" : ""}`}
+            />
+            {isRecalculating ? "Перерахунок..." : "Перерахувати"}
           </Button>
         </div>
         <Button variant="outline" size="icon" onClick={handleNextMonth}>
@@ -1325,8 +1669,8 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           <div className="flex items-center space-x-2">
             <Checkbox
               id="filter-all"
-              checked={selectedGroups.has('all')}
-              onCheckedChange={() => handleGroupToggle('all')}
+              checked={selectedGroups.has("all")}
+              onCheckedChange={() => handleGroupToggle("all")}
             />
             <Label htmlFor="filter-all" className="cursor-pointer font-normal">
               Всі групи
@@ -1339,8 +1683,11 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                 checked={selectedGroups.has(group.id)}
                 onCheckedChange={() => handleGroupToggle(group.id)}
               />
-              <Label htmlFor={`filter-${group.id}`} className="cursor-pointer font-normal flex items-center gap-2">
-                <div 
+              <Label
+                htmlFor={`filter-${group.id}`}
+                className="cursor-pointer font-normal flex items-center gap-2"
+              >
+                <div
                   className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: group.color }}
                 />
@@ -1352,17 +1699,19 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="filter-none"
-                checked={selectedGroups.has('none')}
-                onCheckedChange={() => handleGroupToggle('none')}
+                checked={selectedGroups.has("none")}
+                onCheckedChange={() => handleGroupToggle("none")}
               />
-              <Label htmlFor="filter-none" className="cursor-pointer font-normal">
+              <Label
+                htmlFor="filter-none"
+                className="cursor-pointer font-normal"
+              >
                 Без групи
               </Label>
             </div>
           )}
         </div>
       </div>
-
 
       {/* Grid */}
       {isMobile && (
@@ -1371,19 +1720,29 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             <Button
               variant="outline"
               size="icon"
-              onClick={() => setSelectedDayIndex((prev) => Math.max(0, prev - 1))}
+              onClick={() =>
+                setSelectedDayIndex((prev) => Math.max(0, prev - 1))
+              }
               disabled={selectedDayIndex <= 0}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div className="text-center">
-              <p className="text-sm font-semibold">{selectedDay ? formatDateString(selectedDay) : ''}</p>
-              <p className="text-xs text-muted-foreground">{selectedDay ? getWeekdayShort(selectedDay) : ''}</p>
+              <p className="text-sm font-semibold">
+                {selectedDay ? formatDateString(selectedDay) : ""}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {selectedDay ? getWeekdayShort(selectedDay) : ""}
+              </p>
             </div>
             <Button
               variant="outline"
               size="icon"
-              onClick={() => setSelectedDayIndex((prev) => Math.min(days.length - 1, prev + 1))}
+              onClick={() =>
+                setSelectedDayIndex((prev) =>
+                  Math.min(days.length - 1, prev + 1),
+                )
+              }
               disabled={selectedDayIndex >= days.length - 1}
             >
               <ChevronRight className="h-4 w-4" />
@@ -1395,75 +1754,192 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
             <div>Н: {dailyTotals[selectedDateStr]?.absent || 0}</div>
             <div>Σ: {dailyTotals[selectedDateStr]?.values || 0}</div>
           </div>
-          <div className="mt-2 text-sm font-medium">
-            {teachersForActivity.length > 0 
-              ? (
+          {role !== "manager" && (
+            <div className="mt-2 text-sm font-medium">
+              {teachersForActivity.length > 0 ? (
                 <>
-                  Оплата педагогу{' '}
+                  Оплата педагогу{" "}
                   <span className="text-xs font-normal">
-                    ({teachersForActivity.join(', ')})
+                    ({teachersForActivity.join(", ")})
                   </span>
-                  : {teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}
+                  :{" "}
+                  {teacherPayments[selectedDateStr]
+                    ? formatCurrency(teacherPayments[selectedDateStr])
+                    : "—"}
                 </>
-              )
-              : `Оплата педагогу: ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : '—'}`
-            }
-          </div>
+              ) : (
+                `Оплата педагогу: ${teacherPayments[selectedDateStr] ? formatCurrency(teacherPayments[selectedDateStr]) : "—"}`
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {isMobile ? (
         <div className="space-y-4">
-          {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
-            const group = groups.find(g => g.id === groupId);
-            return (
-              <div key={groupId} className="rounded-xl border bg-card">
-                <div className="border-b px-4 py-2 text-sm font-semibold">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="h-3 w-3 rounded-full"
-                      style={{ backgroundColor: group?.color || '#gray' }}
-                    />
-                    Група: {group?.name || 'Невідома група'}
+          {Array.from(groupedEnrollments.groupsMap.entries()).map(
+            ([groupId, groupEnrollments]) => {
+              const group = groups.find((g) => g.id === groupId);
+              return (
+                <div key={groupId} className="rounded-xl border bg-card">
+                  <div className="border-b px-4 py-2 text-sm font-semibold">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="h-3 w-3 rounded-full"
+                        style={{ backgroundColor: group?.color || "#gray" }}
+                      />
+                      Група: {group?.name || "Невідома група"}
+                    </div>
+                  </div>
+                  <div className="divide-y">
+                    {groupEnrollments.map((enrollment) => {
+                      const studentId =
+                        enrollment.students?.id || enrollment.student_id;
+                      const key = `${enrollment.id}-${selectedDateStr}`;
+                      const attendance = attendanceMap.get(key);
+                      const totals = studentTotals[enrollment.id] || {
+                        present: 0,
+                        sick: 0,
+                        absent: 0,
+                        values: 0,
+                      };
+                      return (
+                        <div
+                          key={enrollment.id}
+                          className={cn(
+                            "p-4",
+                            !enrollment.is_active &&
+                              "bg-muted/40 text-muted-foreground",
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              {studentId ? (
+                                <Link
+                                  to={`/students/${studentId}`}
+                                  className="font-medium text-primary hover:underline"
+                                >
+                                  {enrollment.students.full_name}
+                                </Link>
+                              ) : (
+                                <p className="font-medium">
+                                  {enrollment.students.full_name}
+                                </p>
+                              )}
+                              {!enrollment.is_active && (
+                                <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                  Архів
+                                </span>
+                              )}
+                              <p className="text-xs text-muted-foreground">
+                                П: {totals.present} · Х: {totals.sick} · Н:{" "}
+                                {totals.absent} · Σ: {totals.values}
+                              </p>
+                            </div>
+                            <EnhancedAttendanceCell
+                              status={attendance?.status || null}
+                              amount={attendance?.amount || 0}
+                              value={attendance?.value || null}
+                              notes={attendance?.notes || null}
+                              manualValueEdit={
+                                attendance?.manual_value_edit || false
+                              }
+                              isWeekend={
+                                selectedDay ? isWeekend(selectedDay) : false
+                              }
+                              onChange={(status, value, notes) =>
+                                handleStatusChange(
+                                  enrollment.id,
+                                  selectedDateStr,
+                                  status,
+                                  value,
+                                  notes || null,
+                                  0,
+                                  enrollment.custom_price,
+                                  enrollment.discount_percent,
+                                  enrollment,
+                                )
+                              }
+                              activityPrice={0}
+                              customPrice={enrollment.custom_price}
+                              discountPercent={enrollment.discount_percent}
+                              date={selectedDateStr}
+                              activity={activity}
+                              priceHistory={priceHistory}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-                <div className="divide-y">
-                  {groupEnrollments.map((enrollment) => {
-                    const studentId = enrollment.students?.id || enrollment.student_id;
-                    const key = `${enrollment.id}-${selectedDateStr}`;
-                    const attendance = attendanceMap.get(key);
-                    const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
-                    return (
-                      <div
-                        key={enrollment.id}
-                        className={cn('p-4', !enrollment.is_active && 'bg-muted/40 text-muted-foreground')}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            {studentId ? (
-                              <Link to={`/students/${studentId}`} className="font-medium text-primary hover:underline">
-                                {enrollment.students.full_name}
-                              </Link>
-                            ) : (
-                              <p className="font-medium">{enrollment.students.full_name}</p>
-                            )}
-                            {!enrollment.is_active && (
-                              <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                                Архів
-                              </span>
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                              П: {totals.present} · Х: {totals.sick} · Н: {totals.absent} · Σ: {totals.values}
+              );
+            },
+          )}
+
+          {groupedEnrollments.noGroupEnrollments.length > 0 && (
+            <div className="rounded-xl border bg-card">
+              <div className="border-b px-4 py-2 text-sm font-semibold">
+                Без групи
+              </div>
+              <div className="divide-y">
+                {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
+                  const studentId =
+                    enrollment.students?.id || enrollment.student_id;
+                  const key = `${enrollment.id}-${selectedDateStr}`;
+                  const attendance = attendanceMap.get(key);
+                  const totals = studentTotals[enrollment.id] || {
+                    present: 0,
+                    sick: 0,
+                    absent: 0,
+                    values: 0,
+                  };
+                  return (
+                    <div
+                      key={enrollment.id}
+                      className={cn(
+                        "p-4",
+                        !enrollment.is_active &&
+                          "bg-muted/40 text-muted-foreground",
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          {studentId ? (
+                            <Link
+                              to={`/students/${studentId}`}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {enrollment.students.full_name}
+                            </Link>
+                          ) : (
+                            <p className="font-medium">
+                              {enrollment.students.full_name}
                             </p>
-                          </div>
-                          <EnhancedAttendanceCell
-                            status={attendance?.status || null}
-                            amount={attendance?.amount || 0}
-                            value={attendance?.value || null}
-                            notes={attendance?.notes || null}
-                            manualValueEdit={attendance?.manual_value_edit || false}
-                            isWeekend={selectedDay ? isWeekend(selectedDay) : false}
-                            onChange={(status, value, notes) => handleStatusChange(
+                          )}
+                          {!enrollment.is_active && (
+                            <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                              Архів
+                            </span>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            П: {totals.present} · Х: {totals.sick} · Н:{" "}
+                            {totals.absent} · Σ: {totals.values}
+                          </p>
+                        </div>
+                        <EnhancedAttendanceCell
+                          status={attendance?.status || null}
+                          amount={attendance?.amount || 0}
+                          value={attendance?.value || null}
+                          notes={attendance?.notes || null}
+                          manualValueEdit={
+                            attendance?.manual_value_edit || false
+                          }
+                          isWeekend={
+                            selectedDay ? isWeekend(selectedDay) : false
+                          }
+                          onChange={(status, value, notes) =>
+                            handleStatusChange(
                               enrollment.id,
                               selectedDateStr,
                               status,
@@ -1472,74 +1948,9 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
                               0,
                               enrollment.custom_price,
                               enrollment.discount_percent,
-                              enrollment
-                            )}
-                            activityPrice={0}
-                            customPrice={enrollment.custom_price}
-                            discountPercent={enrollment.discount_percent}
-                            date={selectedDateStr}
-                            activity={activity}
-                            priceHistory={priceHistory}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-
-          {groupedEnrollments.noGroupEnrollments.length > 0 && (
-            <div className="rounded-xl border bg-card">
-              <div className="border-b px-4 py-2 text-sm font-semibold">Без групи</div>
-              <div className="divide-y">
-                {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
-                  const studentId = enrollment.students?.id || enrollment.student_id;
-                  const key = `${enrollment.id}-${selectedDateStr}`;
-                  const attendance = attendanceMap.get(key);
-                  const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
-                  return (
-                    <div
-                      key={enrollment.id}
-                      className={cn('p-4', !enrollment.is_active && 'bg-muted/40 text-muted-foreground')}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          {studentId ? (
-                            <Link to={`/students/${studentId}`} className="font-medium text-primary hover:underline">
-                              {enrollment.students.full_name}
-                            </Link>
-                          ) : (
-                            <p className="font-medium">{enrollment.students.full_name}</p>
-                          )}
-                          {!enrollment.is_active && (
-                            <span className="mt-1 inline-flex rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                              Архів
-                            </span>
-                          )}
-                          <p className="text-xs text-muted-foreground">
-                            П: {totals.present} · Х: {totals.sick} · Н: {totals.absent} · Σ: {totals.values}
-                          </p>
-                        </div>
-                        <EnhancedAttendanceCell
-                          status={attendance?.status || null}
-                          amount={attendance?.amount || 0}
-                          value={attendance?.value || null}
-                          notes={attendance?.notes || null}
-                          manualValueEdit={attendance?.manual_value_edit || false}
-                          isWeekend={selectedDay ? isWeekend(selectedDay) : false}
-                          onChange={(status, value, notes) => handleStatusChange(
-                            enrollment.id,
-                            selectedDateStr,
-                            status,
-                            value,
-                            notes || null,
-                            0,
-                            enrollment.custom_price,
-                            enrollment.discount_percent,
-                            enrollment
-                          )}
+                              enrollment,
+                            )
+                          }
                           activityPrice={0}
                           customPrice={enrollment.custom_price}
                           discountPercent={enrollment.discount_percent}
@@ -1557,341 +1968,430 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
         </div>
       ) : (
         <div className="space-y-0">
-          <div ref={totalsScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-        <table className="w-full border-collapse">
+          <div
+            ref={totalsScrollRef}
+            className="overflow-x-auto border rounded-xl border-b-0"
+          >
+            <table className="w-full border-collapse">
               {tableColGroup}
-          <thead>
+              <thead>
                 {/* Рядки підсумків під датами */}
-            <tr className="bg-muted/30 border-t-2 font-semibold">
-                  <th className="sticky left-0 z-20 bg-muted/30 px-4 py-2 text-sm text-left">Всього дітей</th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                const totals = dailyTotals[dateStr] || { present: 0, sick: 0, absent: 0, values: 0 };
-                return (
+                <tr className="bg-muted/30 border-t-2 font-semibold">
+                  <th className="sticky left-0 z-20 bg-muted/30 px-4 py-2 text-sm text-left">
+                    Всього дітей
+                  </th>
+                  {days.map((day) => {
+                    const dateStr = formatDateString(day);
+                    const totals = dailyTotals[dateStr] || {
+                      present: 0,
+                      sick: 0,
+                      absent: 0,
+                      values: 0,
+                      marked: 0,
+                    };
+                    return (
                       <th
                         key={dateStr}
                         className={cn(
                           "px-1 py-1 text-center text-xs font-medium",
-                          isWeekend(day) && WEEKEND_BG_COLOR
+                          isWeekend(day) && WEEKEND_BG_COLOR,
                         )}
                       >
-                    {totals.present}
-                  </th>
-                );
-              })}
+                        {totals.marked}
+                      </th>
+                    );
+                  })}
                   <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
-                {Object.values(studentTotals).reduce((sum, t) => sum + t.present, 0)}
-              </th>
-            </tr>
+                    {Object.values(studentTotals).reduce(
+                      (sum, t) => sum + t.marked,
+                      0,
+                    )}
+                  </th>
+                </tr>
                 {visibleGroupRows.map((groupRow) => (
                   <tr key={groupRow.id} className="bg-muted/30 font-semibold">
                     <th className="sticky left-0 z-20 bg-muted/30 px-4 py-2 text-sm text-left">
                       <span className="inline-flex items-center gap-2">
                         <span
                           className="h-3 w-3 rounded-full"
-                          style={{ backgroundColor: groupRow.color || '#94a3b8' }}
+                          style={{
+                            backgroundColor: groupRow.color || "#94a3b8",
+                          }}
                         />
                         {groupRow.name}
                       </span>
-                  </th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                      const value = groupDailyTotals[groupRow.id]?.[dateStr] || 0;
-                return (
+                    </th>
+                    {days.map((day) => {
+                      const dateStr = formatDateString(day);
+                      const value =
+                        groupDailyTotals[groupRow.id]?.[dateStr] || 0;
+                      return (
                         <th
                           key={dateStr}
                           className={cn(
                             "px-1 py-1 text-center text-xs font-medium",
-                            isWeekend(day) && WEEKEND_BG_COLOR
+                            isWeekend(day) && WEEKEND_BG_COLOR,
                           )}
                         >
                           {value}
-                  </th>
-                );
-              })}
+                        </th>
+                      );
+                    })}
                     <th className="sticky right-0 z-20 bg-muted/30 px-2 py-1 text-center text-xs font-medium">
-                      {Object.values(groupDailyTotals[groupRow.id] || {}).reduce((sum, v) => sum + v, 0)}
-              </th>
-            </tr>
+                      {Object.values(
+                        groupDailyTotals[groupRow.id] || {},
+                      ).reduce((sum, v) => sum + v, 0)}
+                    </th>
+                  </tr>
                 ))}
-            
-            {/* Рядок оплати педагогу */}
-            <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
-                  <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">
-                    {teachersForActivity.length > 0 
-                      ? (
+
+                {/* Рядок оплати педагогу */}
+                {role !== "manager" && (
+                  <tr className="bg-primary/10 border-t-2 border-b-2 font-semibold">
+                    <th className="sticky left-0 z-20 bg-primary/10 px-4 py-2 text-sm text-left">
+                      {teachersForActivity.length > 0 ? (
                         <>
-                          Оплата педагогу:{' '}
+                          Оплата педагогу:{" "}
                           <span className="text-xs font-normal">
-                            {teachersForActivity.join(', ')}
+                            {teachersForActivity.join(", ")}
                           </span>
                         </>
-                      )
-                      : 'Оплата педагогу'
-                    }
-                  </th>
-              {days.map((day) => {
-                const dateStr = formatDateString(day);
-                const payment = teacherPayments[dateStr] || 0;
-                return (
-                      <th
-                        key={dateStr}
-                        className={cn(
-                          "px-1 py-1 text-center text-xs font-medium",
-                          isWeekend(day) && WEEKEND_BG_COLOR
-                        )}
-                      >
-                    {payment > 0 ? formatCurrency(payment) : ''}
-                  </th>
-                );
-              })}
-                  <th className="sticky right-0 z-20 bg-primary/10 px-2 py-1 text-center text-xs font-medium">
-                {formatCurrency(Object.values(teacherPayments).reduce((sum, p) => sum + p, 0))}
-              </th>
-            </tr>
+                      ) : (
+                        "Оплата педагогу"
+                      )}
+                    </th>
+                    {days.map((day) => {
+                      const dateStr = formatDateString(day);
+                      const payment = teacherPayments[dateStr] || 0;
+                      return (
+                        <th
+                          key={dateStr}
+                          className={cn(
+                            "px-1 py-1 text-center text-xs font-medium",
+                            isWeekend(day) && WEEKEND_BG_COLOR,
+                          )}
+                        >
+                          {payment > 0 ? formatCurrency(payment) : ""}
+                        </th>
+                      );
+                    })}
+                    <th className="sticky right-0 z-20 bg-primary/10 px-2 py-1 text-center text-xs font-medium">
+                      {formatCurrency(
+                        Object.values(teacherPayments).reduce(
+                          (sum, p) => sum + p,
+                          0,
+                        ),
+                      )}
+                    </th>
+                  </tr>
+                )}
               </thead>
             </table>
           </div>
 
           <div className="sticky top-16 z-30 bg-card">
-            <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-              <table className="border-collapse" style={{ width: periodFilter === 'month' ? '100%' : 'auto' }}>
+            <div
+              ref={headerScrollRef}
+              className="overflow-x-auto border rounded-xl border-b-0"
+            >
+              <table
+                className="border-collapse"
+                style={{ width: periodFilter === "month" ? "100%" : "auto" }}
+              >
                 {tableColGroup}
                 <thead>
-            {/* Основний заголовок таблиці */}
-            <tr className="bg-muted/50">
+                  {/* Основний заголовок таблиці */}
+                  <tr className="bg-muted/50">
                     <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                Учень
-              </th>
-              {days.map((day) => (
-                <th
-                  key={formatDateString(day)}
+                      Учень
+                    </th>
+                    {days.map((day) => (
+                      <th
+                        key={formatDateString(day)}
                         className={cn(
                           "px-1 py-2 text-center text-xs font-medium",
                           isWeekend(day)
                             ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
-                            : "text-muted-foreground"
+                            : "text-muted-foreground",
                         )}
-                >
-                  <div>{getWeekdayShort(day)}</div>
-                  <div className="font-semibold">{formatShortDate(day)}</div>
-                </th>
-              ))}
+                      >
+                        <div>{getWeekdayShort(day)}</div>
+                        <div className="font-semibold">
+                          {formatShortDate(day)}
+                        </div>
+                      </th>
+                    ))}
                     <th className="sticky right-0 z-20 bg-muted/50 px-4 py-2 text-center text-xs font-medium">
-                Підсумки
-              </th>
-            </tr>
-          </thead>
+                      Підсумки
+                    </th>
+                  </tr>
+                </thead>
               </table>
             </div>
           </div>
-          <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
-            <table className="border-collapse" style={{ width: periodFilter === 'month' ? '100%' : 'auto' }}>
+          <div
+            ref={bodyScrollRef}
+            className="overflow-x-auto border rounded-xl border-t-0"
+          >
+            <table
+              className="border-collapse"
+              style={{ width: periodFilter === "month" ? "100%" : "auto" }}
+            >
               {tableColGroup}
-          <tbody>
-            {/* Рядки учнів з групуванням */}
-            {Array.from(groupedEnrollments.groupsMap.entries()).map(([groupId, groupEnrollments]) => {
-              const group = groups.find(g => g.id === groupId);
-              return (
-                <React.Fragment key={groupId}>
-                  {/* Заголовок групи */}
-                  <tr className="bg-muted/50 border-t-2 border-b">
-                    <td colSpan={days.length + 2} className="px-4 py-2 font-semibold text-sm">
-                      <div className="flex items-center gap-2">
-                        <div 
-                          className="h-4 w-4 rounded-full"
-                          style={{ backgroundColor: group?.color || '#gray' }}
-                        />
-                        Група: {group?.name || 'Невідома група'}
-                      </div>
-                    </td>
-                  </tr>
-                  {/* Діти в групі */}
-                  {groupEnrollments.map((enrollment) => {
-                    const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
-                    
-                    const studentId = enrollment.students?.id || enrollment.student_id;
+              <tbody>
+                {/* Рядки учнів з групуванням */}
+                {Array.from(groupedEnrollments.groupsMap.entries()).map(
+                  ([groupId, groupEnrollments]) => {
+                    const group = groups.find((g) => g.id === groupId);
                     return (
-                      <tr
-                        key={enrollment.id}
-                        className={cn(
-                          'border-t hover:bg-muted/20',
-                          !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
-                        )}
-                      >
-                        <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                          <div className="flex items-center gap-2">
-                            {studentId ? (
-                              <Link to={`/students/${studentId}`} className="text-primary hover:underline">
-                          {enrollment.students.full_name}
-                              </Link>
-                            ) : (
-                              <span>{enrollment.students.full_name}</span>
-                            )}
-                            {!enrollment.is_active && (
-                              <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                                Архів
-                              </span>
-                            )}
-                          </div>
-                          {(enrollment.custom_price || enrollment.discount_percent > 0) && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {enrollment.custom_price && `${enrollment.custom_price} ₴`}
-                              {enrollment.discount_percent > 0 && ` -${enrollment.discount_percent}%`}
-                            </span>
-                          )}
-                        </td>
-                        {days.map((day) => {
-                          const dateStr = formatDateString(day);
-                          const key = `${enrollment.id}-${dateStr}`;
-                          const attendance = attendanceMap.get(key);
-                          
+                      <React.Fragment key={groupId}>
+                        {/* Заголовок групи */}
+                        <tr className="bg-muted/50 border-t-2 border-b">
+                          <td
+                            colSpan={days.length + 2}
+                            className="px-4 py-2 font-semibold text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="h-4 w-4 rounded-full"
+                                style={{
+                                  backgroundColor: group?.color || "#gray",
+                                }}
+                              />
+                              Група: {group?.name || "Невідома група"}
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Діти в групі */}
+                        {groupEnrollments.map((enrollment) => {
+                          const totals = studentTotals[enrollment.id] || {
+                            present: 0,
+                            sick: 0,
+                            absent: 0,
+                            values: 0,
+                          };
+
+                          const studentId =
+                            enrollment.students?.id || enrollment.student_id;
                           return (
-                            <td
-                              key={dateStr}
+                            <tr
+                              key={enrollment.id}
                               className={cn(
-                                "p-0.5 text-center",
-                                isWeekend(day) && WEEKEND_BG_COLOR
+                                "border-t hover:bg-muted/20",
+                                !enrollment.is_active &&
+                                  "bg-muted/40 text-muted-foreground",
                               )}
                             >
-                              <EnhancedAttendanceCell
-                                status={attendance?.status || null}
-                                amount={attendance?.amount || 0}
-                                value={attendance?.value || null}
-                                notes={attendance?.notes || null}
-                                manualValueEdit={attendance?.manual_value_edit || false}
-                                isWeekend={isWeekend(day)}
-                                onChange={(status, value, notes) => handleStatusChange(
-                                  enrollment.id,
-                                  dateStr,
-                                  status,
-                                  value,
-                                  notes || null,
-                                  0, // activityPrice не використовується - залишаємо для сумісності
-                                  enrollment.custom_price,
-                                  enrollment.discount_percent,
-                                  enrollment
+                              <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                                <div className="flex items-center gap-2">
+                                  {studentId ? (
+                                    <Link
+                                      to={`/students/${studentId}`}
+                                      className="text-primary hover:underline"
+                                    >
+                                      {enrollment.students.full_name}
+                                    </Link>
+                                  ) : (
+                                    <span>{enrollment.students.full_name}</span>
+                                  )}
+                                  {!enrollment.is_active && (
+                                    <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                      Архів
+                                    </span>
+                                  )}
+                                </div>
+                                {(enrollment.custom_price ||
+                                  enrollment.discount_percent > 0) && (
+                                  <span className="ml-2 text-xs text-muted-foreground">
+                                    {enrollment.custom_price &&
+                                      `${enrollment.custom_price} ₴`}
+                                    {enrollment.discount_percent > 0 &&
+                                      ` -${enrollment.discount_percent}%`}
+                                  </span>
                                 )}
-                                activityPrice={0} // Не використовується - залишаємо для сумісності типів
-                                customPrice={enrollment.custom_price}
-                                discountPercent={enrollment.discount_percent}
-                                date={dateStr}
-                                activity={activity}
-                                priceHistory={priceHistory}
-                              />
-                            </td>
+                              </td>
+                              {days.map((day) => {
+                                const dateStr = formatDateString(day);
+                                const key = `${enrollment.id}-${dateStr}`;
+                                const attendance = attendanceMap.get(key);
+
+                                return (
+                                  <td
+                                    key={dateStr}
+                                    className={cn(
+                                      "p-0.5 text-center",
+                                      isWeekend(day) && WEEKEND_BG_COLOR,
+                                    )}
+                                  >
+                                    <EnhancedAttendanceCell
+                                      status={attendance?.status || null}
+                                      amount={attendance?.amount || 0}
+                                      value={attendance?.value || null}
+                                      notes={attendance?.notes || null}
+                                      manualValueEdit={
+                                        attendance?.manual_value_edit || false
+                                      }
+                                      isWeekend={isWeekend(day)}
+                                      onChange={(status, value, notes) =>
+                                        handleStatusChange(
+                                          enrollment.id,
+                                          dateStr,
+                                          status,
+                                          value,
+                                          notes || null,
+                                          0, // activityPrice не використовується - залишаємо для сумісності
+                                          enrollment.custom_price,
+                                          enrollment.discount_percent,
+                                          enrollment,
+                                        )
+                                      }
+                                      activityPrice={0} // Не використовується - залишаємо для сумісності типів
+                                      customPrice={enrollment.custom_price}
+                                      discountPercent={
+                                        enrollment.discount_percent
+                                      }
+                                      date={dateStr}
+                                      activity={activity}
+                                      priceHistory={priceHistory}
+                                    />
+                                  </td>
+                                );
+                              })}
+                              <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">
+                                <div>П: {totals.present}</div>
+                                <div>Х: {totals.sick}</div>
+                                <div>Н: {totals.absent}</div>
+                                <div className="mt-1 font-semibold">
+                                  Σ: {totals.values}
+                                </div>
+                              </td>
+                            </tr>
                           );
                         })}
-                        <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">
-                          <div>П: {totals.present}</div>
-                          <div>Х: {totals.sick}</div>
-                          <div>Н: {totals.absent}</div>
-                          <div className="mt-1 font-semibold">Σ: {totals.values}</div>
-                        </td>
-                      </tr>
+                      </React.Fragment>
                     );
-                  })}
-                </React.Fragment>
-              );
-            })}
-            
-            {/* Діти без групи */}
-            {groupedEnrollments.noGroupEnrollments.length > 0 && (
-              <React.Fragment>
-                <tr className="bg-muted/50 border-t-2 border-b">
-                  <td colSpan={days.length + 2} className="px-4 py-2 font-semibold text-sm">
-                    Без групи
-                  </td>
-                </tr>
-                {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
-                  const totals = studentTotals[enrollment.id] || { present: 0, sick: 0, absent: 0, values: 0 };
-                  
-                  const studentId = enrollment.students?.id || enrollment.student_id;
-                  return (
-                    <tr
-                      key={enrollment.id}
-                      className={cn(
-                        'border-t hover:bg-muted/20',
-                        !enrollment.is_active && 'bg-muted/40 text-muted-foreground'
-                      )}
-                    >
-                      <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                        <div className="flex items-center gap-2">
-                          {studentId ? (
-                            <Link to={`/students/${studentId}`} className="text-primary hover:underline">
-                        {enrollment.students.full_name}
-                            </Link>
-                          ) : (
-                            <span>{enrollment.students.full_name}</span>
-                          )}
-                          {!enrollment.is_active && (
-                            <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                              Архів
-                            </span>
-                          )}
-                        </div>
-                        {(enrollment.custom_price || enrollment.discount_percent > 0) && (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            {enrollment.custom_price && `${enrollment.custom_price} ₴`}
-                            {enrollment.discount_percent > 0 && ` -${enrollment.discount_percent}%`}
-                          </span>
-                        )}
-                      </td>
-                      {days.map((day) => {
-                        const dateStr = formatDateString(day);
-                        const key = `${enrollment.id}-${dateStr}`;
-                        const attendance = attendanceMap.get(key);
-                        
-                        return (
-                          <td
-                            key={dateStr}
-                            className={cn(
-                              "p-0.5 text-center",
-                              isWeekend(day) && WEEKEND_BG_COLOR
-                            )}
-                          >
-                            <EnhancedAttendanceCell
-                              status={attendance?.status || null}
-                              amount={attendance?.amount || 0}
-                              value={attendance?.value || null}
-                              notes={attendance?.notes || null}
-                              manualValueEdit={attendance?.manual_value_edit || false}
-                              isWeekend={isWeekend(day)}
-                              onChange={(status, value, notes) => handleStatusChange(
-                                enrollment.id,
-                                dateStr,
-                                status,
-                                value,
-                                notes || null,
-                                0, // activityPrice не використовується - залишаємо для сумісності
-                                enrollment.custom_price,
-                                enrollment.discount_percent,
-                                enrollment
-                              )}
-                              activityPrice={0} // Не використовується - залишаємо для сумісності типів
-                              customPrice={enrollment.custom_price}
-                              discountPercent={enrollment.discount_percent}
-                              date={dateStr}
-                              activity={activity}
-                              priceHistory={priceHistory}
-                            />
-                          </td>
-                        );
-                      })}
-                      <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">
-                        <div>П: {totals.present}</div>
-                        <div>Х: {totals.sick}</div>
-                        <div>Н: {totals.absent}</div>
-                        <div className="mt-1 font-semibold">Σ: {totals.values}</div>
+                  },
+                )}
+
+                {/* Діти без групи */}
+                {groupedEnrollments.noGroupEnrollments.length > 0 && (
+                  <React.Fragment>
+                    <tr className="bg-muted/50 border-t-2 border-b">
+                      <td
+                        colSpan={days.length + 2}
+                        className="px-4 py-2 font-semibold text-sm"
+                      >
+                        Без групи
                       </td>
                     </tr>
-                  );
-                })}
-              </React.Fragment>
-            )}
-          </tbody>
-        </table>
-      </div>
+                    {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
+                      const totals = studentTotals[enrollment.id] || {
+                        present: 0,
+                        sick: 0,
+                        absent: 0,
+                        values: 0,
+                      };
+
+                      const studentId =
+                        enrollment.students?.id || enrollment.student_id;
+                      return (
+                        <tr
+                          key={enrollment.id}
+                          className={cn(
+                            "border-t hover:bg-muted/20",
+                            !enrollment.is_active &&
+                              "bg-muted/40 text-muted-foreground",
+                          )}
+                        >
+                          <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                            <div className="flex items-center gap-2">
+                              {studentId ? (
+                                <Link
+                                  to={`/students/${studentId}`}
+                                  className="text-primary hover:underline"
+                                >
+                                  {enrollment.students.full_name}
+                                </Link>
+                              ) : (
+                                <span>{enrollment.students.full_name}</span>
+                              )}
+                              {!enrollment.is_active && (
+                                <span className="rounded-full border border-dashed border-muted-foreground px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                                  Архів
+                                </span>
+                              )}
+                            </div>
+                            {(enrollment.custom_price ||
+                              enrollment.discount_percent > 0) && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                {enrollment.custom_price &&
+                                  `${enrollment.custom_price} ₴`}
+                                {enrollment.discount_percent > 0 &&
+                                  ` -${enrollment.discount_percent}%`}
+                              </span>
+                            )}
+                          </td>
+                          {days.map((day) => {
+                            const dateStr = formatDateString(day);
+                            const key = `${enrollment.id}-${dateStr}`;
+                            const attendance = attendanceMap.get(key);
+
+                            return (
+                              <td
+                                key={dateStr}
+                                className={cn(
+                                  "p-0.5 text-center",
+                                  isWeekend(day) && WEEKEND_BG_COLOR,
+                                )}
+                              >
+                                <EnhancedAttendanceCell
+                                  status={attendance?.status || null}
+                                  amount={attendance?.amount || 0}
+                                  value={attendance?.value || null}
+                                  notes={attendance?.notes || null}
+                                  manualValueEdit={
+                                    attendance?.manual_value_edit || false
+                                  }
+                                  isWeekend={isWeekend(day)}
+                                  onChange={(status, value, notes) =>
+                                    handleStatusChange(
+                                      enrollment.id,
+                                      dateStr,
+                                      status,
+                                      value,
+                                      notes || null,
+                                      0, // activityPrice не використовується - залишаємо для сумісності
+                                      enrollment.custom_price,
+                                      enrollment.discount_percent,
+                                      enrollment,
+                                    )
+                                  }
+                                  activityPrice={0} // Не використовується - залишаємо для сумісності типів
+                                  customPrice={enrollment.custom_price}
+                                  discountPercent={enrollment.discount_percent}
+                                  date={dateStr}
+                                  activity={activity}
+                                  priceHistory={priceHistory}
+                                />
+                              </td>
+                            );
+                          })}
+                          <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">
+                            <div>П: {totals.present}</div>
+                            <div>Х: {totals.sick}</div>
+                            <div>Н: {totals.absent}</div>
+                            <div className="mt-1 font-semibold">
+                              Σ: {totals.values}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
       <Dialog open={isAddStudentOpen} onOpenChange={setIsAddStudentOpen}>
@@ -1902,7 +2402,10 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Дитина</Label>
-              <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+              <Select
+                value={selectedStudentId}
+                onValueChange={setSelectedStudentId}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Оберіть дитину" />
                 </SelectTrigger>
@@ -1943,12 +2446,19 @@ export function EnhancedAttendanceGrid({ activityId }: AttendanceGridProps) {
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsAddStudentOpen(false)}>
+              <Button
+                variant="outline"
+                onClick={() => setIsAddStudentOpen(false)}
+              >
                 Скасувати
               </Button>
               <Button
                 onClick={handleAddStudent}
-                disabled={!selectedStudentId || selectedStudentId === 'none' || createEnrollment.isPending}
+                disabled={
+                  !selectedStudentId ||
+                  selectedStudentId === "none" ||
+                  createEnrollment.isPending
+                }
               >
                 Додати
               </Button>
