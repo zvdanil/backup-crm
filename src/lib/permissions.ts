@@ -16,6 +16,7 @@ export type AppSection =
   | "staff_payroll"
   | "users"
   | "summary_report"
+  | "financial_report"
   | "debtors";
 
 const roleAccess: Record<UserRole, AppSection[]> = {
@@ -35,6 +36,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     "staff_payroll",
     "users",
     "summary_report",
+    "financial_report",
   ],
   admin: [
     "dashboard",
@@ -52,6 +54,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     "staff_payroll",
     "users",
     "summary_report",
+    "financial_report",
   ],
   manager: [
     "calendar",
@@ -74,6 +77,7 @@ const roleAccess: Record<UserRole, AppSection[]> = {
     "staff_expenses",
     "staff_payroll",
     "summary_report",
+    "financial_report",
   ],
   parent: [],
   newregistration: [],

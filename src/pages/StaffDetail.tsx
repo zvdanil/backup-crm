@@ -97,6 +97,8 @@ import { useGroupLessons } from "@/hooks/useGroupLessons";
 import { useMemo } from "react";
 import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
+import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function StaffDetail() {
   const { id } = useParams<{ id: string }>();
@@ -154,6 +156,7 @@ export default function StaffDetail() {
   const { data: payouts = [] } = useStaffPayouts(id);
   const { data: activities = [] } = useActivities();
   const { data: allGroupLessons = [] } = useGroupLessons(); // Получаем все групповые занятия для получения названий
+  const { data: accounts = [] } = usePaymentAccounts();
   const createPayout = useCreateStaffPayout();
   const updatePayout = useUpdateStaffPayout();
   const deletePayout = useDeleteStaffPayout();
@@ -185,6 +188,7 @@ export default function StaffDetail() {
     amount: z.number().min(0.01, "Сума має бути більше 0"),
     payout_date: z.string().min(1, "Оберіть дату"),
     notes: z.string().optional(),
+    account_id: z.string().min(1, "Оберіть рахунок"),
   });
 
   type PayoutFormData = z.infer<typeof payoutSchema>;
@@ -193,6 +197,8 @@ export default function StaffDetail() {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<PayoutFormData>({
     resolver: zodResolver(payoutSchema),
@@ -200,6 +206,7 @@ export default function StaffDetail() {
       amount: 0,
       payout_date: new Date().toISOString().split("T")[0],
       notes: "",
+      account_id: "",
     },
   });
 
@@ -442,6 +449,7 @@ export default function StaffDetail() {
       amount: 0,
       payout_date: date,
       notes: "",
+      account_id: "",
     });
   };
 
@@ -455,6 +463,7 @@ export default function StaffDetail() {
           amount: data.amount,
           payout_date: data.payout_date,
           notes: data.notes || null,
+          account_id: data.account_id,
         });
       } else {
         await createPayout.mutateAsync({
@@ -462,6 +471,7 @@ export default function StaffDetail() {
           amount: data.amount,
           payout_date: data.payout_date,
           notes: data.notes || null,
+          account_id: data.account_id,
         });
       }
       reset();
@@ -1480,6 +1490,32 @@ export default function StaffDetail() {
             </div>
 
             <div>
+              <Label htmlFor="payout_account">Рахунок списання</Label>
+              <Select
+                value={watch("account_id") || ""}
+                onValueChange={(value) => {
+                  setValue("account_id", value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Оберіть рахунок" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.account_id && (
+                <p className="text-sm text-red-500 mt-1">
+                  {errors.account_id.message}
+                </p>
+              )}
+            </div>
+
+            <div>
               <Label htmlFor="payout_notes">Примітки (необов'язково)</Label>
               <Textarea id="payout_notes" {...register("notes")} rows={3} />
             </div>
@@ -1533,6 +1569,7 @@ export default function StaffDetail() {
                             amount: payout.amount,
                             payout_date: payout.payout_date,
                             notes: payout.notes || "",
+                            account_id: payout.account_id || "",
                           });
                         }}
                       >

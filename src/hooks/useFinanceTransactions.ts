@@ -131,6 +131,7 @@ export function useCreateFinanceTransaction() {
             amount: transaction.amount,
             payout_date: transaction.date,
             notes: transaction.description || null,
+            account_id: transaction.account_id || null, // Передаем account_id если есть
           });
 
         if (payoutError) throw payoutError;
@@ -199,6 +200,15 @@ export function useUpdateFinanceTransaction() {
       id,
       ...transaction
     }: { id: string } & FinanceTransactionUpdate) => {
+      // Получаем текущую транзакцию для проверки типа
+      const { data: currentTx, error: fetchError } = await supabaseAny
+        .from("finance_transactions")
+        .select("type, staff_id, date, amount")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
       const { data, error } = await supabaseAny
         .from("finance_transactions")
         .update(transaction)
@@ -207,10 +217,50 @@ export function useUpdateFinanceTransaction() {
         .single();
 
       if (error) throw error;
+
+      // Если это транзакция типа 'salary', синхронизируем с staff_payouts
+      if (currentTx?.type === "salary" && currentTx?.staff_id) {
+        // Находим соответствующую выплату по staff_id, date и amount
+        const { data: payouts, error: payoutFetchError } = await supabaseAny
+          .from("staff_payouts" as any)
+          .select("id")
+          .eq("staff_id", currentTx.staff_id)
+          .eq("payout_date", currentTx.date)
+          .eq("amount", currentTx.amount)
+          .or("is_deleted.is.null,is_deleted.eq.false")
+          .limit(1);
+
+        if (!payoutFetchError && payouts && payouts.length > 0) {
+          // Обновляем выплату
+          const { error: payoutUpdateError } = await supabaseAny
+            .from("staff_payouts" as any)
+            .update({
+              staff_id: transaction.staff_id || currentTx.staff_id,
+              amount: transaction.amount || currentTx.amount,
+              payout_date: transaction.date || currentTx.date,
+              notes: transaction.description || null,
+              account_id: transaction.account_id || null,
+            })
+            .eq("id", payouts[0].id);
+
+          if (payoutUpdateError) throw payoutUpdateError;
+        }
+      }
+
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["finance_transactions"] });
+      if (data.staff_id && data.type === "salary") {
+        queryClient.invalidateQueries({
+          queryKey: ["staff-payouts", data.staff_id],
+          exact: false,
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["staff-payouts-all"],
+          exact: false,
+        });
+      }
       toast({ title: "Транзакцію оновлено" });
     },
     onError: (error) => {
@@ -228,12 +278,34 @@ export function useDeleteFinanceTransaction() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      // Получаем транзакцию перед удалением для проверки типа
+      const { data: tx, error: fetchError } = await supabaseAny
+        .from("finance_transactions")
+        .select("type, staff_id, date, amount")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
       const { error } = await supabaseAny
         .from("finance_transactions")
         .delete()
         .eq("id", id);
 
       if (error) throw error;
+
+      // Если это транзакция типа 'salary', удаляем соответствующую выплату
+      if (tx?.type === "salary" && tx?.staff_id) {
+        const { error: payoutDeleteError } = await supabaseAny
+          .from("staff_payouts" as any)
+          .delete()
+          .eq("staff_id", tx.staff_id)
+          .eq("payout_date", tx.date)
+          .eq("amount", tx.amount)
+          .or("is_deleted.is.null,is_deleted.eq.false");
+
+        if (payoutDeleteError) throw payoutDeleteError;
+      }
     },
     onSuccess: () => {
       // Invalidate all related queries
@@ -242,6 +314,15 @@ export function useDeleteFinanceTransaction() {
       queryClient.invalidateQueries({ queryKey: ["dashboard"], exact: false });
       queryClient.invalidateQueries({ queryKey: ["student_activity_balance"] });
       queryClient.invalidateQueries({ queryKey: ["student_total_balance"] });
+      // Invalidate staff payouts if it was a salary transaction
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts"],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
       toast({ title: "Транзакцію видалено" });
     },
     onError: (error) => {

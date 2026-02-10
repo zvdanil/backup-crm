@@ -30,6 +30,7 @@ import PendingActivation from "./pages/PendingActivation";
 import SummaryReport from "./pages/SummaryReport";
 import CalendarPage from "./pages/Calendar";
 import DebtorsRegistry from "./pages/DebtorsRegistry";
+import FinancialSummaryReport from "./pages/FinancialSummaryReport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -242,6 +243,16 @@ const AppRoutes = () => {
               allowedRoles={["owner", "admin", "accountant", "viewer"]}
             >
               <DebtorsRegistry />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/financial-report"
+          element={
+            <ProtectedRoute
+              allowedRoles={["owner", "admin", "viewer"]}
+            >
+              <FinancialSummaryReport />
             </ProtectedRoute>
           }
         />

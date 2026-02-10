@@ -18,7 +18,8 @@ import {
   Shield,
   User,
   ChevronDown,
-  BookOpenCheck
+  BookOpenCheck,
+  FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ const referenceItems = [
   { name: 'Групи', href: '/groups', icon: UsersRound, section: 'groups' },
   { name: 'Персонал', href: '/staff', icon: UserCog, section: 'staff' },
   { name: 'Сводний звіт', href: '/summary-report', icon: ClipboardList, section: 'summary_report' },
+  { name: 'Фінансовий звіт', href: '/financial-report', icon: FileText, section: 'financial_report' },
 ];
 
 // Основные пункты меню (остаются в верхнем меню)

@@ -52,6 +52,7 @@ const activitySchema = z.object({
   billing_rules: z.any().optional(),
   effective_from: z.string().optional(),
   config: z.any().optional(),
+  is_actual_expense: z.boolean().optional(),
 });
 
 type ActivityFormData = z.infer<typeof activitySchema>;
@@ -89,22 +90,23 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
 
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<ActivityFormData>({
     resolver: zodResolver(activitySchema),
-    defaultValues: {
-      name: '',
-      teacher_payment_percent: '50',
-      description: '',
-      color: '#3B82F6',
-      category: 'income',
-      account_id: 'none',
-      balance_display_mode: 'recalculation',
-      fixed_teacher_rate: '',
-      payment_mode: 'default',
-      auto_journal: false,
-      show_in_children: true,
-      show_in_journals: true,
-      billing_rules: null,
-      effective_from: new Date().toISOString().split('T')[0],
-    },
+      defaultValues: {
+        name: '',
+        teacher_payment_percent: '50',
+        description: '',
+        color: '#3B82F6',
+        category: 'income',
+        account_id: 'none',
+        balance_display_mode: 'recalculation',
+        fixed_teacher_rate: '',
+        payment_mode: 'default',
+        auto_journal: false,
+        show_in_children: true,
+        show_in_journals: true,
+        billing_rules: null,
+        effective_from: new Date().toISOString().split('T')[0],
+        is_actual_expense: false,
+      },
   });
 
   // Reset form when initialData changes
@@ -140,6 +142,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
         billing_rules: initialData?.billing_rules || null,
         effective_from: defaultEffectiveFrom,
         config: initialConfig,
+        is_actual_expense: initialData?.is_actual_expense || false,
       });
     }
   }, [open, initialData, reset]);
@@ -168,6 +171,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       // default_price та payment_type не передаються - тепер використовується billing_rules
       effective_from: effectiveFrom, // Передаємо дату зміни для історії (не зберігається в activities)
       is_active: true,
+      is_actual_expense: data.is_actual_expense || false,
     });
     reset();
     setBillingRules(null);
@@ -210,6 +214,20 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
               <p className="text-sm text-destructive">{errors.name.message}</p>
             )}
           </div>
+
+          {/* Чекбокс "Факт реальных расходов" - только для расходных категорий */}
+          {(watch('category') === 'household_expense' || watch('category') === 'expense') && (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is_actual_expense"
+                checked={watch('is_actual_expense') || false}
+                onCheckedChange={(checked) => setValue('is_actual_expense', checked)}
+              />
+              <Label htmlFor="is_actual_expense" className="cursor-pointer">
+                Факт реальних витрат
+              </Label>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Категорія *</Label>

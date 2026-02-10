@@ -491,7 +491,7 @@ export function EnhancedAttendanceCell({
             onKeyDown={handleInputKeyDown}
             placeholder=""
             readOnly={false}
-            style={cellStyle}
+            style={{ ...cellStyle, textAlign: "center" }}
             className={cellClassName}
           />
           {/* Индикатор примечания */}

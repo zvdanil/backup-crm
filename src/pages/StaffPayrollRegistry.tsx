@@ -4,10 +4,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useStaff } from '@/hooks/useStaff';
 import { useAllStaffPayouts, useCreateStaffPayout } from '@/hooks/useStaffBilling';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/attendance';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -26,12 +28,14 @@ const payoutSchema = z.object({
   amount: z.number().min(0.01, 'Сума має бути більше 0'),
   payout_date: z.string().min(1, 'Оберіть дату'),
   notes: z.string().optional(),
+  account_id: z.string().min(1, 'Оберіть рахунок списання'),
 });
 
 type PayoutFormData = z.infer<typeof payoutSchema>;
 
 export default function StaffPayrollRegistry() {
   const { data: staff = [] } = useStaff();
+  const { data: accounts = [] } = usePaymentAccounts();
   
   // Month filter state
   const now = new Date();
@@ -112,12 +116,13 @@ export default function StaffPayrollRegistry() {
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<PayoutFormData>({
+  const { register, handleSubmit, reset, formState: { errors }, watch, setValue } = useForm<PayoutFormData>({
     resolver: zodResolver(payoutSchema),
     defaultValues: {
       amount: 0,
       payout_date: new Date().toISOString().split('T')[0],
       notes: '',
+      account_id: '',
     },
   });
 
@@ -175,6 +180,7 @@ export default function StaffPayrollRegistry() {
         amount: data.amount,
         payout_date: data.payout_date,
         notes: data.notes || null,
+        account_id: data.account_id || null,
       });
       reset();
       setIsDialogOpen(false);
@@ -400,6 +406,28 @@ export default function StaffPayrollRegistry() {
                               />
                               {errors.payout_date && (
                                 <p className="text-sm text-red-500 mt-1">{errors.payout_date.message}</p>
+                              )}
+                            </div>
+                            
+                            <div>
+                              <Label htmlFor="account_id">Рахунок списання *</Label>
+                              <Select
+                                value={watch('account_id') || ''}
+                                onValueChange={(value) => setValue('account_id', value)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Оберіть рахунок" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {accounts.map((account) => (
+                                    <SelectItem key={account.id} value={account.id}>
+                                      {account.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {errors.account_id && (
+                                <p className="text-sm text-red-500 mt-1">{errors.account_id.message}</p>
                               )}
                             </div>
                             

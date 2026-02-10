@@ -301,6 +301,7 @@ export function EnhancedAttendanceGrid({
     return () => header.removeEventListener("scroll", sync);
   }, [days.length, filteredEnrollments.length]);
 
+  // Єдиний colgroup для всіх таблиць
   const tableColGroup = useMemo(
     () => (
       <colgroup>
@@ -1968,6 +1969,49 @@ export function EnhancedAttendanceGrid({
         </div>
       ) : (
         <div className="space-y-0">
+          {/* Заголовок з днями тижня */}
+          <div className="sticky top-16 z-30 bg-card">
+            <div
+              ref={headerScrollRef}
+              className="overflow-x-auto border rounded-xl border-b-0"
+            >
+              <table
+                className="border-collapse"
+                style={{ width: periodFilter === "month" ? "100%" : "auto" }}
+              >
+                {tableColGroup}
+                <thead>
+                  {/* Основний заголовок таблиці */}
+                  <tr className="bg-muted/50">
+                    <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                      Учень
+                    </th>
+                    {days.map((day) => (
+                      <th
+                        key={formatDateString(day)}
+                        className={cn(
+                          "px-1 py-2 text-center text-xs font-medium",
+                          isWeekend(day)
+                            ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        <div>{getWeekdayShort(day)}</div>
+                        <div className="font-semibold">
+                          {formatShortDate(day)}
+                        </div>
+                      </th>
+                    ))}
+                    <th className="sticky right-0 z-20 bg-muted/50 px-4 py-2 text-center text-xs font-medium">
+                      Підсумки
+                    </th>
+                  </tr>
+                </thead>
+              </table>
+            </div>
+          </div>
+
+          {/* Таблиця з підсумками */}
           <div
             ref={totalsScrollRef}
             className="overflow-x-auto border rounded-xl border-b-0"
@@ -2089,46 +2133,7 @@ export function EnhancedAttendanceGrid({
             </table>
           </div>
 
-          <div className="sticky top-16 z-30 bg-card">
-            <div
-              ref={headerScrollRef}
-              className="overflow-x-auto border rounded-xl border-b-0"
-            >
-              <table
-                className="border-collapse"
-                style={{ width: periodFilter === "month" ? "100%" : "auto" }}
-              >
-                {tableColGroup}
-                <thead>
-                  {/* Основний заголовок таблиці */}
-                  <tr className="bg-muted/50">
-                    <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                      Учень
-                    </th>
-                    {days.map((day) => (
-                      <th
-                        key={formatDateString(day)}
-                        className={cn(
-                          "px-1 py-2 text-center text-xs font-medium",
-                          isWeekend(day)
-                            ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        <div>{getWeekdayShort(day)}</div>
-                        <div className="font-semibold">
-                          {formatShortDate(day)}
-                        </div>
-                      </th>
-                    ))}
-                    <th className="sticky right-0 z-20 bg-muted/50 px-4 py-2 text-center text-xs font-medium">
-                      Підсумки
-                    </th>
-                  </tr>
-                </thead>
-              </table>
-            </div>
-          </div>
+          {/* Тіло таблиці з даними учнів */}
           <div
             ref={bodyScrollRef}
             className="overflow-x-auto border rounded-xl border-t-0"

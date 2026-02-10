@@ -70,6 +70,7 @@ export interface Activity {
   auto_journal: boolean;
   billing_rules: BillingRules | null;
   config: Record<string, any> | null; // JSONB config for activity metadata (e.g., Garden Attendance Journal)
+  is_actual_expense: boolean;
   created_at: string;
   updated_at: string;
 }
