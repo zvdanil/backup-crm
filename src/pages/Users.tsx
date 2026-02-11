@@ -51,8 +51,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
 const createUserSchema = z.object({
   email: z.string().email("Невірний формат email"),
   password: z.string().min(6, "Пароль має бути мінімум 6 символів"),
-  parentName: z.string().min(1, "ФІО батька обов'язкове"),
-  childName: z.string().min(1, "ФІО дитини обов'язкове"),
+  parentName: z.string().min(1, "ПІБ Мати/Тато обов'язкове"),
+  childName: z.string().min(1, "ПІБ дитини обов'язкове"),
   role: z.enum([
     "owner",
     "admin",
@@ -122,19 +122,13 @@ export default function Users() {
       });
       createUserForm.reset();
       setIsCreateDialogOpen(false);
-      // Обновляем список пользователей после успешного создания
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ["user_profiles"] });
         queryClient.refetchQueries({ queryKey: ["user_profiles"] });
       }, 1000);
     } catch (error) {
-      // Ошибка уже обработана в useCreateUser
       console.error("[Users] Create user error", error);
-      // Даже при ошибке проверяем, не был ли пользователь создан
-      // Если была ошибка CORS, но пользователь создан, обновляем список
       setTimeout(() => {
-        // Обновляем список пользователей через 2 секунды
-        // Это даст время на создание пользователя, если он был создан
         console.log("[Users] Refetching profiles after error...");
         queryClient.invalidateQueries({ queryKey: ["user_profiles"] });
         queryClient.refetchQueries({ queryKey: ["user_profiles"] });
@@ -216,11 +210,11 @@ export default function Users() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="create-parent-name">ФІО батька</Label>
+                    <Label htmlFor="create-parent-name">ПІБ Мати/Тато</Label>
                     <Input
                       id="create-parent-name"
                       type="text"
-                      placeholder="Повне ім'я батька"
+                      placeholder="Повне ім'я"
                       {...createUserForm.register("parentName")}
                       disabled={createUser.isPending}
                     />
@@ -232,11 +226,11 @@ export default function Users() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="create-child-name">ФІО дитини</Label>
+                    <Label htmlFor="create-child-name">ПІБ дитини</Label>
                     <Input
                       id="create-child-name"
                       type="text"
-                      placeholder="Повне ім'я дитини"
+                      placeholder="ПІБ дитини"
                       {...createUserForm.register("childName")}
                       disabled={createUser.isPending}
                     />
@@ -314,10 +308,11 @@ export default function Users() {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-            <Table className="min-w-[680px]">
+            <Table className="min-w-[800px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Користувач</TableHead>
+                  <TableHead>Користувач (батько)</TableHead>
+                  <TableHead>ПІБ дитини</TableHead>
                   <TableHead>E-mail</TableHead>
                   <TableHead>Роль</TableHead>
                   <TableHead>Активний</TableHead>
@@ -332,6 +327,11 @@ export default function Users() {
                       </div>
                       <div className="text-xs text-muted-foreground break-all">
                         {profile.id}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {profile.child_name || "—"}
                       </div>
                     </TableCell>
                     <TableCell>
