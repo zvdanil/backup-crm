@@ -20,8 +20,8 @@ const signUpSchema = z
     email: z.string().email("Невірний формат email"),
     password: z.string().min(6, "Пароль має бути мінімум 6 символів"),
     passwordConfirm: z.string().min(1, "Підтвердження пароля обов'язкове"),
-    parentName: z.string().min(1, "ФІО батька обов'язкове"),
-    childName: z.string().min(1, "ФІО дитини обов'язкове"),
+    parentName: z.string().min(1, "ПІБ Мати/Тато обов'язкове"),
+    childName: z.string().min(1, "Прізвище та ім'я дитини обов'язкове"),
   })
   .refine((data) => data.password === data.passwordConfirm, {
     message: "Паролі не співпадають",
@@ -221,11 +221,11 @@ export default function Login() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="signup-parent-name">ФІО батька</Label>
+                <Label htmlFor="signup-parent-name">ПІБ Мати/Тато</Label>
                 <Input
                   id="signup-parent-name"
                   type="text"
-                  placeholder="Повне ім'я батька"
+                  placeholder="Повне ім'я"
                   {...signUpForm.register("parentName")}
                   disabled={isSubmitting || isLoading}
                 />
@@ -237,7 +237,7 @@ export default function Login() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="signup-child-name">ФІО дитини</Label>
+                <Label htmlFor="signup-child-name">Прізвище та ім'я дитини</Label>
                 <Input
                   id="signup-child-name"
                   type="text"
