@@ -63,25 +63,17 @@ export function useDebtorsRegistry(
         (config.food_tariff_ids || []).forEach((id) => foodTariffIds.add(id));
       });
 
-      const rows: DebtorRow[] = [];
       const studentRows = (students || []) as StudentRow[];
+      const rows: DebtorRow[] = [];
 
-      const balancesByStudent = await Promise.all(
-        studentRows.map(async (student) => {
-          const balances = await fetchStudentAccountBalances({
-            studentId: student.id,
-            month,
-            year,
-            excludeActivityIds: controllerActivityIds,
-            foodTariffIds: Array.from(foodTariffIds),
-            cumulative: false,
-          });
-
-          return { student, balances };
-        }),
-      );
-
-      balancesByStudent.forEach(({ student, balances }) => {
+      for (const student of studentRows) {
+        const balances = await fetchStudentAccountBalances({
+          studentId: student.id,
+          month,
+          year,
+          excludeActivityIds: controllerActivityIds,
+          foodTariffIds: Array.from(foodTariffIds),
+        });
         const studentName = student.full_name || student.id;
         balances.forEach((balance) => {
           const previousBalance = balance.previous_balance || 0;
@@ -91,7 +83,6 @@ export function useDebtorsRegistry(
             balance.charges +
             balance.refunds;
 
-          // В режиме "debtors" пропускаем недолжников
           if (mode === "debtors" && endBalance >= 0) return;
 
           const accountName = balance.account_id
@@ -110,7 +101,7 @@ export function useDebtorsRegistry(
             is_debtor: endBalance < 0,
           });
         });
-      });
+      }
 
       rows.sort((a, b) => {
         if (a.balance_all_time !== b.balance_all_time) {
