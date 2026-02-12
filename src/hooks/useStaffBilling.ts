@@ -925,6 +925,7 @@ export interface StaffPayout {
   payout_date: string;
   notes: string | null;
   account_id: string | null;
+  dividend_payout_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1052,7 +1053,7 @@ export function useUpdateStaffPayout() {
       // Получаем текущую выплату для синхронизации с транзакцией
       const { data: currentPayout, error: fetchError } = await supabase
         .from("staff_payouts" as any)
-        .select("staff_id, payout_date, amount")
+        .select("staff_id, payout_date, amount, account_id")
         .eq("id", id)
         .single();
 
@@ -1067,8 +1068,8 @@ export function useUpdateStaffPayout() {
 
       if (error) throw error;
 
-      // Синхронизируем с finance_transactions
-      if (currentPayout?.staff_id) {
+      // Синхронизируем с finance_transactions (данные из уже обновлённой выплаты)
+      if (currentPayout?.staff_id && data) {
         const { data: transactions, error: txFetchError } = await supabase
           .from("finance_transactions" as any)
           .select("id")
@@ -1079,15 +1080,17 @@ export function useUpdateStaffPayout() {
           .limit(1);
 
         if (!txFetchError && transactions && transactions.length > 0) {
+          const payload: any = {
+            staff_id: data.staff_id,
+            amount: data.amount,
+            date: data.payout_date,
+            description: data.notes ?? null,
+            account_id: data.account_id ?? null,
+            dividend_payout_id: data.dividend_payout_id ?? null,
+          };
           const { error: txUpdateError } = await supabase
             .from("finance_transactions" as any)
-            .update({
-              staff_id: updates.staff_id || currentPayout.staff_id,
-              amount: updates.amount || currentPayout.amount,
-              date: updates.payout_date || currentPayout.payout_date,
-              description: updates.notes || null,
-              account_id: updates.account_id || null,
-            })
+            .update(payload)
             .eq("id", transactions[0].id);
 
           if (txUpdateError) throw txUpdateError;

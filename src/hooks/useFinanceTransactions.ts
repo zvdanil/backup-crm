@@ -56,6 +56,7 @@ export interface FinanceTransaction {
   date: string;
   description: string | null;
   category: string | null;
+  dividend_payout_id?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Banknote, Unlink } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,10 +17,12 @@ import { useExpenseJournalEntries, useUpsertExpenseJournalEntry, useDeleteExpens
 import { useStaff } from '@/hooks/useStaff';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBilling';
+import { useDividendParticipants, useDividendSettings, useCreateDividendPayout, useUpdateDividendPayout, useDeleteDividendPayout } from '@/hooks/useDividendJournal';
+import { DividendPayoutFormDialog } from '@/components/dividend/DividendPayoutFormDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -58,8 +60,17 @@ export default function ActivityExpenseJournal() {
   const [cellValues, setCellValues] = useState<Record<string, string>>({});
   const [cellAccountIds, setCellAccountIds] = useState<Record<string, string | null>>({});
   const [selectedAccountId, setSelectedAccountId] = useState<string>('none');
+  const [dividendDialogOpen, setDividendDialogOpen] = useState(false);
+  const [dividendSource, setDividendSource] = useState<{ source: 'transaction' | 'payout'; id: string } | null>(null);
+  const [dividendInitialValues, setDividendInitialValues] = useState<{ payout_date: string; total_amount: number; account_id: string | null } | null>(null);
 
   const { data: activity } = useActivity(id || '');
+  const { data: dividendParticipants = [] } = useDividendParticipants();
+  const { data: dividendSettings } = useDividendSettings();
+  const queryClient = useQueryClient();
+  const createDividendPayout = useCreateDividendPayout();
+  const updateDividendPayout = useUpdateDividendPayout();
+  const deleteDividendPayout = useDeleteDividendPayout();
   const { data: accounts = [] } = usePaymentAccounts();
   const { data: staff = [] } = useStaff();
 
@@ -105,7 +116,7 @@ export default function ActivityExpenseJournal() {
       const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
       const { data, error } = await supabase
         .from('staff_payouts' as any)
-        .select('id, staff_id, payout_date, amount, notes, account_id')
+        .select('id, staff_id, payout_date, amount, notes, account_id, dividend_payout_id')
         .or('is_deleted.is.null,is_deleted.eq.false')
         .gte('payout_date', startDate)
         .lte('payout_date', endDate);
@@ -133,6 +144,7 @@ export default function ActivityExpenseJournal() {
       description: payout.notes || 'Виплата із фін історії',
       source: 'payout',
       account_id: payout.account_id || null,
+      dividend_payout_id: payout.dividend_payout_id || null,
     }));
     return [...transactions, ...payoutItems];
   }, [transactions, staffPayouts, isSalary, id]);
@@ -169,6 +181,24 @@ export default function ActivityExpenseJournal() {
     () => filteredTransactions.reduce((sum, t) => sum + (t.amount || 0), 0),
     [filteredTransactions]
   );
+
+  const defaultCleaning = dividendSettings?.default_cleaning_percent ?? 20;
+
+  const handleDividendCreateSuccess = async (payoutId: string) => {
+    if (!dividendSource) return;
+    try {
+      if (dividendSource.source === 'payout') {
+        await updatePayout.mutateAsync({ id: dividendSource.id, dividend_payout_id: payoutId });
+      } else {
+        await updateTransaction.mutateAsync({ id: dividendSource.id, dividend_payout_id: payoutId });
+      }
+      setDividendSource(null);
+      setDividendInitialValues(null);
+      toast({ title: 'Витрату позначено як виведену як дівіденд' });
+    } catch (e: any) {
+      toast({ title: 'Помилка прив’язки', description: e?.message, variant: 'destructive' });
+    }
+  };
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const journalMap = useMemo(() => {
@@ -743,6 +773,11 @@ export default function ActivityExpenseJournal() {
                                     Виплата з фінансової історії
                                   </div>
                                 )}
+                                {t.dividend_payout_id && (
+                                  <div className="text-xs text-primary mt-1 font-medium">
+                                    Виведено як дівіденд
+                                  </div>
+                                )}
                               </TableCell>
                               {(isActualExpense || isSalary) && (
                                 <TableCell className="text-sm">
@@ -802,52 +837,92 @@ export default function ActivityExpenseJournal() {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                {!isPayout ? (
-                                  <div className="flex items-center justify-center gap-1">
+                                <div className="flex items-center justify-center gap-1 flex-wrap">
+                                  {(isSalary || isActualExpense) && t.dividend_payout_id && (
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        setEditingId(t.id);
-                                        setAmount((t.amount || 0).toString());
-                                        setDate(t.date);
-                                        setDescription(t.description || '');
-                                        setStaffId(t.staff_id || '');
-                                        setCategoryId(t.expense_category_id || 'none');
-                                        setNewCategoryName('');
-                                        setSelectedAccountId(t.account_id || activity?.account_id || 'none');
-                                        setDialogOpen(true);
-                                      }}
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
+                                      className="h-8 w-8 text-muted-foreground"
+                                      title="Зняти позначку «виведено як дівіденд»"
                                       onClick={async () => {
-                                        if (!window.confirm('Видалити цей запис?')) return;
-                                        if (isPayout) {
-                                          // Удаляем выплату из staff_payouts
-                                          const payoutId = t.id.replace('payout-', '');
-                                          await deletePayout.mutateAsync({
-                                            id: payoutId,
-                                            staffId: t.staff_id || '',
-                                            deleteNote: null,
-                                          });
-                                        } else {
-                                          // Удаляем транзакцию из finance_transactions
-                                          await deleteTransaction.mutateAsync(t.id);
+                                        if (!window.confirm('Зняти позначку? Виплата в журналі дивідендів буде видалена.')) return;
+                                        try {
+                                          await deleteDividendPayout.mutateAsync(t.dividend_payout_id!);
+                                          queryClient.invalidateQueries({ queryKey: ['finance_transactions'] });
+                                          queryClient.invalidateQueries({ queryKey: ['staff-payouts-all'] });
+                                          toast({ title: 'Позначку знято' });
+                                        } catch (e: any) {
+                                          toast({ title: 'Помилка', description: e?.message, variant: 'destructive' });
                                         }
                                       }}
                                     >
-                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                      <Unlink className="h-4 w-4" />
                                     </Button>
-                                  </div>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">—</span>
-                                )}
+                                  )}
+                                  {(isSalary || isActualExpense) && !t.dividend_payout_id && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      title="Вивести як дівіденд"
+                                      onClick={() => {
+                                        setDividendSource(isPayout ? { source: 'payout', id: t.id.replace('payout-', '') } : { source: 'transaction', id: t.id });
+                                        setDividendInitialValues({
+                                          payout_date: t.date,
+                                          total_amount: t.amount || 0,
+                                          account_id: t.account_id || null,
+                                        });
+                                        setDividendDialogOpen(true);
+                                      }}
+                                    >
+                                      <Banknote className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {!isPayout ? (
+                                    <>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => {
+                                          setEditingId(t.id);
+                                          setAmount((t.amount || 0).toString());
+                                          setDate(t.date);
+                                          setDescription(t.description || '');
+                                          setStaffId(t.staff_id || '');
+                                          setCategoryId(t.expense_category_id || 'none');
+                                          setNewCategoryName('');
+                                          setSelectedAccountId(t.account_id || activity?.account_id || 'none');
+                                          setDialogOpen(true);
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={async () => {
+                                          if (!window.confirm('Видалити цей запис?')) return;
+                                          if (isPayout) {
+                                            const payoutId = t.id.replace('payout-', '');
+                                            await deletePayout.mutateAsync({
+                                              id: payoutId,
+                                              staffId: t.staff_id || '',
+                                              deleteNote: null,
+                                            });
+                                          } else {
+                                            await deleteTransaction.mutateAsync(t.id);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
                           );
@@ -964,6 +1039,27 @@ export default function ActivityExpenseJournal() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DividendPayoutFormDialog
+        open={dividendDialogOpen}
+        onOpenChange={(open) => {
+          setDividendDialogOpen(open);
+          if (!open) {
+            setDividendSource(null);
+            setDividendInitialValues(null);
+          }
+        }}
+        participants={dividendParticipants}
+        accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+        defaultCleaning={defaultCleaning}
+        editingPayout={null}
+        initialValuesForCreate={dividendInitialValues}
+        onSuccess={(createdPayoutId) => {
+          if (createdPayoutId) handleDividendCreateSuccess(createdPayoutId);
+        }}
+        createPayout={createDividendPayout}
+        updatePayout={updateDividendPayout}
+      />
     </>
   );
 }

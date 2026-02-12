@@ -163,27 +163,29 @@ export function useFinancialSummaryReport({
         }, 0);
 
         // Реальный расход до начала месяца
-        // 1. Выплаты зарплаты
+        // 1. Выплаты зарплаты (исключаем записи, выведенные как дивиденд)
         const { data: preMonthSalaryPayouts } = await supabaseAny
           .from('staff_payouts')
-          .select('amount, account_id')
+          .select('amount, account_id, dividend_payout_id')
           .lt('payout_date', monthStartDate)
           .or('is_deleted.is.null,is_deleted.eq.false');
 
         const preMonthSalaryPayoutTotal = (preMonthSalaryPayouts || []).reduce((sum: number, payout: any) => {
+          if (payout.dividend_payout_id) return sum;
           if (matchesAccount(payout.account_id)) {
             return sum + (payout.amount || 0);
           }
           return sum;
         }, 0);
 
-        // 2. Реальные расходы из expense_journal_entries
+        // 2. Реальные расходы из expense_journal_entries (исключаем записи, выведенные как дивиденд)
         const { data: preMonthActualExpenses } = await supabaseAny
           .from('expense_journal_entries')
-          .select('amount, account_id, activity_id, activities(is_actual_expense, account_id)')
+          .select('amount, account_id, activity_id, dividend_payout_id, activities(is_actual_expense, account_id)')
           .lt('entry_date', monthStartDate);
 
         const preMonthActualExpenseTotal = (preMonthActualExpenses || []).reduce((sum: number, entry: any) => {
+          if (entry.dividend_payout_id) return sum;
           const isActual = entry.activities?.is_actual_expense || false;
           if (isActual) {
             const entryAccountId = entry.account_id || entry.activities?.account_id || null;
@@ -194,17 +196,17 @@ export function useFinancialSummaryReport({
           return sum;
         }, 0);
 
-        // 3. Реальные расходы из finance_transactions (созданные через диалог "Додати витрату")
-        // ИСКЛЮЧАЕМ транзакции с transfer_id (переводы учитываются отдельно)
+        // 3. Реальные расходы из finance_transactions (исключаем выведенные как дивиденд)
         const { data: preMonthDirectExpenseTransactions } = await supabaseAny
           .from('finance_transactions')
-          .select('amount, account_id, activity_id, expense_entry_id, transfer_id, activities(is_actual_expense, account_id)')
+          .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
           .in('type', ['expense', 'household'])
           .lt('date', monthStartDate)
           .is('expense_entry_id', null)
-          .is('transfer_id', null); // Исключаем переводы
+          .is('transfer_id', null);
 
         const preMonthDirectExpenseTotal = (preMonthDirectExpenseTransactions || []).reduce((sum: number, tx: any) => {
+          if (tx.dividend_payout_id) return sum;
           const isActual = tx.activities?.is_actual_expense || false;
           if (isActual) {
             const txAccountId = tx.account_id || tx.activities?.account_id || null;
@@ -215,15 +217,16 @@ export function useFinancialSummaryReport({
           return sum;
         }, 0);
 
-        // 3.4. Реальные расходы из переводов (транзакции типа 'expense' с transfer_id)
+        // 3.4. Реальные расходы из переводов (исключаем выведенные как дивиденд)
         const { data: preMonthTransferExpenseTransactions } = await supabaseAny
           .from('finance_transactions')
-          .select('amount, account_id, transfer_id')
+          .select('amount, account_id, transfer_id, dividend_payout_id')
           .eq('type', 'expense')
           .not('transfer_id', 'is', null)
           .lt('date', monthStartDate);
 
         const preMonthTransferExpenseTotal = (preMonthTransferExpenseTransactions || []).reduce((sum: number, tx: any) => {
+          if (tx.dividend_payout_id) return sum;
           if (matchesAccount(tx.account_id)) {
             return sum + (tx.amount || 0);
           }
@@ -299,32 +302,32 @@ export function useFinancialSummaryReport({
             .gte('date', startDate)
             .lte('date', endDate),
           // 4. Реальный расход (кассовый метод) - с учетом счетов
-          // 4.1. Выплаты зарплаты
+          // 4.1. Выплаты зарплаты (исключаем выведенные как дивиденд)
           supabaseAny
             .from('staff_payouts')
-            .select('amount, account_id')
+            .select('amount, account_id, dividend_payout_id')
             .gte('payout_date', startDate)
             .lte('payout_date', endDate)
             .or('is_deleted.is.null,is_deleted.eq.false'),
-          // 4.2. Реальные расходы из expense_journal_entries (журналы с типом "Факт", с учетом счетов)
+          // 4.2. Реальные расходы из expense_journal_entries (исключаем выведенные как дивиденд)
           supabaseAny
             .from('expense_journal_entries')
-            .select('amount, account_id, activity_id, activities(is_actual_expense, account_id)')
+            .select('amount, account_id, activity_id, dividend_payout_id, activities(is_actual_expense, account_id)')
             .gte('entry_date', startDate)
             .lte('entry_date', endDate),
-          // 4.3. Реальные расходы из finance_transactions (созданные через диалог "Додати витрату")
+          // 4.3. Реальные расходы из finance_transactions (исключаем выведенные как дивиденд)
           supabaseAny
             .from('finance_transactions')
-            .select('amount, account_id, activity_id, expense_entry_id, transfer_id, activities(is_actual_expense, account_id)')
+            .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
             .in('type', ['expense', 'household'])
             .gte('date', startDate)
             .lte('date', endDate)
             .is('expense_entry_id', null)
             .is('transfer_id', null),
-          // 4.4. Реальные расходы из переводов (транзакции типа 'expense' с transfer_id)
+          // 4.4. Реальные расходы из переводов (исключаем выведенные как дивиденд)
           supabaseAny
             .from('finance_transactions')
-            .select('amount, account_id, transfer_id')
+            .select('amount, account_id, transfer_id, dividend_payout_id')
             .eq('type', 'expense')
             .not('transfer_id', 'is', null)
             .gte('date', startDate)
@@ -364,6 +367,7 @@ export function useFinancialSummaryReport({
         }, 0);
 
         const salaryPayoutTotal = (salaryPayouts || []).reduce((sum: number, payout: any) => {
+          if (payout.dividend_payout_id) return sum;
           if (matchesAccount(payout.account_id)) {
             return sum + (payout.amount || 0);
           }
@@ -371,6 +375,7 @@ export function useFinancialSummaryReport({
         }, 0);
 
         const actualExpenseTotal = (actualExpenses || []).reduce((sum: number, entry: any) => {
+          if (entry.dividend_payout_id) return sum;
           const isActual = entry.activities?.is_actual_expense || false;
           if (isActual) {
             const entryAccountId = entry.account_id || entry.activities?.account_id || null;
@@ -382,6 +387,7 @@ export function useFinancialSummaryReport({
         }, 0);
 
         const directExpenseTotal = (directExpenseTransactions || []).reduce((sum: number, tx: any) => {
+          if (tx.dividend_payout_id) return sum;
           const isActual = tx.activities?.is_actual_expense || false;
           if (isActual) {
             const txAccountId = tx.account_id || tx.activities?.account_id || null;
@@ -393,6 +399,7 @@ export function useFinancialSummaryReport({
         }, 0);
 
         const transferExpenseTotal = (transferExpenseTransactions || []).reduce((sum: number, tx: any) => {
+          if (tx.dividend_payout_id) return sum;
           if (matchesAccount(tx.account_id)) {
             return sum + (tx.amount || 0);
           }
