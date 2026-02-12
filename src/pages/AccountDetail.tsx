@@ -3,7 +3,7 @@ import { ArrowLeft, Calendar, ArrowRightLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
+import { usePaymentAccounts, useUpdatePaymentAccount } from '@/hooks/usePaymentAccounts';
 import { useAccountBalance, useAccountTransactions } from '@/hooks/useAccountBalances';
 import { useAccountTransfers, useCancelAccountTransfer } from '@/hooks/useAccountTransfers';
 import { formatCurrency, formatDate } from '@/lib/attendance';
@@ -27,7 +27,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useState, useMemo } from 'react';
+import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
@@ -51,9 +61,13 @@ export default function AccountDetail() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
   const [cancellingTransferId, setCancellingTransferId] = useState<string | null>(null);
+  const [openingBalanceDialogOpen, setOpeningBalanceDialogOpen] = useState(false);
+  const [openingBalanceDate, setOpeningBalanceDate] = useState('');
+  const [openingBalanceAmount, setOpeningBalanceAmount] = useState('');
 
   const { data: accounts = [] } = usePaymentAccounts();
   const account = accounts.find((a) => a.id === id);
+  const updateAccount = useUpdatePaymentAccount();
 
   const { data: balance, isLoading: balanceLoading } = useAccountBalance(id || '');
   const { data: transactions = [], isLoading: transactionsLoading } = useAccountTransactions(id || '');
@@ -139,6 +153,66 @@ export default function AccountDetail() {
           </div>
         ) : balance ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Залишок на початок періоду
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {account?.opening_balance_date && (account?.opening_balance_amount ?? 0) !== 0 ? (
+                  <>
+                    <div className="text-2xl font-bold">
+                      {formatCurrency(Number(account.opening_balance_amount) || 0)}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      на дату {account.opening_balance_date}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Не вказано</p>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => {
+                    setOpeningBalanceDate(account?.opening_balance_date || '');
+                    setOpeningBalanceAmount(
+                      account?.opening_balance_amount != null ? String(account.opening_balance_amount) : ''
+                    );
+                    setOpeningBalanceDialogOpen(true);
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-1" />
+                  {account?.opening_balance_date ? 'Редагувати' : 'Вказати'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Баланс рахунку
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={cn(
+                  "text-2xl font-bold",
+                  (Number(account?.opening_balance_amount) || 0) + balance.free_funds >= 0
+                    ? "text-green-600"
+                    : "text-red-600"
+                )}>
+                  {formatCurrency(
+                    (Number(account?.opening_balance_amount) || 0) + balance.free_funds
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  = Залишок на початок + рух коштів
+                </p>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -432,6 +506,64 @@ export default function AccountDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={openingBalanceDialogOpen} onOpenChange={setOpeningBalanceDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Залишок на початок періоду</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Вкажіть суму та дату (наприклад 1 січня). Не входить у дохід, враховується в балансі рахунку.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Дата</Label>
+              <Input
+                type="date"
+                value={openingBalanceDate}
+                onChange={(e) => setOpeningBalanceDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Сума</Label>
+              <Input
+                type="number"
+                step={0.01}
+                placeholder="0"
+                value={openingBalanceAmount}
+                onChange={(e) => setOpeningBalanceAmount(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpeningBalanceDialogOpen(false)}>
+              Скасувати
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!account) return;
+                const amountNum =
+                  openingBalanceAmount === '' || openingBalanceAmount === null
+                    ? null
+                    : Number(openingBalanceAmount);
+                const dateVal = openingBalanceDate?.trim() || null;
+                try {
+                  await updateAccount.mutateAsync({
+                    id: account.id,
+                    opening_balance_date: dateVal,
+                    opening_balance_amount: amountNum ?? 0,
+                  });
+                  setOpeningBalanceDialogOpen(false);
+                } catch {
+                  // toast from mutation
+                }
+              }}
+            >
+              Зберегти
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!cancellingTransferId} onOpenChange={() => setCancellingTransferId(null)}>
         <AlertDialogContent>

@@ -62,7 +62,7 @@ export function useFinancialSummaryReport({
       ] = await Promise.all([
         supabaseAny.from('students').select('id').order('id'),
         supabaseAny.from('activities').select('id, config, is_actual_expense, account_id'),
-        supabaseAny.from('payment_accounts').select('id, name').order('name'),
+        supabaseAny.from('payment_accounts').select('id, name, opening_balance_date, opening_balance_amount').order('name'),
       ]);
 
       if (studentsError) throw studentsError;
@@ -127,8 +127,22 @@ export function useFinancialSummaryReport({
       const results: MonthlyFinancialData[] = [];
       // Накопительные показатели считаются только в рамках выбранного периода
       let cumulativeDifference = 0;
-      
-      // Функция для расчета остатка на начало конкретного месяца (на 1 число)
+      // Перенос залишку: баланс на кінець попереднього місяця = початок поточного
+      let accountBalance = 0;
+
+      // Сума внесених залишків на рахунках для місяця (дата внесённого остатка в цьому місяці)
+      const getOpeningBalanceForMonth = (startDate: string, endDate: string): number =>
+        (accounts || []).reduce((sum: number, acc: any) => {
+          if (!matchesAccount(acc.id)) return sum;
+          const dateVal = acc.opening_balance_date ?? acc.openingBalanceDate;
+          const amountVal = acc.opening_balance_amount ?? acc.openingBalanceAmount;
+          if (dateVal && dateVal >= startDate && dateVal <= endDate) {
+            return sum + Number(amountVal || 0);
+          }
+          return sum;
+        }, 0);
+
+      // Функция для расчета остатка на начало конкретного месяца (на 1 число) — тільки рух коштів, без внесених залишків
       const calculateInitialBalanceForMonth = async (year: number, month: number): Promise<number> => {
         if (!accountIds || accountIds.length === 0) return 0; // Для всех счетов не считаем
         
@@ -224,14 +238,13 @@ export function useFinancialSummaryReport({
         }, 0);
 
         const preMonthActualExpense = preMonthSalaryPayoutTotal + preMonthActualExpenseTotal + preMonthDirectExpenseTotal + preMonthTransferExpenseTotal + preMonthDividendTotal;
+        // Тільки перенос: дохід до місяця − витрати до місяця (внесені залишки додаються в циклі по місяцях)
         return preMonthIncome - preMonthActualExpense;
       };
-      
-      // accountBalance начинается с 0, будет накапливаться
-      let accountBalance = 0;
 
       // Обрабатываем каждый месяц
-      for (const { year: y, month: m } of months) {
+      for (let monthIndex = 0; monthIndex < months.length; monthIndex++) {
+        const { year: y, month: m } = months[monthIndex];
         const startDate = getMonthStartDate(y, m);
         const endDate = getMonthEndDate(y, m);
         const monthKey = `${y}-${String(m + 1).padStart(2, '0')}`;
@@ -402,13 +415,21 @@ export function useFinancialSummaryReport({
         const actualBalance = actualIncome - actualExpense;
         const difference = actualBalance - expectedBalance;
         cumulativeDifference += difference;
-        
-        // Рассчитываем остаток на начало месяца (для отдельных счетов)
-        const monthInitialBalance = accountIds && accountIds.length > 0 
-          ? await calculateInitialBalanceForMonth(y, m)
-          : undefined;
-        
-        // accountBalance = остаток на начало месяца + actualBalance
+
+        // Залишок на початок місяця: перенос з попереднього місяця + внесені залишки лише для поточного місяця
+        let monthInitialBalance: number | undefined;
+        if (accountIds && accountIds.length > 0) {
+          if (monthIndex === 0) {
+            const carriedForward = await calculateInitialBalanceForMonth(y, m);
+            const enteredOpening = getOpeningBalanceForMonth(startDate, endDate);
+            monthInitialBalance = carriedForward + enteredOpening;
+          } else {
+            monthInitialBalance = accountBalance;
+          }
+        } else {
+          monthInitialBalance = undefined;
+        }
+
         if (monthInitialBalance !== undefined) {
           accountBalance = monthInitialBalance + actualBalance;
         } else {
