@@ -56,7 +56,7 @@ export function StudentPaymentHistory({
   } | null>(null);
   const [paymentToEdit, setPaymentToEdit] = useState<PaymentToEdit | null>(null);
 
-  const canEdit = role === "owner" || role === "admin";
+  const canEdit = role === "owner" || role === "admin" || role === "accountant";
   const canDelete = canEdit;
 
   const handleEditClick = (payment: PaymentToEdit) => {
