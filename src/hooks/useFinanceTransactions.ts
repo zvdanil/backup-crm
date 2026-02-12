@@ -10,6 +10,10 @@ import {
   getGardenAttendanceConfig,
   isGardenAttendanceController,
 } from "@/lib/gardenAttendance";
+import {
+  getEnrollmentPriceForDate,
+  type EnrollmentPriceHistory,
+} from "./useEnrollments";
 
 const supabaseAny = supabase as any;
 
@@ -1104,6 +1108,7 @@ export function computeStudentAccountBalancesFromData(
     cumulative,
     excludeActivityIds,
     foodTariffIds,
+    enrollmentPriceHistoryMap = new Map(),
   } = params;
 
   const excludedSet = new Set(excludeActivityIds);
@@ -1202,12 +1207,30 @@ export function computeStudentAccountBalancesFromData(
       y > currentYear || (y === currentYear && m > currentMonth);
 
     const filteredEnrollments = allFilteredEnrollments.filter((e: any) => {
-      if (isFutureMonth) return e.is_active === true;
-      if (e.is_active === true) return true;
-      if (e.is_active === false && e.unenrolled_at) {
-        const unenrolledDate = new Date(e.unenrolled_at);
+      const enrolledDate = e.enrolled_at ? new Date(e.enrolled_at) : null;
+      const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
+
+      // Enrollment должен быть подписан до или в этом месяце
+      if (enrolledDate && enrolledDate > monthEnd) return false;
+
+      // Если отписались до начала месяца - не включаем
+      if (unenrolledDate && unenrolledDate < monthStart) return false;
+
+      if (isFutureMonth) {
+        // Для будущих месяцев: только активные, подписанные до или в этом месяце
+        return e.is_active === true && enrolledDate && enrolledDate <= monthEnd;
+      }
+
+      if (e.is_active === true) {
+        // Активный enrollment: подписан до или в этом месяце, не отписан до начала месяца
+        return true; // Проверки выше уже выполнены
+      }
+
+      if (e.is_active === false && unenrolledDate) {
+        // Неактивный: отписались в этом месяце (проверка unenrolledDate >= monthStart уже выше)
         return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
       }
+
       return false;
     });
 
@@ -1228,6 +1251,7 @@ export function computeStudentAccountBalancesFromData(
       attendanceV1BaseTariffIdSet,
       m,
       y,
+      enrollmentPriceHistoryMap,
     );
     monthlyBalancesMap.set(monthKey, monthlyBalances);
   }
@@ -1321,9 +1345,11 @@ export async function fetchStudentAccountBalances({
 
   const enrollmentIds = allFilteredEnrollments.map((e: any) => e.id);
 
+  // Загружаем историю цен подписок параллельно с другими данными
   const [
     { data: transactions, error: transactionsError },
     { data: attendance, error: attendanceError },
+    { data: enrollmentPriceHistory, error: priceHistoryError },
   ] = await Promise.all([
     supabaseAny
       .from("finance_transactions")
@@ -1341,10 +1367,27 @@ export async function fetchStudentAccountBalances({
           .gte("date", startDate)
           .lte("date", endDate)
       : { data: [] as { enrollment_id: string; charged_amount: number | null; date: string }[], error: null },
+    enrollmentIds.length > 0
+      ? supabaseAny
+          .from("enrollment_price_history")
+          .select("*")
+          .in("enrollment_id", enrollmentIds)
+          .order("effective_from", { ascending: false })
+      : { data: [] as EnrollmentPriceHistory[], error: null },
   ]);
 
   if (transactionsError) throw transactionsError;
   if (attendanceError) throw attendanceError;
+  if (priceHistoryError) throw priceHistoryError;
+
+  // Группируем историю цен по enrollment_id
+  const enrollmentPriceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
+  (enrollmentPriceHistory || []).forEach((ph: EnrollmentPriceHistory) => {
+    if (!enrollmentPriceHistoryMap.has(ph.enrollment_id)) {
+      enrollmentPriceHistoryMap.set(ph.enrollment_id, []);
+    }
+    enrollmentPriceHistoryMap.get(ph.enrollment_id)!.push(ph);
+  });
 
   const activityIds = [
     ...new Set(allFilteredEnrollments.map((e: any) => e.activity_id)),
@@ -1382,6 +1425,7 @@ export async function fetchStudentAccountBalances({
     cumulative,
     excludeActivityIds,
     foodTariffIds,
+    enrollmentPriceHistoryMap,
   });
 }
 
@@ -1417,6 +1461,7 @@ function calculateMonthlyBalanceFromData(
   attendanceV1BaseTariffIdSet: Set<string>,
   month: number,
   year: number,
+  enrollmentPriceHistoryMap: Map<string, EnrollmentPriceHistory[]> = new Map(),
 ): StudentAccountBalance[] {
   const enrollmentIds = filteredEnrollments.map((e: any) => e.id);
   const activityIds = new Set(
@@ -1486,14 +1531,24 @@ function calculateMonthlyBalanceFromData(
     const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
     if (!isActive) return;
 
+    // Для абонплатных активностей используем историю цен для получения цены на дату месяца
+    const monthStartDate = new Date(year, month, 1);
+    const monthStartDateStr = monthStartDate.toISOString().split('T')[0];
+    const priceHistory = enrollmentPriceHistoryMap.get(enrollmentId);
+    const priceForDate = getEnrollmentPriceForDate(
+      enrollment,
+      priceHistory,
+      monthStartDateStr,
+    );
+
     let baseMonthlyCharge = 0;
     if (
-      enrollment.custom_price !== null &&
-      enrollment.custom_price !== undefined
+      priceForDate.custom_price !== null &&
+      priceForDate.custom_price !== undefined
     ) {
-      const discountMultiplier = 1 - (enrollment.discount_percent || 0) / 100;
+      const discountMultiplier = 1 - (priceForDate.discount_percent || 0) / 100;
       baseMonthlyCharge =
-        Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
+        Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
     } else if (presentRule?.rate && presentRule.rate > 0) {
       baseMonthlyCharge = presentRule.rate;
     } else {

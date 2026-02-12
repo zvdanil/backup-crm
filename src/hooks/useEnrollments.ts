@@ -164,6 +164,25 @@ export function useUpdateEnrollment() {
   
   return useMutation({
     mutationFn: async ({ id, ...enrollment }: { id: string } & EnrollmentUpdate) => {
+      // Проверяем, изменилась ли цена или скидка
+      const priceChanged = 
+        enrollment.custom_price !== undefined || 
+        enrollment.discount_percent !== undefined;
+      
+      let oldEnrollment: Enrollment | null = null;
+      if (priceChanged) {
+        // Получаем старые значения для создания истории
+        const { data: old, error: oldError } = await supabase
+          .from('enrollments')
+          .select('custom_price, discount_percent')
+          .eq('id', id)
+          .single();
+        
+        if (oldError) throw oldError;
+        oldEnrollment = old as Enrollment;
+      }
+
+      // Обновляем enrollment
       const { data, error } = await supabase
         .from('enrollments')
         .update(enrollment)
@@ -172,10 +191,48 @@ export function useUpdateEnrollment() {
         .single();
       
       if (error) throw error;
+
+      // Если изменилась цена или скидка, создаём запись в истории
+      if (priceChanged && oldEnrollment) {
+        const oldPrice = oldEnrollment.custom_price;
+        const oldDiscount = oldEnrollment.discount_percent ?? 0;
+        const newPrice = enrollment.custom_price ?? oldPrice;
+        const newDiscount = enrollment.discount_percent ?? oldDiscount;
+
+        // Создаём запись только если действительно изменилось значение
+        const priceActuallyChanged = 
+          oldPrice !== newPrice || oldDiscount !== newDiscount;
+
+        if (priceActuallyChanged) {
+          const effectiveFrom = enrollment.effective_from 
+            ? new Date(enrollment.effective_from).toISOString().split('T')[0]
+            : new Date().toISOString().split('T')[0]; // Текущая дата по умолчанию
+
+          // Закрываем предыдущую запись истории (устанавливаем effective_to)
+          await supabase
+            .from('enrollment_price_history')
+            .update({ effective_to: effectiveFrom })
+            .eq('enrollment_id', id)
+            .is('effective_to', null);
+
+          // Создаём новую запись в истории
+          await supabase
+            .from('enrollment_price_history')
+            .insert({
+              enrollment_id: id,
+              custom_price: newPrice,
+              discount_percent: newDiscount,
+              effective_from: effectiveFrom,
+              effective_to: null,
+            });
+        }
+      }
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
+      queryClient.invalidateQueries({ queryKey: ['enrollment_price_history'] });
       toast({ title: 'Запись обновлена' });
     },
     onError: (error) => {
@@ -226,4 +283,64 @@ export function useUnenrollStudent() {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
     },
   });
+}
+
+// ============================================
+// Enrollment Price History (История изменения цен подписки)
+// ============================================
+
+export interface EnrollmentPriceHistory {
+  id: string;
+  enrollment_id: string;
+  custom_price: number | null;
+  discount_percent: number | null;
+  effective_from: string; // DATE
+  effective_to: string | null; // DATE
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Получить цену подписки на конкретную дату из истории или текущих значений
+ * @param enrollment - подписка с текущими значениями custom_price и discount_percent
+ * @param priceHistory - массив записей истории цен (отсортированный по effective_from DESC)
+ * @param date - дата в формате YYYY-MM-DD
+ * @returns объект с custom_price и discount_percent для указанной даты
+ */
+export function getEnrollmentPriceForDate(
+  enrollment: { custom_price: number | null; discount_percent: number | null },
+  priceHistory: EnrollmentPriceHistory[] | undefined,
+  date: string, // YYYY-MM-DD
+): { custom_price: number | null; discount_percent: number | null } {
+  if (!priceHistory || priceHistory.length === 0) {
+    // Если истории нет, используем текущие значения
+    return {
+      custom_price: enrollment.custom_price,
+      discount_percent: enrollment.discount_percent ?? 0,
+    };
+  }
+
+  // Находим запись истории, которая действовала на указанную дату
+  const effectiveRecord = priceHistory.find((record) => {
+    const fromDate = record.effective_from;
+    const toDate = record.effective_to;
+    
+    // Проверяем, попадает ли дата в период действия записи
+    if (date < fromDate) return false;
+    if (toDate && date > toDate) return false;
+    return true;
+  });
+
+  if (effectiveRecord) {
+    return {
+      custom_price: effectiveRecord.custom_price,
+      discount_percent: effectiveRecord.discount_percent ?? 0,
+    };
+  }
+
+  // Если не найдена запись для даты, используем текущие значения
+  return {
+    custom_price: enrollment.custom_price,
+    discount_percent: enrollment.discount_percent ?? 0,
+  };
 }
