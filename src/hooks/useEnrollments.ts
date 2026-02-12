@@ -320,14 +320,12 @@ export function getEnrollmentPriceForDate(
     };
   }
 
-  // Находим запись истории, которая действовала на указанную дату
+  // Находим запись истории, которая действовала на указанную дату (effective_to — исключающая граница: с этой даты уже новая цена)
   const effectiveRecord = priceHistory.find((record) => {
     const fromDate = record.effective_from;
     const toDate = record.effective_to;
-    
-    // Проверяем, попадает ли дата в период действия записи
     if (date < fromDate) return false;
-    if (toDate && date > toDate) return false;
+    if (toDate && date >= toDate) return false;
     return true;
   });
 
@@ -343,4 +341,24 @@ export function getEnrollmentPriceForDate(
     custom_price: enrollment.custom_price,
     discount_percent: enrollment.discount_percent ?? 0,
   };
+}
+
+/**
+ * Хук для загрузки истории цен подписки
+ */
+export function useEnrollmentPriceHistory(enrollmentId: string) {
+  return useQuery({
+    queryKey: ['enrollment_price_history', enrollmentId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('enrollment_price_history')
+        .select('*')
+        .eq('enrollment_id', enrollmentId)
+        .order('effective_from', { ascending: false });
+
+      if (error) throw error;
+      return (data || []) as EnrollmentPriceHistory[];
+    },
+    enabled: !!enrollmentId,
+  });
 }

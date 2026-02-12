@@ -10,6 +10,7 @@ import {
   User,
   Pencil,
   Wallet,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -25,6 +26,7 @@ import {
   useUpdateEnrollment,
   type EnrollmentWithRelations,
 } from "@/hooks/useEnrollments";
+import { EnrollmentPriceHistoryDialog } from "@/components/enrollments/EnrollmentPriceHistoryDialog";
 import {
   useCreateFinanceTransaction,
   useStudentAccountBalances,
@@ -104,6 +106,7 @@ export default function StudentDetail() {
   const [editingEnrollment, setEditingEnrollment] =
     useState<EnrollmentWithRelations | null>(null);
   const [unenrollingId, setUnenrollingId] = useState<string | null>(null);
+  const [priceHistoryEnrollmentId, setPriceHistoryEnrollmentId] = useState<string | null>(null);
   const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
   const [balanceYear, setBalanceYear] = useState(now.getFullYear());
   const isMobile = useIsMobile();
@@ -544,13 +547,25 @@ export default function StudentDetail() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => setEditingEnrollment(enrollment)}
+                                title="Редагувати"
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                onClick={() =>
+                                  setPriceHistoryEnrollmentId(enrollment.id)
+                                }
+                                title="Історія зміни ціни"
+                              >
+                                <History className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => setUnenrollingId(enrollment.id)}
+                                title="Відписати"
                               >
                                 <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>
@@ -615,6 +630,7 @@ export default function StudentDetail() {
                                     onClick={() =>
                                       setEditingEnrollment(enrollment)
                                     }
+                                    title="Редагувати"
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
@@ -622,8 +638,19 @@ export default function StudentDetail() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={() =>
+                                      setPriceHistoryEnrollmentId(enrollment.id)
+                                    }
+                                    title="Історія зміни ціни"
+                                  >
+                                    <History className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
                                       setUnenrollingId(enrollment.id)
                                     }
+                                    title="Відписати"
                                   >
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
@@ -764,6 +791,18 @@ export default function StudentDetail() {
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      {priceHistoryEnrollmentId && (() => {
+        const enrollment = enrollments.find(e => e.id === priceHistoryEnrollmentId);
+        return enrollment ? (
+          <EnrollmentPriceHistoryDialog
+            open={!!priceHistoryEnrollmentId}
+            onOpenChange={(open) => !open && setPriceHistoryEnrollmentId(null)}
+            enrollmentId={priceHistoryEnrollmentId}
+            activityName={enrollment.activities?.name || ''}
+          />
+        ) : null;
+      })()}
     </>
   );
 }

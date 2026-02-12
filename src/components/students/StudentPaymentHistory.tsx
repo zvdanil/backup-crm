@@ -1,6 +1,7 @@
 import {
   useFinanceTransactions,
   useDeletePaymentTransaction,
+  useUpdateFinanceTransaction,
 } from "@/hooks/useFinanceTransactions";
 import { formatCurrency, formatDate } from "@/lib/attendance";
 import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
@@ -13,12 +14,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { Wallet, Trash2 } from "lucide-react";
+import { Wallet, Trash2, Pencil } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DeleteTransactionDialog } from "./DeleteTransactionDialog";
+import {
+  EditPaymentDialog,
+  type PaymentToEdit,
+} from "./EditPaymentDialog";
 import { toast } from "@/hooks/use-toast";
 
 interface StudentPaymentHistoryProps {
@@ -42,13 +47,53 @@ export function StudentPaymentHistory({
   const isMobile = useIsMobile();
   const { role } = useAuth();
   const deletePayment = useDeletePaymentTransaction();
+  const updatePayment = useUpdateFinanceTransaction();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<{
     id: string;
     amount: number;
   } | null>(null);
+  const [paymentToEdit, setPaymentToEdit] = useState<PaymentToEdit | null>(null);
 
-  const canDelete = role === "owner" || role === "admin";
+  const canEdit = role === "owner" || role === "admin";
+  const canDelete = canEdit;
+
+  const handleEditClick = (payment: PaymentToEdit) => {
+    setPaymentToEdit(payment);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditConfirm = async (data: {
+    amount: number;
+    date: string;
+    account_id: string | null;
+    description: string | null;
+  }) => {
+    if (!paymentToEdit) return;
+
+    try {
+      await updatePayment.mutateAsync({
+        id: paymentToEdit.id,
+        amount: data.amount,
+        date: data.date,
+        account_id: data.account_id,
+        description: data.description,
+      });
+      toast({
+        title: "Успішно",
+        description: "Платіж оновлено",
+      });
+      setEditDialogOpen(false);
+      setPaymentToEdit(null);
+    } catch (error: any) {
+      toast({
+        title: "Помилка",
+        description: error.message || "Не вдалося оновити платіж",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleDeleteClick = (paymentId: string, amount: number) => {
     setSelectedPayment({ id: paymentId, amount });
@@ -131,17 +176,35 @@ export function StudentPaymentHistory({
                         +{formatCurrency(payment.amount || 0)}
                       </span>
                     </div>
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() =>
-                          handleDeleteClick(payment.id, payment.amount || 0)
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    {canEdit && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                          onClick={() =>
+                            handleEditClick({
+                              id: payment.id,
+                              amount: payment.amount || 0,
+                              date: payment.date,
+                              account_id: payment.account_id,
+                              description: payment.description,
+                            })
+                          }
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() =>
+                            handleDeleteClick(payment.id, payment.amount || 0)
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -158,7 +221,7 @@ export function StudentPaymentHistory({
                 <TableHead>Рахунок</TableHead>
                 <TableHead>Опис</TableHead>
                 <TableHead className="text-right">Сума</TableHead>
-                {canDelete && <TableHead className="w-[50px]"></TableHead>}
+                {canEdit && <TableHead className="w-[90px]"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -187,18 +250,36 @@ export function StudentPaymentHistory({
                         +{formatCurrency(payment.amount || 0)}
                       </span>
                     </TableCell>
-                    {canDelete && (
+                    {canEdit && (
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() =>
-                            handleDeleteClick(payment.id, payment.amount || 0)
-                          }
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                            onClick={() =>
+                              handleEditClick({
+                                id: payment.id,
+                                amount: payment.amount || 0,
+                                date: payment.date,
+                                account_id: payment.account_id,
+                                description: payment.description,
+                              })
+                            }
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() =>
+                              handleDeleteClick(payment.id, payment.amount || 0)
+                            }
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -230,6 +311,14 @@ export function StudentPaymentHistory({
           isLoading={deletePayment.isPending}
         />
       )}
+
+      <EditPaymentDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        payment={paymentToEdit}
+        onSubmit={handleEditConfirm}
+        isLoading={updatePayment.isPending}
+      />
     </div>
   );
 }

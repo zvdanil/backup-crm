@@ -1531,9 +1531,8 @@ function calculateMonthlyBalanceFromData(
     const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
     if (!isActive) return;
 
-    // Для абонплатных активностей используем историю цен для получения цены на дату месяца
-    const monthStartDate = new Date(year, month, 1);
-    const monthStartDateStr = monthStartDate.toISOString().split('T')[0];
+    // Локальная календарная дата 1-го числа месяца (без UTC), чтобы выбор цены из истории не зависел от часового пояса
+    const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
     const priceHistory = enrollmentPriceHistoryMap.get(enrollmentId);
     const priceForDate = getEnrollmentPriceForDate(
       enrollment,
