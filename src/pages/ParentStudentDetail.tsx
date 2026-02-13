@@ -125,8 +125,12 @@ export default function ParentStudentDetail() {
         />
 
         <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft">
-          <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
-          <StudentPaymentHistory studentId={id!} month={month} year={year} />
+          <StudentPaymentHistory
+            studentId={id!}
+            month={month}
+            year={year}
+            title="Історія оплат"
+          />
         </div>
       </div>
     </>

@@ -124,6 +124,22 @@ export function useFinancialSummaryReport({
         return accountIds.includes(accountId);
       };
 
+      // Загружаем початкові залишки з account_opening_balances для всіх місяців періоду
+      const balanceDates = months.map(({ year: y, month: m }) => getMonthStartDate(y, m));
+      const { data: accountOpeningBalances = [] } = balanceDates.length > 0
+        ? await supabaseAny
+            .from('account_opening_balances')
+            .select('account_id, balance_date, amount')
+            .in('balance_date', balanceDates)
+        : { data: [] as any[] };
+
+      const getAccountOpeningBalancesForMonth = (monthStartDate: string): number =>
+        (accountOpeningBalances || []).reduce((sum: number, row: any) => {
+          if (row.balance_date !== monthStartDate) return sum;
+          if (!matchesAccount(row.account_id)) return sum;
+          return sum + Number(row.amount || 0);
+        }, 0);
+
       const results: MonthlyFinancialData[] = [];
       // Накопительные показатели считаются только в рамках выбранного периода
       let cumulativeDifference = 0;
@@ -423,15 +439,16 @@ export function useFinancialSummaryReport({
         const difference = actualBalance - expectedBalance;
         cumulativeDifference += difference;
 
-        // Залишок на початок місяця: перенос з попереднього місяця + внесені залишки лише для поточного місяця
+        // Залишок на початок місяця: перенос з попереднього місяця + внесені залишки (payment_accounts + account_opening_balances)
         let monthInitialBalance: number | undefined;
         if (accountIds && accountIds.length > 0) {
+          const aobForMonth = getAccountOpeningBalancesForMonth(startDate);
           if (monthIndex === 0) {
             const carriedForward = await calculateInitialBalanceForMonth(y, m);
             const enteredOpening = getOpeningBalanceForMonth(startDate, endDate);
-            monthInitialBalance = carriedForward + enteredOpening;
+            monthInitialBalance = carriedForward + enteredOpening + aobForMonth;
           } else {
-            monthInitialBalance = accountBalance;
+            monthInitialBalance = accountBalance + aobForMonth;
           }
         } else {
           monthInitialBalance = undefined;

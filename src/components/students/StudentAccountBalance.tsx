@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { isGardenAttendanceController } from "@/lib/gardenAttendance";
 import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
 import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
-import { getMonthStartDate, getMonthEndDate } from "@/lib/attendance";
+import { useAccountOpeningBalancesCumulativeUpToMonth } from "@/hooks/useAccountOpeningBalances";
 
 const MONTHS = [
   "Січень",
@@ -112,6 +112,16 @@ export function StudentAccountBalance({
     return map;
   }, [accountBalances]);
 
+  const { data: openingBalances = [] } = useAccountOpeningBalancesCumulativeUpToMonth(month, year);
+  const openingByAccountId = useMemo(() => {
+    const map = new Map<string, number>();
+    openingBalances.forEach((ob) => {
+      const id = ob.account_id || "none";
+      map.set(id, (map.get(id) ?? 0) + (ob.amount ?? 0));
+    });
+    return map;
+  }, [openingBalances]);
+
   const accountGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -188,15 +198,17 @@ export function StudentAccountBalance({
           <div className="space-y-4">
             {accountGroups.map((group) => {
               const accountBalance = accountBalanceMap.get(group.id);
-              const previousBalance = accountBalance?.previous_balance || 0;
+              const basePreviousBalance = accountBalance?.previous_balance ?? 0;
+              const openingForAccount = openingByAccountId.get(group.id) ?? 0;
+              const displayPreviousBalance = basePreviousBalance + openingForAccount;
               const charges = accountBalance?.charges || 0;
               const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
-              const endBalance = previousBalance + payments - charges + refunds;
+              const endBalance = displayPreviousBalance + payments - charges + refunds;
               const startLabel =
-                previousBalance < 0
+                displayPreviousBalance < 0
                   ? "Борг на початок"
-                  : previousBalance > 0
+                  : displayPreviousBalance > 0
                     ? "Залишок на початок"
                     : "Баланс на початок";
               return (
@@ -219,15 +231,15 @@ export function StudentAccountBalance({
                       <span
                         className={cn(
                           "font-semibold",
-                          previousBalance < 0
+                          displayPreviousBalance < 0
                             ? "text-destructive"
-                            : previousBalance > 0
+                            : displayPreviousBalance > 0
                               ? "text-success"
                               : "text-muted-foreground",
                         )}
                       >
-                        {previousBalance > 0 ? "+" : ""}
-                        {formatCurrency(Math.abs(previousBalance))}
+                        {displayPreviousBalance > 0 ? "+" : ""}
+                        {formatCurrency(Math.abs(displayPreviousBalance))}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -251,7 +263,7 @@ export function StudentAccountBalance({
                         До сплати на початок {MONTHS[month]}
                       </span>
                       <span className="font-medium text-destructive">
-                        {formatCurrency(charges - previousBalance)}
+                        {formatCurrency(charges - displayPreviousBalance)}
                       </span>
                     </div>
                     <div className="border-t border-border my-1"></div>

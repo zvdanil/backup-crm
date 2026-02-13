@@ -454,11 +454,11 @@ export default function StudentDetail() {
 
             {/* Payment History */}
             <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
-              <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
               <StudentPaymentHistory
                 studentId={id!}
                 month={balanceMonth}
                 year={balanceYear}
+                title="Історія оплат"
               />
             </div>
 
