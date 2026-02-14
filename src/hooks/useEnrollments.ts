@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 import type { Student } from './useStudents';
 import type { Activity } from './useActivities';
 
@@ -344,6 +345,26 @@ export function getEnrollmentPriceForDate(
 }
 
 /**
+ * Чи покриває історія цін запису хоча б один період для місяця (для видимості в балансах)
+ */
+export function enrollmentHistoryCoversMonth(
+  history: EnrollmentPriceHistory[] | undefined,
+  year: number,
+  month: number,
+): boolean {
+  if (!history || history.length === 0) return false;
+  const firstDay = getMonthStartDate(year, month);
+  const lastDay = getMonthEndDate(year, month);
+  return history.some((record) => {
+    const from = record.effective_from;
+    const to = record.effective_to;
+    if (from > lastDay) return false;
+    if (to != null && to <= firstDay) return false;
+    return true;
+  });
+}
+
+/**
  * Хук для загрузки истории цен подписки
  */
 export function useEnrollmentPriceHistory(enrollmentId: string) {
@@ -360,5 +381,33 @@ export function useEnrollmentPriceHistory(enrollmentId: string) {
       return (data || []) as EnrollmentPriceHistory[];
     },
     enabled: !!enrollmentId,
+  });
+}
+
+/**
+ * Завантажити історію цін для списку записів (для фільтра «показувати в місяці» по історії)
+ */
+export function useEnrollmentPriceHistoryMap(enrollmentIds: string[]) {
+  const key = enrollmentIds.slice().sort().join(',');
+  return useQuery({
+    queryKey: ['enrollment_price_history_map', key],
+    queryFn: async (): Promise<Map<string, EnrollmentPriceHistory[]>> => {
+      if (enrollmentIds.length === 0) return new Map();
+      const { data, error } = await supabase
+        .from('enrollment_price_history')
+        .select('*')
+        .in('enrollment_id', enrollmentIds)
+        .order('effective_from', { ascending: false });
+
+      if (error) throw error;
+      const map = new Map<string, EnrollmentPriceHistory[]>();
+      (data || []).forEach((row: EnrollmentPriceHistory) => {
+        const id = row.enrollment_id;
+        if (!map.has(id)) map.set(id, []);
+        map.get(id)!.push(row);
+      });
+      return map;
+    },
+    enabled: enrollmentIds.length > 0,
   });
 }

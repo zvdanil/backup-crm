@@ -12,6 +12,10 @@ import { cn } from "@/lib/utils";
 import { isGardenAttendanceController } from "@/lib/gardenAttendance";
 import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
 import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
+import {
+  useEnrollmentPriceHistoryMap,
+  enrollmentHistoryCoversMonth,
+} from "@/hooks/useEnrollments";
 import { useAccountOpeningBalancesCumulativeUpToMonth } from "@/hooks/useAccountOpeningBalances";
 
 const MONTHS = [
@@ -54,6 +58,12 @@ export function StudentAccountBalance({
   onMonthChange,
   onYearChange,
 }: StudentAccountBalanceProps) {
+  const enrollmentIds = useMemo(
+    () => enrollments.map((e) => e.id),
+    [enrollments],
+  );
+  const { data: priceHistoryMap = new Map() } = useEnrollmentPriceHistoryMap(enrollmentIds);
+
   const balanceEnrollments = useMemo(() => {
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -70,29 +80,36 @@ export function StudentAccountBalance({
       );
       if (activity && isGardenAttendanceController(activity)) return false;
 
+      const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
+      if (unenrolledDate && unenrolledDate < monthStart) return false;
+
+      const history = priceHistoryMap.get(enrollment.id);
+      const coversByHistory = enrollmentHistoryCoversMonth(history, year, month);
+
+      if (history && history.length > 0) {
+        if (!coversByHistory) return false;
+        if (isFutureMonth) return enrollment.is_active === true;
+        if (enrollment.is_active === true) return true;
+        if (enrollment.is_active === false && unenrolledDate) {
+          return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+        }
+        return false;
+      }
+
       const effectiveDate = (enrollment.effective_from ?? enrollment.enrolled_at)
         ? new Date(enrollment.effective_from ?? enrollment.enrolled_at)
         : null;
-      const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
-
-      // Активність діє з effective_from (дата початку ціни) до або в цьому місяці
       if (effectiveDate && effectiveDate > monthEnd) return false;
-
-      if (unenrolledDate && unenrolledDate < monthStart) return false;
-
       if (isFutureMonth) {
         return enrollment.is_active === true && effectiveDate && effectiveDate <= monthEnd;
       }
-
       if (enrollment.is_active === true) return true;
-
       if (enrollment.is_active === false && unenrolledDate) {
         return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
       }
-
       return false;
     });
-  }, [enrollments, allActivities, month, year]);
+  }, [enrollments, allActivities, month, year, priceHistoryMap]);
 
   const accountLabelMap = useMemo(() => {
     const map = new Map<string, string>();

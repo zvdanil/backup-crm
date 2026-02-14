@@ -12,6 +12,7 @@ import {
 } from "@/lib/gardenAttendance";
 import {
   getEnrollmentPriceForDate,
+  enrollmentHistoryCoversMonth,
   type EnrollmentPriceHistory,
 } from "./useEnrollments";
 
@@ -1208,29 +1209,35 @@ export function computeStudentAccountBalancesFromData(
       y > currentYear || (y === currentYear && m > currentMonth);
 
     const filteredEnrollments = allFilteredEnrollments.filter((e: any) => {
+      const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
+      if (unenrolledDate && unenrolledDate < monthStart) return false;
+
+      const history = enrollmentPriceHistoryMap.get(e.id);
+      const coversByHistory = enrollmentHistoryCoversMonth(history, y, m);
+
+      if (history && history.length > 0) {
+        // Визначаємо видимість по історії цін
+        if (!coversByHistory) return false;
+        if (isFutureMonth) return e.is_active === true;
+        if (e.is_active === true) return true;
+        if (e.is_active === false && unenrolledDate) {
+          return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+        }
+        return false;
+      }
+
+      // Fallback: без історії — по effective_from / enrolled_at
       const effectiveDate = (e.effective_from ?? e.enrolled_at)
         ? new Date(e.effective_from ?? e.enrolled_at)
         : null;
-      const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
-
-      // Активність діє з effective_from (дата початку ціни) до або в цьому місяці
       if (effectiveDate && effectiveDate > monthEnd) return false;
-
-      // Якщо відписались до початку місяця — не включаємо
-      if (unenrolledDate && unenrolledDate < monthStart) return false;
-
       if (isFutureMonth) {
         return e.is_active === true && effectiveDate && effectiveDate <= monthEnd;
       }
-
-      if (e.is_active === true) {
-        return true;
-      }
-
+      if (e.is_active === true) return true;
       if (e.is_active === false && unenrolledDate) {
         return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
       }
-
       return false;
     });
 
@@ -1704,6 +1711,21 @@ async function calculateMonthlyAccountBalances(
 
   if (enrollmentsError) throw enrollmentsError;
 
+  const allEnrollmentIds = (enrollments || []).map((e: any) => e.id);
+  let priceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
+  if (allEnrollmentIds.length > 0) {
+    const { data: priceHistoryRows } = await supabaseAny
+      .from("enrollment_price_history")
+      .select("*")
+      .in("enrollment_id", allEnrollmentIds)
+      .order("effective_from", { ascending: false });
+    (priceHistoryRows || []).forEach((row: EnrollmentPriceHistory) => {
+      const id = row.enrollment_id;
+      if (!priceHistoryMap.has(id)) priceHistoryMap.set(id, []);
+      priceHistoryMap.get(id)!.push(row);
+    });
+  }
+
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -1713,14 +1735,26 @@ async function calculateMonthlyAccountBalances(
   const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
   let filteredEnrollmentsByDate = (enrollments || []).filter((e: any) => {
+    const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
+    if (unenrolledDate && unenrolledDate < monthStart) return false;
+
+    const history = priceHistoryMap.get(e.id);
+    const coversByHistory = enrollmentHistoryCoversMonth(history, year, month);
+
+    if (history && history.length > 0) {
+      if (!coversByHistory) return false;
+      if (isFutureMonth) return e.is_active === true;
+      if (e.is_active === true) return true;
+      if (e.is_active === false && unenrolledDate) {
+        return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+      }
+      return false;
+    }
+
     const effectiveDate = (e.effective_from ?? e.enrolled_at)
       ? new Date(e.effective_from ?? e.enrolled_at)
       : null;
-    const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
-
     if (effectiveDate && effectiveDate > monthEnd) return false;
-    if (unenrolledDate && unenrolledDate < monthStart) return false;
-
     if (isFutureMonth) {
       return e.is_active === true && effectiveDate && effectiveDate <= monthEnd;
     }
