@@ -70,27 +70,23 @@ export function StudentAccountBalance({
       );
       if (activity && isGardenAttendanceController(activity)) return false;
 
-      const enrolledDate = enrollment.enrolled_at ? new Date(enrollment.enrolled_at) : null;
+      const effectiveDate = (enrollment.effective_from ?? enrollment.enrolled_at)
+        ? new Date(enrollment.effective_from ?? enrollment.enrolled_at)
+        : null;
       const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
 
-      // Enrollment должен быть подписан до или в этом месяце
-      if (enrolledDate && enrolledDate > monthEnd) return false;
+      // Активність діє з effective_from (дата початку ціни) до або в цьому місяці
+      if (effectiveDate && effectiveDate > monthEnd) return false;
 
-      // Если отписались до начала месяца - не включаем
       if (unenrolledDate && unenrolledDate < monthStart) return false;
 
       if (isFutureMonth) {
-        // Для будущих месяцев: только активные, подписанные до или в этом месяце
-        return enrollment.is_active === true && enrolledDate && enrolledDate <= monthEnd;
+        return enrollment.is_active === true && effectiveDate && effectiveDate <= monthEnd;
       }
 
-      if (enrollment.is_active === true) {
-        // Активный enrollment: подписан до или в этом месяце, не отписан до начала месяца
-        return true; // Проверки выше уже выполнены
-      }
+      if (enrollment.is_active === true) return true;
 
       if (enrollment.is_active === false && unenrolledDate) {
-        // Неактивный: отписались в этом месяце (проверка unenrolledDate >= monthStart уже выше)
         return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
       }
 
@@ -112,7 +108,7 @@ export function StudentAccountBalance({
     return map;
   }, [accountBalances]);
 
-  const { data: openingBalances = [] } = useAccountOpeningBalancesCumulativeUpToMonth(month, year);
+  const { data: openingBalances = [] } = useAccountOpeningBalancesCumulativeUpToMonth(studentId, month, year);
   const openingByAccountId = useMemo(() => {
     const map = new Map<string, number>();
     openingBalances.forEach((ob) => {

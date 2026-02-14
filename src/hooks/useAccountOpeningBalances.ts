@@ -4,6 +4,7 @@ import { toast } from '@/hooks/use-toast';
 
 export interface AccountOpeningBalance {
   id: string;
+  student_id: string;
   account_id: string;
   balance_date: string;
   amount: number;
@@ -12,6 +13,7 @@ export interface AccountOpeningBalance {
 }
 
 export type AccountOpeningBalanceInsert = {
+  student_id: string;
   account_id: string;
   balance_date: string;
   amount: number;
@@ -25,57 +27,60 @@ function getMonthStartDate(year: number, month: number): string {
   return new Date(year, month, 1).toISOString().split('T')[0];
 }
 
-export function useAccountOpeningBalancesForMonth(month?: number, year?: number) {
+export function useAccountOpeningBalancesForMonth(studentId: string | null, month?: number, year?: number) {
   const balanceDate = month != null && year != null ? getMonthStartDate(year, month) : null;
 
   return useQuery({
-    queryKey: ['account_opening_balances', balanceDate],
+    queryKey: ['account_opening_balances', studentId, balanceDate],
     queryFn: async (): Promise<AccountOpeningBalance[]> => {
-      if (!balanceDate) return [];
+      if (!studentId || !balanceDate) return [];
       const { data, error } = await supabase
         .from('account_opening_balances')
         .select('*')
+        .eq('student_id', studentId)
         .eq('balance_date', balanceDate)
         .order('account_id');
 
       if (error) throw error;
       return (data || []) as AccountOpeningBalance[];
     },
-    enabled: !!balanceDate,
+    enabled: !!studentId && !!balanceDate,
   });
 }
 
-/** Усі початкові залишки з balance_date <= початок місяця (для переносу на наступні місяці) */
-export function useAccountOpeningBalancesCumulativeUpToMonth(month?: number, year?: number) {
+/** Усі початкові залишки учня з balance_date <= початок місяця (для переносу на наступні місяці) */
+export function useAccountOpeningBalancesCumulativeUpToMonth(studentId: string | null, month?: number, year?: number) {
   const upToDate = month != null && year != null ? getMonthStartDate(year, month) : null;
 
   return useQuery({
-    queryKey: ['account_opening_balances_cumulative', upToDate],
+    queryKey: ['account_opening_balances_cumulative', studentId, upToDate],
     queryFn: async (): Promise<AccountOpeningBalance[]> => {
-      if (!upToDate) return [];
+      if (!studentId || !upToDate) return [];
       const { data, error } = await supabase
         .from('account_opening_balances')
         .select('*')
+        .eq('student_id', studentId)
         .lte('balance_date', upToDate)
         .order('account_id');
 
       if (error) throw error;
       return (data || []) as AccountOpeningBalance[];
     },
-    enabled: !!upToDate,
+    enabled: !!studentId && !!upToDate,
   });
 }
 
-export function useAccountOpeningBalance(accountId: string | null, month?: number, year?: number) {
+export function useAccountOpeningBalance(studentId: string | null, accountId: string | null, month?: number, year?: number) {
   const balanceDate = accountId && month != null && year != null ? getMonthStartDate(year, month) : null;
 
   return useQuery({
-    queryKey: ['account_opening_balance', accountId, balanceDate],
+    queryKey: ['account_opening_balance', studentId, accountId, balanceDate],
     queryFn: async (): Promise<AccountOpeningBalance | null> => {
-      if (!accountId || !balanceDate) return null;
+      if (!studentId || !accountId || !balanceDate) return null;
       const { data, error } = await supabase
         .from('account_opening_balances')
         .select('*')
+        .eq('student_id', studentId)
         .eq('account_id', accountId)
         .eq('balance_date', balanceDate)
         .maybeSingle();
@@ -83,7 +88,7 @@ export function useAccountOpeningBalance(accountId: string | null, month?: numbe
       if (error) throw error;
       return data as AccountOpeningBalance | null;
     },
-    enabled: !!accountId && !!balanceDate,
+    enabled: !!studentId && !!accountId && !!balanceDate,
   });
 }
 
@@ -95,7 +100,7 @@ export function useCreateAccountOpeningBalance() {
       const { data, error } = await supabase
         .from('account_opening_balances')
         .upsert(input, {
-          onConflict: 'account_id,balance_date',
+          onConflict: 'student_id,account_id,balance_date',
           ignoreDuplicates: false,
         })
         .select('*')

@@ -1119,7 +1119,7 @@ export function computeStudentAccountBalancesFromData(
   if (allFilteredEnrollments.length === 0) return [];
 
   const earliestEnrolled = allFilteredEnrollments.reduce((min: string | null, e: any) => {
-    const at = e.enrolled_at ?? null;
+    const at = e.effective_from ?? e.enrolled_at ?? null;
     if (!at) return min;
     return !min || at < min ? at : min;
   }, null as string | null);
@@ -1208,27 +1208,26 @@ export function computeStudentAccountBalancesFromData(
       y > currentYear || (y === currentYear && m > currentMonth);
 
     const filteredEnrollments = allFilteredEnrollments.filter((e: any) => {
-      const enrolledDate = e.enrolled_at ? new Date(e.enrolled_at) : null;
+      const effectiveDate = (e.effective_from ?? e.enrolled_at)
+        ? new Date(e.effective_from ?? e.enrolled_at)
+        : null;
       const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
 
-      // Enrollment должен быть подписан до или в этом месяце
-      if (enrolledDate && enrolledDate > monthEnd) return false;
+      // Активність діє з effective_from (дата початку ціни) до або в цьому місяці
+      if (effectiveDate && effectiveDate > monthEnd) return false;
 
-      // Если отписались до начала месяца - не включаем
+      // Якщо відписались до початку місяця — не включаємо
       if (unenrolledDate && unenrolledDate < monthStart) return false;
 
       if (isFutureMonth) {
-        // Для будущих месяцев: только активные, подписанные до или в этом месяце
-        return e.is_active === true && enrolledDate && enrolledDate <= monthEnd;
+        return e.is_active === true && effectiveDate && effectiveDate <= monthEnd;
       }
 
       if (e.is_active === true) {
-        // Активный enrollment: подписан до или в этом месяце, не отписан до начала месяца
-        return true; // Проверки выше уже выполнены
+        return true;
       }
 
       if (e.is_active === false && unenrolledDate) {
-        // Неактивный: отписались в этом месяце (проверка unenrolledDate >= monthStart уже выше)
         return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
       }
 
@@ -1316,7 +1315,7 @@ export async function fetchStudentAccountBalances({
   const { data: enrollments, error: enrollmentsError } = await supabaseAny
     .from("enrollments")
     .select(
-      "id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at",
+      "id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at, effective_from",
     )
     .eq("student_id", studentId);
 
@@ -1330,7 +1329,7 @@ export async function fetchStudentAccountBalances({
 
   const earliestEnrolled = allFilteredEnrollments.reduce(
     (min: string | null, e: any) => {
-      const at = e.enrolled_at ?? null;
+      const at = e.effective_from ?? e.enrolled_at ?? null;
       if (!at) return min;
       return !min || at < min ? at : min;
     },
@@ -1699,36 +1698,38 @@ async function calculateMonthlyAccountBalances(
   const { data: enrollments, error: enrollmentsError } = await supabase
     .from("enrollments")
     .select(
-      "id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at",
+      "id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at, effective_from",
     )
     .eq("student_id", studentId);
 
   if (enrollmentsError) throw enrollmentsError;
 
-  // Фильтруем enrollments для месячного баланса
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
   const isFutureMonth =
     year > currentYear || (year === currentYear && month > currentMonth);
+  const monthStart = new Date(year, month, 1);
   const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
 
-  let filteredEnrollmentsByDate = enrollments || [];
-  if (isFutureMonth) {
-    filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter(
-      (e: any) => e.is_active === true,
-    );
-  } else {
-    const monthStart = new Date(year, month, 1);
-    filteredEnrollmentsByDate = filteredEnrollmentsByDate.filter((e: any) => {
-      if (e.is_active === true) return true;
-      if (e.is_active === false && e.unenrolled_at) {
-        const unenrolledDate = new Date(e.unenrolled_at);
-        return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
-      }
-      return false;
-    });
-  }
+  let filteredEnrollmentsByDate = (enrollments || []).filter((e: any) => {
+    const effectiveDate = (e.effective_from ?? e.enrolled_at)
+      ? new Date(e.effective_from ?? e.enrolled_at)
+      : null;
+    const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
+
+    if (effectiveDate && effectiveDate > monthEnd) return false;
+    if (unenrolledDate && unenrolledDate < monthStart) return false;
+
+    if (isFutureMonth) {
+      return e.is_active === true && effectiveDate && effectiveDate <= monthEnd;
+    }
+    if (e.is_active === true) return true;
+    if (e.is_active === false && unenrolledDate) {
+      return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+    }
+    return false;
+  });
 
   const excludedSet = new Set(excludeActivityIds);
   const filteredEnrollments = filteredEnrollmentsByDate.filter(
@@ -2040,7 +2041,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
   const allEnrollmentsRaw = (await supabaseAny
     .from("enrollments")
     .select(
-      "id, student_id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at",
+      "id, student_id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at, effective_from",
     )
     .in("student_id", studentIds)
   ).data as any[];
@@ -2051,7 +2052,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
   const enrollmentIds = allEnrollments.map((e: any) => e.id);
 
   const earliestGlobal = allEnrollments.reduce((min: string | null, e: any) => {
-    const at = e.enrolled_at ?? null;
+    const at = e.effective_from ?? e.enrolled_at ?? null;
     if (!at) return min;
     return !min || at < min ? at : min;
   }, null as string | null);

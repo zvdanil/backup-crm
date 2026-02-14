@@ -528,7 +528,7 @@ export default function StudentDetail() {
                                 </span>
                               </div>
                               <div className="mt-1 text-xs text-muted-foreground">
-                                {formatDate(enrollment.enrolled_at)}
+                                {formatDate(enrollment.effective_from ?? enrollment.enrolled_at)}
                               </div>
                               <div className="mt-2 text-sm">
                                 <EnrollmentPriceDisplay
@@ -620,7 +620,7 @@ export default function StudentDetail() {
                                   : "—"}
                               </TableCell>
                               <TableCell className="text-muted-foreground">
-                                {formatDate(enrollment.enrolled_at)}
+                                {formatDate(enrollment.effective_from ?? enrollment.enrolled_at)}
                               </TableCell>
                               <TableCell>
                                 <div className="flex gap-1">

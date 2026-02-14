@@ -91,49 +91,45 @@ async function calculateIncomeForPeriod(
     // Get enrollments for this student
     const { data: enrollments, error: enrollmentsError } = await supabase
       .from('enrollments')
-      .select('id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at')
+      .select('id, activity_id, custom_price, discount_percent, account_id, is_active, unenrolled_at, enrolled_at, effective_from')
       .eq('student_id', student.id);
 
     if (enrollmentsError) throw enrollmentsError;
     if (!enrollments || enrollments.length === 0) continue;
 
-    // Filter enrollments by date (same logic as calculateMonthlyAccountBalances)
-    // For cumulative mode: include all enrollments that were active at any point up to endDate
-    // For monthly mode: include enrollments active during the specific month
-    const now = new Date();
     const endDateObj = new Date(endDate);
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const isFutureMonth = endDateObj.getFullYear() > currentYear || 
-      (endDateObj.getFullYear() === currentYear && endDateObj.getMonth() > currentMonth);
-    
-    let filteredEnrollments = enrollments;
+    const isFutureMonth = endDateObj.getFullYear() > new Date().getFullYear() ||
+      (endDateObj.getFullYear() === new Date().getFullYear() && endDateObj.getMonth() > new Date().getMonth());
+
+    let filteredEnrollments: any[];
     if (startDate) {
-      // Monthly mode: filter by specific month
       const monthStart = new Date(startDate);
       const monthEnd = new Date(endDateObj.getFullYear(), endDateObj.getMonth() + 1, 0, 23, 59, 59, 999);
       filteredEnrollments = enrollments.filter((e: any) => {
+        const effectiveDate = (e.effective_from ?? e.enrolled_at) ? new Date(e.effective_from ?? e.enrolled_at) : null;
+        const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
+
+        if (effectiveDate && effectiveDate > monthEnd) return false;
+        if (unenrolledDate && unenrolledDate < monthStart) return false;
         if (e.is_active === true) return true;
-        if (e.is_active === false && e.unenrolled_at) {
-          const unenrolledDate = new Date(e.unenrolled_at);
+        if (e.is_active === false && unenrolledDate) {
           return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
         }
         return false;
       });
     } else {
-      // Cumulative mode: include all enrollments that were active at any point up to endDate
       filteredEnrollments = enrollments.filter((e: any) => {
+        const effectiveDate = (e.effective_from ?? e.enrolled_at) ? new Date(e.effective_from ?? e.enrolled_at) : null;
+        const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
+
+        if (effectiveDate && effectiveDate > endDateObj) return false;
         if (e.is_active === true) return true;
-        if (e.is_active === false && e.unenrolled_at) {
-          const unenrolledDate = new Date(e.unenrolled_at);
-          return unenrolledDate <= endDateObj;
-        }
+        if (e.is_active === false && unenrolledDate) return unenrolledDate <= endDateObj;
         return false;
       });
     }
-    
+
     if (isFutureMonth) {
-      // For future months, only show active enrollments
       filteredEnrollments = filteredEnrollments.filter((e: any) => e.is_active === true);
     }
 

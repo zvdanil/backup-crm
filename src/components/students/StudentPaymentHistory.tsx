@@ -64,7 +64,7 @@ export function StudentPaymentHistory({
     year,
   });
   const { data: accounts = [] } = usePaymentAccounts();
-  const { data: balancesForMonth = [] } = useAccountOpeningBalancesForMonth(month, year);
+  const { data: balancesForMonth = [] } = useAccountOpeningBalancesForMonth(studentId, month, year);
   const isMobile = useIsMobile();
   const { role } = useAuth();
   const deletePayment = useDeletePaymentTransaction();
@@ -109,6 +109,7 @@ export function StudentPaymentHistory({
       await updateBalance.mutateAsync({ id: editingBalance.id, amount: data.amount });
     } else {
       await createBalance.mutateAsync({
+        student_id: studentId,
         account_id: data.account_id,
         balance_date: balanceDate,
         amount: data.amount,
