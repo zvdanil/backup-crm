@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -17,6 +17,8 @@ import {
   enrollmentHistoryCoversMonth,
 } from "@/hooks/useEnrollments";
 import { useAccountOpeningBalancesCumulativeUpToMonth } from "@/hooks/useAccountOpeningBalances";
+import { ACTIVITY_GROUP_LABELS } from "@/lib/activityGroups";
+import type { ActivityGroup } from "@/hooks/useActivities";
 
 const MONTHS = [
   "Січень",
@@ -171,7 +173,42 @@ export function StudentAccountBalance({
     });
   }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
-  // Все числа берём из accountBalance (результат хука) - один источник истины
+  const groupLabel = (key: ActivityGroup | "other") =>
+    key === "other" ? "Інше" : ACTIVITY_GROUP_LABELS[key];
+
+  const [chargesByGroup, setChargesByGroup] = useState<
+    Record<string, Record<string, number>>
+  >({});
+
+  useEffect(() => {
+    setChargesByGroup({});
+  }, [month, year, balanceEnrollments]);
+
+  const reportCharge = useCallback(
+    (
+      accountId: string,
+      groupKey: ActivityGroup | "other",
+      enrollmentId: string,
+      charge: number
+    ) => {
+      setChargesByGroup((prev) => {
+        const k = `${accountId}-${groupKey}`;
+        return {
+          ...prev,
+          [k]: { ...(prev[k] || {}), [enrollmentId]: charge },
+        };
+      });
+    },
+    []
+  );
+
+  const getGroupTotal = useCallback(
+    (accountId: string, groupKey: ActivityGroup | "other") => {
+      const k = `${accountId}-${groupKey}`;
+      return Object.values(chargesByGroup[k] || {}).reduce((a, b) => a + b, 0);
+    },
+    [chargesByGroup]
+  );
 
   return (
     <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
@@ -303,17 +340,60 @@ export function StudentAccountBalance({
                       Немає рядків за вибраний період
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {group.enrollments.map((enrollment) => (
-                        <StudentActivityBalanceRow
-                          key={enrollment.id}
-                          studentId={studentId}
-                          enrollment={enrollment}
-                          month={month}
-                          year={year}
-                        />
-                      ))}
-                    </div>
+                    (() => {
+                      const groupKeys: (ActivityGroup | "other")[] = [
+                        "kindergarten",
+                        "additional_classes",
+                        "other",
+                      ];
+                      const byGroup = new Map<ActivityGroup | "other", EnrollmentWithRelations[]>();
+                      groupKeys.forEach((k) => byGroup.set(k, []));
+                      group.enrollments.forEach((enrollment) => {
+                        const activity = allActivities.find((a) => a.id === enrollment.activity_id);
+                        const ag = activity?.activity_group;
+                        const key: ActivityGroup | "other" =
+                          ag === "kindergarten" || ag === "additional_classes" ? ag : "other";
+                        byGroup.get(key)!.push(enrollment);
+                      });
+                      return (
+                        <div className="space-y-4">
+                          {groupKeys.map((groupKey) => {
+                            const groupEnrollments = byGroup.get(groupKey) ?? [];
+                            if (groupEnrollments.length === 0) return null;
+                            const groupTotal = getGroupTotal(group.id, groupKey);
+                            return (
+                              <div key={groupKey}>
+                                <div className="text-sm font-medium text-muted-foreground mb-2">
+                                  {groupLabel(groupKey)}
+                                </div>
+                                <div className="space-y-3 pl-0">
+                                  {groupEnrollments.map((enrollment) => (
+                                    <StudentActivityBalanceRow
+                                      key={enrollment.id}
+                                      studentId={studentId}
+                                      enrollment={enrollment}
+                                      month={month}
+                                      year={year}
+                                      onChargeCalculated={(enrollmentId, charge) =>
+                                        reportCharge(group.id, groupKey, enrollmentId, charge)
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                                <div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-border">
+                                  <span className="font-medium text-muted-foreground">
+                                    Всього нараховано
+                                  </span>
+                                  <span className="font-semibold">
+                                    {formatCurrency(groupTotal)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()
                   )}
                   {group.id === "none" &&
                     (accountBalanceMap.get("none")?.unassigned_payments || 0) >

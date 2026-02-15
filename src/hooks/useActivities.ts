@@ -51,6 +51,8 @@ export interface BillingRules {
   custom_statuses?: CustomAttendanceStatus[]; // Максимум 2
 }
 
+export type ActivityGroup = 'kindergarten' | 'additional_classes';
+
 export interface Activity {
   id: string;
   name: string;
@@ -63,6 +65,7 @@ export interface Activity {
   show_in_children: boolean;
   show_in_journals: boolean;
   category: ActivityCategory;
+  activity_group: ActivityGroup | null;
   account_id: string | null;
   balance_display_mode: 'subscription' | 'recalculation' | 'subscription_and_recalculation' | null;
   fixed_teacher_rate: number | null;

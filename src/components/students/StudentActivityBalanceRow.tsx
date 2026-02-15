@@ -13,7 +13,7 @@ import {
 } from "@/hooks/useEnrollments";
 import { cn } from "@/lib/utils";
 import { useActivities } from "@/hooks/useActivities";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   isGardenAttendanceController,
   type GardenAttendanceConfig,
@@ -30,6 +30,8 @@ interface StudentActivityBalanceRowProps {
   enrollment: EnrollmentWithRelations;
   month: number;
   year: number;
+  /** Викликається з сумою нарахування для рядка (для підрахунку підсумку по групі) */
+  onChargeCalculated?: (enrollmentId: string, charge: number) => void;
 }
 
 export function StudentActivityBalanceRow({
@@ -37,6 +39,7 @@ export function StudentActivityBalanceRow({
   enrollment,
   month,
   year,
+  onChargeCalculated,
 }: StudentActivityBalanceRowProps) {
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
@@ -230,6 +233,18 @@ export function StudentActivityBalanceRow({
     enrollment.is_active,
   ]);
 
+  const charges = combinedData?.charges ?? 0;
+  const refunds = combinedData?.refunds ?? 0;
+  const displayChargesForReport = isFoodActivity ? 0 : charges;
+  const displayRefundsForReport = isFoodActivity ? refunds : 0;
+  const valueForGroupTotal = displayChargesForReport - displayRefundsForReport;
+
+  useEffect(() => {
+    if (onChargeCalculated) {
+      onChargeCalculated(enrollment.id, valueForGroupTotal);
+    }
+  }, [onChargeCalculated, enrollment.id, valueForGroupTotal]);
+
   // Check if activities data is loaded (might be null for archived activities)
   if (!activities) {
     return (
@@ -251,8 +266,6 @@ export function StudentActivityBalanceRow({
 
   const balance = combinedData?.balance || 0;
   const payments = combinedData?.payments || 0;
-  const charges = combinedData?.charges || 0;
-  const refunds = combinedData?.refunds || 0;
   const attendanceCount = combinedData?.attendanceCount || 0;
   const absentCount = combinedData?.absentCount || 0;
 
