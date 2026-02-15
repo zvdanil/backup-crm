@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -12,13 +12,13 @@ import { cn } from "@/lib/utils";
 import { isGardenAttendanceController } from "@/lib/gardenAttendance";
 import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
 import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { getMonthStartDate, getMonthEndDate } from "@/lib/attendance";
 import {
-  getBillingRulesForDate,
-  type ActivityPriceHistory,
-} from "@/hooks/useActivities";
+  useEnrollmentPriceHistoryMap,
+  enrollmentHistoryCoversMonth,
+} from "@/hooks/useEnrollments";
+import { useAccountOpeningBalancesCumulativeUpToMonth } from "@/hooks/useAccountOpeningBalances";
+import { ACTIVITY_GROUP_LABELS } from "@/lib/activityGroups";
+import type { ActivityGroup } from "@/hooks/useActivities";
 
 const MONTHS = [
   "Січень",
@@ -60,42 +60,11 @@ export function StudentAccountBalance({
   onMonthChange,
   onYearChange,
 }: StudentAccountBalanceProps) {
-  // Load price history for all activities
-  const activityIds = useMemo(() => {
-    return Array.from(new Set(enrollments.map((e) => e.activity_id)));
-  }, [enrollments]);
-
-  const { data: priceHistoryData } = useQuery({
-    queryKey: ["activity_price_history_bulk", activityIds],
-    queryFn: async () => {
-      if (activityIds.length === 0) return [];
-      // @ts-expect-error - activity_price_history table exists but may not be in generated types
-      const { data, error } = await supabase
-        .from("activity_price_history")
-        .select("*")
-        .in("activity_id", activityIds)
-        .order("effective_from", { ascending: false });
-
-      if (error) throw error;
-      return data as ActivityPriceHistory[];
-    },
-    enabled: activityIds.length > 0,
-  });
-
-  // Group price history by activity_id
-  const priceHistoryByActivity = useMemo(() => {
-    const map = new Map<string, ActivityPriceHistory[]>();
-    if (!priceHistoryData) return map;
-
-    priceHistoryData.forEach((ph) => {
-      if (!map.has(ph.activity_id)) {
-        map.set(ph.activity_id, []);
-      }
-      map.get(ph.activity_id)!.push(ph);
-    });
-
-    return map;
-  }, [priceHistoryData]);
+  const enrollmentIds = useMemo(
+    () => enrollments.map((e) => e.id),
+    [enrollments],
+  );
+  const { data: priceHistoryMap = new Map() } = useEnrollmentPriceHistoryMap(enrollmentIds);
 
   const balanceEnrollments = useMemo(() => {
     const now = new Date();
@@ -104,30 +73,45 @@ export function StudentAccountBalance({
     const isFutureMonth =
       year > currentYear || (year === currentYear && month > currentMonth);
 
+    const monthStart = new Date(year, month, 1);
+    const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+
     return enrollments.filter((enrollment) => {
       const activity = allActivities.find(
         (a) => a.id === enrollment.activity_id,
       );
       if (activity && isGardenAttendanceController(activity)) return false;
 
-      // Фильтруем по месяцу архивации:
-      // - Для будущих месяцев: только активные enrollments
-      // - Для текущего/прошлого месяца: активные + архивные, которые были заархивированы в этом месяце
-      if (isFutureMonth) {
-        return enrollment.is_active === true;
-      } else {
+      const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
+      if (unenrolledDate && unenrolledDate < monthStart) return false;
+
+      const history = priceHistoryMap.get(enrollment.id);
+      const coversByHistory = enrollmentHistoryCoversMonth(history, year, month);
+
+      if (history && history.length > 0) {
+        if (!coversByHistory) return false;
+        if (isFutureMonth) return enrollment.is_active === true;
         if (enrollment.is_active === true) return true;
-        // Архивные: показываем только если были заархивированы в этом месяце
-        if (enrollment.is_active === false && enrollment.unenrolled_at) {
-          const unenrolledDate = new Date(enrollment.unenrolled_at);
-          const monthStart = new Date(year, month, 1);
-          const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+        if (enrollment.is_active === false && unenrolledDate) {
           return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
         }
         return false;
       }
+
+      const effectiveDate = (enrollment.effective_from ?? enrollment.enrolled_at)
+        ? new Date(enrollment.effective_from ?? enrollment.enrolled_at)
+        : null;
+      if (effectiveDate && effectiveDate > monthEnd) return false;
+      if (isFutureMonth) {
+        return enrollment.is_active === true && effectiveDate && effectiveDate <= monthEnd;
+      }
+      if (enrollment.is_active === true) return true;
+      if (enrollment.is_active === false && unenrolledDate) {
+        return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+      }
+      return false;
     });
-  }, [enrollments, allActivities, month, year]);
+  }, [enrollments, allActivities, month, year, priceHistoryMap]);
 
   const accountLabelMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -142,6 +126,16 @@ export function StudentAccountBalance({
     });
     return map;
   }, [accountBalances]);
+
+  const { data: openingBalances = [] } = useAccountOpeningBalancesCumulativeUpToMonth(studentId, month, year);
+  const openingByAccountId = useMemo(() => {
+    const map = new Map<string, number>();
+    openingBalances.forEach((ob) => {
+      const id = ob.account_id || "none";
+      map.set(id, (map.get(id) ?? 0) + (ob.amount ?? 0));
+    });
+    return map;
+  }, [openingBalances]);
 
   const accountGroups = useMemo(() => {
     const groups = new Map<
@@ -179,102 +173,42 @@ export function StudentAccountBalance({
     });
   }, [balanceEnrollments, accountLabelMap, accountBalances]);
 
-  // Calculate subscription charges from activity settings (not from transactions)
-  // For subscription type: use price effective on LAST DAY of the month (for historical months)
-  const subscriptionChargesByAccount = useMemo(() => {
-    const map = new Map<string, number>();
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const isCurrentOrFutureMonth =
-      year > currentYear || (year === currentYear && month >= currentMonth);
+  const groupLabel = (key: ActivityGroup | "other") =>
+    key === "other" ? "Інше" : ACTIVITY_GROUP_LABELS[key];
 
-    // For historical months: use last day of that month
-    // For current/future months: use current date (prices may still change)
-    const priceDate = isCurrentOrFutureMonth
-      ? new Date() // Current date
-      : new Date(year, month + 1, 0); // Last day of the month (month+1, day 0)
+  const [chargesByGroup, setChargesByGroup] = useState<
+    Record<string, Record<string, number>>
+  >({});
 
-    const priceDateString = priceDate.toISOString().split("T")[0];
+  useEffect(() => {
+    setChargesByGroup({});
+  }, [month, year, balanceEnrollments]);
 
-    balanceEnrollments.forEach((enrollment) => {
-      const activity = enrollment.activities;
+  const reportCharge = useCallback(
+    (
+      accountId: string,
+      groupKey: ActivityGroup | "other",
+      enrollmentId: string,
+      charge: number
+    ) => {
+      setChargesByGroup((prev) => {
+        const k = `${accountId}-${groupKey}`;
+        return {
+          ...prev,
+          [k]: { ...(prev[k] || {}), [enrollmentId]: charge },
+        };
+      });
+    },
+    []
+  );
 
-      // Check billing_rules for subscription type
-      // For historical months, need to get billing_rules that were effective on last day of month
-      const priceHistory =
-        priceHistoryByActivity.get(enrollment.activity_id) || [];
-      const billingRules =
-        priceHistory.length > 0
-          ? getBillingRulesForDate(activity, priceHistory, priceDateString)
-          : activity?.billing_rules;
-
-      const presentRule = billingRules?.present;
-
-      // Only subscription type activities
-      if (presentRule?.type !== "subscription") return;
-
-      // For subscription: enrollment must be active at the END of the month
-      // If unenrolled during the month (even on last day) → don't charge
-      const monthEndDate = new Date(year, month + 1, 0); // Last day of month
-
-      const enrolledDate = enrollment.enrolled_at
-        ? new Date(enrollment.enrolled_at)
-        : null;
-      const unenrolledDate = enrollment.unenrolled_at
-        ? new Date(enrollment.unenrolled_at)
-        : null;
-
-      // Skip if enrolled AFTER month end
-      if (enrolledDate && enrolledDate > monthEndDate) {
-        return;
-      }
-
-      // Skip if unenrolled ON or BEFORE the last day of the month
-      // (must be active AFTER month end to be charged for that month)
-      if (unenrolledDate && unenrolledDate <= monthEndDate) {
-        return;
-      }
-
-      const accountId = enrollment.account_id || activity?.account_id || "none";
-
-      // Calculate charge from settings
-      let charge = 0;
-
-      // Check if custom_price is effective on the price date
-      const hasCustomPrice =
-        enrollment.custom_price !== null &&
-        enrollment.custom_price !== undefined;
-      const effectiveFromDate = enrollment.effective_from
-        ? new Date(enrollment.effective_from)
-        : null;
-      const isCustomPriceEffective =
-        hasCustomPrice &&
-        (!effectiveFromDate || effectiveFromDate <= priceDate);
-
-      if (isCustomPriceEffective) {
-        // Individual tariff with discount (effective on this date)
-        const discountMultiplier = 1 - (enrollment.discount_percent || 0) / 100;
-        charge =
-          Math.round(enrollment.custom_price! * discountMultiplier * 100) / 100;
-      } else if (presentRule?.rate && presentRule.rate > 0) {
-        // From billing rule rate (historically accurate for this date)
-        charge = presentRule.rate;
-      } else {
-        // From default price
-        charge = activity?.default_price || 0;
-      }
-
-      const current = map.get(accountId) || 0;
-      map.set(accountId, current + charge);
-    });
-
-    return map;
-  }, [balanceEnrollments, month, year, priceHistoryByActivity]);
-
-  if (balanceEnrollments.length === 0) {
-    return null;
-  }
+  const getGroupTotal = useCallback(
+    (accountId: string, groupKey: ActivityGroup | "other") => {
+      const k = `${accountId}-${groupKey}`;
+      return Object.values(chargesByGroup[k] || {}).reduce((a, b) => a + b, 0);
+    },
+    [chargesByGroup]
+  );
 
   return (
     <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
@@ -314,17 +248,17 @@ export function StudentAccountBalance({
           <div className="space-y-4">
             {accountGroups.map((group) => {
               const accountBalance = accountBalanceMap.get(group.id);
-              const previousBalance = accountBalance?.previous_balance || 0;
+              const basePreviousBalance = accountBalance?.previous_balance ?? 0;
+              const openingForAccount = openingByAccountId.get(group.id) ?? 0;
+              const displayPreviousBalance = basePreviousBalance + openingForAccount;
               const charges = accountBalance?.charges || 0;
               const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
-              const endBalance = previousBalance + payments - charges + refunds;
-              const subscriptionCharges =
-                subscriptionChargesByAccount.get(group.id) || 0;
+              const endBalance = displayPreviousBalance + payments - charges + refunds;
               const startLabel =
-                previousBalance < 0
+                displayPreviousBalance < 0
                   ? "Борг на початок"
-                  : previousBalance > 0
+                  : displayPreviousBalance > 0
                     ? "Залишок на початок"
                     : "Баланс на початок";
               return (
@@ -347,15 +281,15 @@ export function StudentAccountBalance({
                       <span
                         className={cn(
                           "font-semibold",
-                          previousBalance < 0
+                          displayPreviousBalance < 0
                             ? "text-destructive"
-                            : previousBalance > 0
+                            : displayPreviousBalance > 0
                               ? "text-success"
                               : "text-muted-foreground",
                         )}
                       >
-                        {previousBalance > 0 ? "+" : ""}
-                        {formatCurrency(Math.abs(previousBalance))}
+                        {displayPreviousBalance > 0 ? "+" : ""}
+                        {formatCurrency(Math.abs(displayPreviousBalance))}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -379,7 +313,7 @@ export function StudentAccountBalance({
                         До сплати на початок {MONTHS[month]}
                       </span>
                       <span className="font-medium text-destructive">
-                        {formatCurrency(subscriptionCharges - previousBalance)}
+                        {formatCurrency(charges - displayPreviousBalance)}
                       </span>
                     </div>
                     <div className="border-t border-border my-1"></div>
@@ -406,17 +340,60 @@ export function StudentAccountBalance({
                       Немає рядків за вибраний період
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {group.enrollments.map((enrollment) => (
-                        <StudentActivityBalanceRow
-                          key={enrollment.id}
-                          studentId={studentId}
-                          enrollment={enrollment}
-                          month={month}
-                          year={year}
-                        />
-                      ))}
-                    </div>
+                    (() => {
+                      const groupKeys: (ActivityGroup | "other")[] = [
+                        "kindergarten",
+                        "additional_classes",
+                        "other",
+                      ];
+                      const byGroup = new Map<ActivityGroup | "other", EnrollmentWithRelations[]>();
+                      groupKeys.forEach((k) => byGroup.set(k, []));
+                      group.enrollments.forEach((enrollment) => {
+                        const activity = allActivities.find((a) => a.id === enrollment.activity_id);
+                        const ag = activity?.activity_group;
+                        const key: ActivityGroup | "other" =
+                          ag === "kindergarten" || ag === "additional_classes" ? ag : "other";
+                        byGroup.get(key)!.push(enrollment);
+                      });
+                      return (
+                        <div className="space-y-4">
+                          {groupKeys.map((groupKey) => {
+                            const groupEnrollments = byGroup.get(groupKey) ?? [];
+                            if (groupEnrollments.length === 0) return null;
+                            const groupTotal = getGroupTotal(group.id, groupKey);
+                            return (
+                              <div key={groupKey}>
+                                <div className="text-sm font-medium text-muted-foreground mb-2">
+                                  {groupLabel(groupKey)}
+                                </div>
+                                <div className="space-y-3 pl-0">
+                                  {groupEnrollments.map((enrollment) => (
+                                    <StudentActivityBalanceRow
+                                      key={enrollment.id}
+                                      studentId={studentId}
+                                      enrollment={enrollment}
+                                      month={month}
+                                      year={year}
+                                      onChargeCalculated={(enrollmentId, charge) =>
+                                        reportCharge(group.id, groupKey, enrollmentId, charge)
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                                <div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-border">
+                                  <span className="font-medium text-muted-foreground">
+                                    Всього нараховано
+                                  </span>
+                                  <span className="font-semibold">
+                                    {formatCurrency(groupTotal)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()
                   )}
                   {group.id === "none" &&
                     (accountBalanceMap.get("none")?.unassigned_payments || 0) >

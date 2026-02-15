@@ -10,6 +10,7 @@ import {
   User,
   Pencil,
   Wallet,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -25,6 +26,7 @@ import {
   useUpdateEnrollment,
   type EnrollmentWithRelations,
 } from "@/hooks/useEnrollments";
+import { EnrollmentPriceHistoryDialog } from "@/components/enrollments/EnrollmentPriceHistoryDialog";
 import {
   useCreateFinanceTransaction,
   useStudentAccountBalances,
@@ -104,6 +106,7 @@ export default function StudentDetail() {
   const [editingEnrollment, setEditingEnrollment] =
     useState<EnrollmentWithRelations | null>(null);
   const [unenrollingId, setUnenrollingId] = useState<string | null>(null);
+  const [priceHistoryEnrollmentId, setPriceHistoryEnrollmentId] = useState<string | null>(null);
   const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
   const [balanceYear, setBalanceYear] = useState(now.getFullYear());
   const isMobile = useIsMobile();
@@ -451,11 +454,11 @@ export default function StudentDetail() {
 
             {/* Payment History */}
             <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
-              <h3 className="text-lg font-semibold mb-4">Історія оплат</h3>
               <StudentPaymentHistory
                 studentId={id!}
                 month={balanceMonth}
                 year={balanceYear}
+                title="Історія оплат"
               />
             </div>
 
@@ -525,7 +528,7 @@ export default function StudentDetail() {
                                 </span>
                               </div>
                               <div className="mt-1 text-xs text-muted-foreground">
-                                {formatDate(enrollment.enrolled_at)}
+                                {formatDate(enrollment.effective_from ?? enrollment.enrolled_at)}
                               </div>
                               <div className="mt-2 text-sm">
                                 <EnrollmentPriceDisplay
@@ -544,13 +547,25 @@ export default function StudentDetail() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => setEditingEnrollment(enrollment)}
+                                title="Редагувати"
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                onClick={() =>
+                                  setPriceHistoryEnrollmentId(enrollment.id)
+                                }
+                                title="Історія зміни ціни"
+                              >
+                                <History className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => setUnenrollingId(enrollment.id)}
+                                title="Відписати"
                               >
                                 <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>
@@ -605,7 +620,7 @@ export default function StudentDetail() {
                                   : "—"}
                               </TableCell>
                               <TableCell className="text-muted-foreground">
-                                {formatDate(enrollment.enrolled_at)}
+                                {formatDate(enrollment.effective_from ?? enrollment.enrolled_at)}
                               </TableCell>
                               <TableCell>
                                 <div className="flex gap-1">
@@ -615,6 +630,7 @@ export default function StudentDetail() {
                                     onClick={() =>
                                       setEditingEnrollment(enrollment)
                                     }
+                                    title="Редагувати"
                                   >
                                     <Pencil className="h-4 w-4" />
                                   </Button>
@@ -622,8 +638,19 @@ export default function StudentDetail() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={() =>
+                                      setPriceHistoryEnrollmentId(enrollment.id)
+                                    }
+                                    title="Історія зміни ціни"
+                                  >
+                                    <History className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
                                       setUnenrollingId(enrollment.id)
                                     }
+                                    title="Відписати"
                                   >
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
@@ -764,6 +791,18 @@ export default function StudentDetail() {
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      {priceHistoryEnrollmentId && (() => {
+        const enrollment = enrollments.find(e => e.id === priceHistoryEnrollmentId);
+        return enrollment ? (
+          <EnrollmentPriceHistoryDialog
+            open={!!priceHistoryEnrollmentId}
+            onOpenChange={(open) => !open && setPriceHistoryEnrollmentId(null)}
+            enrollmentId={priceHistoryEnrollmentId}
+            activityName={enrollment.activities?.name || ''}
+          />
+        ) : null;
+      })()}
     </>
   );
 }

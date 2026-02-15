@@ -21,12 +21,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import type { Activity, ActivityInsert, ActivityCategory, ACTIVITY_CATEGORY_LABELS, BillingRules } from '@/hooks/useActivities';
+import type { Activity, ActivityInsert, ActivityCategory, ActivityGroup, BillingRules } from '@/hooks/useActivities';
 import { BillingRulesEditor } from './BillingRulesEditor';
 import { useActivities } from '@/hooks/useActivities';
 import { Checkbox } from '@/components/ui/checkbox';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
+import { getGroupsForCategory, ACTIVITY_GROUP_LABELS, DEFAULT_ACTIVITY_GROUP } from '@/lib/activityGroups';
 
 const CATEGORY_OPTIONS: { value: ActivityCategory; label: string }[] = [
   { value: 'income', label: 'Дохід' },
@@ -42,6 +43,7 @@ const activitySchema = z.object({
   description: z.string().max(500).optional(),
   color: z.string(),
   category: z.enum(['income', 'expense', 'additional_income', 'household_expense', 'salary']),
+  activity_group: z.enum(['kindergarten', 'additional_classes']).optional().nullable(),
   account_id: z.string().optional(),
   balance_display_mode: z.enum(['subscription', 'recalculation', 'subscription_and_recalculation']).optional(),
   fixed_teacher_rate: z.string().optional(),
@@ -52,6 +54,7 @@ const activitySchema = z.object({
   billing_rules: z.any().optional(),
   effective_from: z.string().optional(),
   config: z.any().optional(),
+  is_actual_expense: z.boolean().optional(),
 });
 
 type ActivityFormData = z.infer<typeof activitySchema>;
@@ -89,22 +92,24 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
 
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<ActivityFormData>({
     resolver: zodResolver(activitySchema),
-    defaultValues: {
-      name: '',
-      teacher_payment_percent: '50',
-      description: '',
-      color: '#3B82F6',
-      category: 'income',
-      account_id: 'none',
-      balance_display_mode: 'recalculation',
-      fixed_teacher_rate: '',
-      payment_mode: 'default',
-      auto_journal: false,
-      show_in_children: true,
-      show_in_journals: true,
-      billing_rules: null,
-      effective_from: new Date().toISOString().split('T')[0],
-    },
+      defaultValues: {
+        name: '',
+        teacher_payment_percent: '50',
+        description: '',
+        color: '#3B82F6',
+        category: 'income',
+        activity_group: DEFAULT_ACTIVITY_GROUP,
+        account_id: 'none',
+        balance_display_mode: 'recalculation',
+        fixed_teacher_rate: '',
+        payment_mode: 'default',
+        auto_journal: false,
+        show_in_children: true,
+        show_in_journals: true,
+        billing_rules: null,
+        effective_from: new Date().toISOString().split('T')[0],
+        is_actual_expense: false,
+      },
   });
 
   // Reset form when initialData changes
@@ -130,6 +135,9 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
         description: initialData?.description || '',
         color: initialData?.color || '#3B82F6',
         category: initialData?.category || 'income',
+        activity_group: getGroupsForCategory(initialData?.category || 'income')
+          ? (initialData?.activity_group ?? DEFAULT_ACTIVITY_GROUP)
+          : null,
         account_id: initialData?.account_id || 'none',
         balance_display_mode: initialData?.balance_display_mode || fallbackDisplayMode,
         fixed_teacher_rate: initialData?.fixed_teacher_rate?.toString() || '',
@@ -140,6 +148,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
         billing_rules: initialData?.billing_rules || null,
         effective_from: defaultEffectiveFrom,
         config: initialConfig,
+        is_actual_expense: initialData?.is_actual_expense || false,
       });
     }
   }, [open, initialData, reset]);
@@ -156,6 +165,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       description: data.description || null,
       color: data.color,
       category: data.category,
+      activity_group: data.activity_group ?? null,
       account_id: data.account_id && data.account_id !== 'none' ? data.account_id : null,
       balance_display_mode: data.balance_display_mode || null,
       fixed_teacher_rate: data.fixed_teacher_rate ? parseFloat(data.fixed_teacher_rate) : null,
@@ -168,6 +178,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
       // default_price та payment_type не передаються - тепер використовується billing_rules
       effective_from: effectiveFrom, // Передаємо дату зміни для історії (не зберігається в activities)
       is_active: true,
+      is_actual_expense: data.is_actual_expense || false,
     });
     reset();
     setBillingRules(null);
@@ -211,11 +222,30 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
             )}
           </div>
 
+          {/* Чекбокс "Факт реальных расходов" - только для расходных категорий */}
+          {(watch('category') === 'household_expense' || watch('category') === 'expense') && (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="is_actual_expense"
+                checked={watch('is_actual_expense') || false}
+                onCheckedChange={(checked) => setValue('is_actual_expense', checked)}
+              />
+              <Label htmlFor="is_actual_expense" className="cursor-pointer">
+                Факт реальних витрат
+              </Label>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Категорія *</Label>
             <Select
               value={watch('category')}
-              onValueChange={(value) => setValue('category', value as ActivityCategory)}
+              onValueChange={(value) => {
+                const cat = value as ActivityCategory;
+                setValue('category', cat);
+                const groups = getGroupsForCategory(cat);
+                setValue('activity_group', groups ? DEFAULT_ACTIVITY_GROUP : null);
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Виберіть категорію" />
@@ -232,6 +262,27 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
               <p className="text-sm text-destructive">{errors.category.message}</p>
             )}
           </div>
+
+          {getGroupsForCategory(watch('category')) && (
+            <div className="space-y-2">
+              <Label>Група</Label>
+              <Select
+                value={watch('activity_group') ?? DEFAULT_ACTIVITY_GROUP}
+                onValueChange={(value) => setValue('activity_group', value as ActivityGroup)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Виберіть групу" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getGroupsForCategory(watch('category'))!.map((group) => (
+                    <SelectItem key={group} value={group}>
+                      {ACTIVITY_GROUP_LABELS[group]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Рахунок для нарахувань</Label>

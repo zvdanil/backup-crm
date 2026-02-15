@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -22,10 +22,12 @@ import {
 } from '@/hooks/usePaymentAccounts';
 import { PaymentAccountCard } from '@/components/accounts/PaymentAccountCard';
 import { PaymentAccountForm } from '@/components/accounts/PaymentAccountForm';
+import { AccountTransferDialog } from '@/components/accounts/AccountTransferDialog';
 
 export default function Accounts() {
   const [search, setSearch] = useState('');
   const [formOpen, setFormOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<PaymentAccount | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -66,10 +68,16 @@ export default function Accounts() {
         title="Рахунки"
         description={`${accounts.length} рахунків`}
         actions={
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Додати
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setTransferDialogOpen(true)}>
+              <ArrowRightLeft className="h-4 w-4 mr-2" />
+              Переказ
+            </Button>
+            <Button onClick={() => setFormOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Додати
+            </Button>
+          </div>
         }
       />
 
@@ -120,6 +128,11 @@ export default function Accounts() {
         onSubmit={handleSubmit}
         initialData={editingAccount || undefined}
         isLoading={createAccount.isPending || updateAccount.isPending}
+      />
+
+      <AccountTransferDialog
+        open={transferDialogOpen}
+        onOpenChange={setTransferDialogOpen}
       />
 
       <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +40,6 @@ const getInitialDateFromParams = (searchParams: URLSearchParams) => {
 
 export default function GroupLessonsJournal() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const initialDate = useMemo(() => getInitialDateFromParams(searchParams), [searchParams]);
 
   const [year, setYear] = useState(() => initialDate.getFullYear());
@@ -215,15 +214,9 @@ export default function GroupLessonsJournal() {
     toast({ title: "Дані оновлено", description: `Кількість занять: ${parsed}` });
   };
   
-  const handleCellClick = (key: string, value: string) => {
+  const handleCellClick = (key: string) => {
     if (editingCell === key) return;
-    const sessionCount = Number(value || 0);
-    if (sessionCount > 0 && activityId) {
-      const dateStr = key.split('-').slice(1).join('-');
-      navigate(`/attendance?activityId=${activityId}&date=${dateStr}`);
-    } else {
-        setEditingCell(key);
-    }
+    setEditingCell(key);
   };
 
   const handleCellDoubleClick = (key: string) => {
@@ -345,7 +338,7 @@ export default function GroupLessonsJournal() {
                               'p-0.5 text-center',
                               isWeekend(day) && WEEKEND_BG_COLOR
                             )}
-                            onClick={() => handleCellClick(key, value)}
+                            onClick={() => handleCellClick(key)}
                             onDoubleClick={() => handleCellDoubleClick(key)}
                           >
                             {isEditing ? (
@@ -377,7 +370,7 @@ export default function GroupLessonsJournal() {
         )}
 
         <p className="mt-4 text-sm text-muted-foreground">
-          Клік на клітинку з '0' або пусту - редагування. Клік на клітинку з числом - перехід до журналу відвідувань. Подвійний клік - примусове редагування.
+          Клік на клітинку — редагування кількості занять. Подвійний клік — також редагування.
         </p>
       </div>
     </>

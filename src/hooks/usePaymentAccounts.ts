@@ -10,6 +10,10 @@ export interface PaymentAccount {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** Дата, на яку задано початковий залишок */
+  opening_balance_date?: string | null;
+  /** Залишок на початок періоду (не дохід, враховується в балансі) */
+  opening_balance_amount?: number | null;
 }
 
 export type PaymentAccountInsert = Omit<PaymentAccount, 'id' | 'created_at' | 'updated_at'>;

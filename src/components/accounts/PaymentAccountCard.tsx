@@ -47,23 +47,14 @@ export function PaymentAccountCard({ account, onEdit, onDelete }: PaymentAccount
               {balanceLoading ? (
                 <div className="mt-2 h-4 w-20 bg-muted animate-pulse rounded" />
               ) : balance ? (
-                <div className="mt-3 space-y-1">
+                <div className="mt-3">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Вільні кошти:</span>
+                    <span className="text-muted-foreground">Залишок на рахунку</span>
                     <span className={cn(
                       "font-medium",
                       balance.free_funds >= 0 ? "text-green-600" : "text-red-600"
                     )}>
                       {formatCurrency(balance.free_funds)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Очікувані надходження:</span>
-                    <span className={cn(
-                      "font-medium",
-                      balance.expected_receipts >= 0 ? "text-blue-600" : "text-muted-foreground"
-                    )}>
-                      {formatCurrency(balance.expected_receipts)}
                     </span>
                   </div>
                 </div>

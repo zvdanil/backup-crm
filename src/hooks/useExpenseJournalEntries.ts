@@ -9,6 +9,7 @@ export interface ExpenseJournalEntry {
   entry_date: string;
   quantity: number | null;
   amount: number;
+  account_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -19,6 +20,7 @@ export interface ExpenseJournalEntryInsert {
   entry_date: string;
   quantity: number | null;
   amount: number;
+  account_id?: string | null; // Счет списания (только для факта)
 }
 
 export function useExpenseJournalEntries(activityId: string | undefined, month: number, year: number) {
@@ -47,6 +49,24 @@ export function useUpsertExpenseJournalEntry() {
   return useMutation({
     mutationFn: async (entry: ExpenseJournalEntryInsert & { description: string | null; quantityLabel?: string | null }) => {
       const { description, quantityLabel, ...payload } = entry;
+      
+      // Получаем информацию об активности для определения account_id
+      const { data: activity, error: activityError } = await supabase
+        .from('activities')
+        .select('is_actual_expense, account_id')
+        .eq('id', entry.activity_id)
+        .single();
+      
+      if (activityError) throw activityError;
+      
+      // Определяем account_id для finance_transactions
+      // Только для факта (is_actual_expense = true)
+      let accountId: string | null = null;
+      if (activity?.is_actual_expense) {
+        // Приоритет: entry.account_id > activity.account_id
+        accountId = payload.account_id || activity.account_id || null;
+      }
+      
       const { data, error } = await supabase
         .from('expense_journal_entries')
         .upsert(payload, {
@@ -72,6 +92,7 @@ export function useUpsertExpenseJournalEntry() {
             student_id: null,
             staff_id: null,
             expense_category_id: null,
+            account_id: accountId, // Передаем account_id только для факта
           },
           {
             onConflict: 'expense_entry_id',

@@ -81,6 +81,7 @@ export interface StaffPayout {
   amount: number;
   payout_date: string;
   notes: string | null;
+  account_id: string | null;
   created_at: string;
   updated_at: string;
   is_deleted?: boolean;
@@ -923,6 +924,8 @@ export interface StaffPayout {
   amount: number;
   payout_date: string;
   notes: string | null;
+  account_id: string | null;
+  dividend_payout_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -986,6 +989,25 @@ export function useCreateStaffPayout() {
         .single();
 
       if (error) throw error;
+
+      // Создаем finance_transaction типа 'salary' с account_id (всегда, даже если account_id = null)
+      const { error: txError } = await supabase
+        .from("finance_transactions" as any)
+        .insert({
+          type: 'salary',
+          staff_id: payout.staff_id,
+          amount: payout.amount,
+          date: payout.payout_date,
+          description: payout.notes || 'Виплата зарплати',
+          account_id: payout.account_id || null,
+        });
+
+      if (txError) {
+        // Если не удалось создать транзакцию, удаляем выплату
+        await supabase.from("staff_payouts" as any).delete().eq('id', data.id);
+        throw txError;
+      }
+
       return data as any as StaffPayout;
     },
     onSuccess: (data) => {
@@ -995,6 +1017,11 @@ export function useCreateStaffPayout() {
       });
       queryClient.invalidateQueries({
         queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
+      // Also invalidate finance_transactions to update salary journal
+      queryClient.invalidateQueries({
+        queryKey: ["finance_transactions"],
         exact: false,
       });
       // Also invalidate journal entries to update calendar in StaffDetail
@@ -1023,6 +1050,15 @@ export function useUpdateStaffPayout() {
       id,
       ...updates
     }: StaffPayoutUpdate & { id: string }) => {
+      // Получаем текущую выплату для синхронизации с транзакцией
+      const { data: currentPayout, error: fetchError } = await supabase
+        .from("staff_payouts" as any)
+        .select("staff_id, payout_date, amount, account_id")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
       const { data, error } = await supabase
         .from("staff_payouts" as any)
         .update(updates)
@@ -1031,6 +1067,36 @@ export function useUpdateStaffPayout() {
         .single();
 
       if (error) throw error;
+
+      // Синхронизируем с finance_transactions (данные из уже обновлённой выплаты)
+      if (currentPayout?.staff_id && data) {
+        const { data: transactions, error: txFetchError } = await supabase
+          .from("finance_transactions" as any)
+          .select("id")
+          .eq("type", "salary")
+          .eq("staff_id", currentPayout.staff_id)
+          .eq("date", currentPayout.payout_date)
+          .eq("amount", currentPayout.amount)
+          .limit(1);
+
+        if (!txFetchError && transactions && transactions.length > 0) {
+          const payload: any = {
+            staff_id: data.staff_id,
+            amount: data.amount,
+            date: data.payout_date,
+            description: data.notes ?? null,
+            account_id: data.account_id ?? null,
+            dividend_payout_id: data.dividend_payout_id ?? null,
+          };
+          const { error: txUpdateError } = await supabase
+            .from("finance_transactions" as any)
+            .update(payload)
+            .eq("id", transactions[0].id);
+
+          if (txUpdateError) throw txUpdateError;
+        }
+      }
+
       return data as any as StaffPayout;
     },
     onSuccess: (data) => {
@@ -1040,6 +1106,11 @@ export function useUpdateStaffPayout() {
       });
       queryClient.invalidateQueries({
         queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
+      // Also invalidate finance_transactions to update salary journal
+      queryClient.invalidateQueries({
+        queryKey: ["finance_transactions"],
         exact: false,
       });
       // Also invalidate journal entries to update calendar in StaffDetail

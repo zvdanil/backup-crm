@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Banknote, Unlink } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,15 +8,21 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { useActivity } from '@/hooks/useActivities';
 import { useFinanceTransactions, useCreateFinanceTransaction, useUpdateFinanceTransaction, useDeleteFinanceTransaction, type TransactionType } from '@/hooks/useFinanceTransactions';
 import { useExpenseCategories, useCreateExpenseCategory } from '@/hooks/useExpenseCategories';
 import { useExpenseArticles, useCreateExpenseArticle, useUpdateExpenseArticle, useDeleteExpenseArticle } from '@/hooks/useExpenseArticles';
 import { useExpenseJournalEntries, useUpsertExpenseJournalEntry, useDeleteExpenseJournalEntry } from '@/hooks/useExpenseJournalEntries';
 import { useStaff } from '@/hooks/useStaff';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
+import { useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBilling';
+import { useDividendParticipants, useDividendSettings, useCreateDividendPayout, useUpdateDividendPayout, useDeleteDividendPayout } from '@/hooks/useDividendJournal';
+import { DividendPayoutFormDialog } from '@/components/dividend/DividendPayoutFormDialog';
+import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -52,14 +58,37 @@ export default function ActivityExpenseJournal() {
   const [articleRate, setArticleRate] = useState('0');
   const [deletingArticleId, setDeletingArticleId] = useState<string | null>(null);
   const [cellValues, setCellValues] = useState<Record<string, string>>({});
+  const [cellAccountIds, setCellAccountIds] = useState<Record<string, string | null>>({});
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('none');
+  const [dividendDialogOpen, setDividendDialogOpen] = useState(false);
+  const [dividendSource, setDividendSource] = useState<{ source: 'transaction' | 'payout'; id: string } | null>(null);
+  const [dividendInitialValues, setDividendInitialValues] = useState<{ payout_date: string; total_amount: number; account_id: string | null } | null>(null);
 
   const { data: activity } = useActivity(id || '');
+  const { data: dividendParticipants = [] } = useDividendParticipants();
+  const { data: dividendSettings } = useDividendSettings();
+  const queryClient = useQueryClient();
+  const createDividendPayout = useCreateDividendPayout();
+  const updateDividendPayout = useUpdateDividendPayout();
+  const deleteDividendPayout = useDeleteDividendPayout();
+  const { data: accounts = [] } = usePaymentAccounts();
   const { data: staff = [] } = useStaff();
+
+  // Инициализируем selectedAccountId при изменении активности
+  useEffect(() => {
+    if (activity?.account_id) {
+      setSelectedAccountId(activity.account_id);
+    } else {
+      setSelectedAccountId('none');
+    }
+  }, [activity?.account_id]);
   const { data: categories = [] } = useExpenseCategories(id);
   const createCategory = useCreateExpenseCategory();
   const createTransaction = useCreateFinanceTransaction();
   const updateTransaction = useUpdateFinanceTransaction();
   const deleteTransaction = useDeleteFinanceTransaction();
+  const updatePayout = useUpdateStaffPayout();
+  const deletePayout = useDeleteStaffPayout();
   const { data: expenseArticles = [] } = useExpenseArticles(id);
   const createExpenseArticle = useCreateExpenseArticle();
   const updateExpenseArticle = useUpdateExpenseArticle();
@@ -71,6 +100,7 @@ export default function ActivityExpenseJournal() {
   const transactionType = getTransactionTypeForCategory(activity?.category || null);
   const isSalary = activity?.category === 'salary';
   const isHousehold = activity?.category === 'household_expense';
+  const isActualExpense = activity?.is_actual_expense || false; // Показывать выбор счета только для факта
 
   const { data: transactions = [], isLoading } = useFinanceTransactions({
     activityId: id,
@@ -86,7 +116,7 @@ export default function ActivityExpenseJournal() {
       const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
       const { data, error } = await supabase
         .from('staff_payouts' as any)
-        .select('id, staff_id, payout_date, amount, notes')
+        .select('id, staff_id, payout_date, amount, notes, account_id, dividend_payout_id')
         .or('is_deleted.is.null,is_deleted.eq.false')
         .gte('payout_date', startDate)
         .lte('payout_date', endDate);
@@ -113,6 +143,8 @@ export default function ActivityExpenseJournal() {
       date: payout.payout_date,
       description: payout.notes || 'Виплата із фін історії',
       source: 'payout',
+      account_id: payout.account_id || null,
+      dividend_payout_id: payout.dividend_payout_id || null,
     }));
     return [...transactions, ...payoutItems];
   }, [transactions, staffPayouts, isSalary, id]);
@@ -150,6 +182,24 @@ export default function ActivityExpenseJournal() {
     [filteredTransactions]
   );
 
+  const defaultCleaning = dividendSettings?.default_cleaning_percent ?? 20;
+
+  const handleDividendCreateSuccess = async (payoutId: string) => {
+    if (!dividendSource) return;
+    try {
+      if (dividendSource.source === 'payout') {
+        await updatePayout.mutateAsync({ id: dividendSource.id, dividend_payout_id: payoutId });
+      } else {
+        await updateTransaction.mutateAsync({ id: dividendSource.id, dividend_payout_id: payoutId });
+      }
+      setDividendSource(null);
+      setDividendInitialValues(null);
+      toast({ title: 'Витрату позначено як виведену як дівіденд' });
+    } catch (e: any) {
+      toast({ title: 'Помилка прив’язки', description: e?.message, variant: 'destructive' });
+    }
+  };
+
   const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const journalMap = useMemo(() => {
     const map = new Map<string, { quantity: number | null; amount: number }>();
@@ -165,9 +215,11 @@ export default function ActivityExpenseJournal() {
   useEffect(() => {
     if (!journalEntries.length) {
       setCellValues({});
+      setCellAccountIds({});
       return;
     }
     const next: Record<string, string> = {};
+    const nextAccountIds: Record<string, string | null> = {};
     journalEntries.forEach((entry) => {
       const key = `${entry.expense_article_id}-${entry.entry_date}`;
       if (entry.quantity !== null && entry.quantity !== undefined) {
@@ -175,9 +227,14 @@ export default function ActivityExpenseJournal() {
       } else {
         next[key] = String(entry.amount);
       }
+      // Инициализируем account_id из записи (если есть) или из активности
+      if (isActualExpense) {
+        nextAccountIds[key] = entry.account_id || activity?.account_id || null;
+      }
     });
     setCellValues(next);
-  }, [journalEntries]);
+    setCellAccountIds(nextAccountIds);
+  }, [journalEntries, isActualExpense, activity?.account_id]);
 
   const handlePrevMonth = () => {
     if (month === 0) {
@@ -205,6 +262,7 @@ export default function ActivityExpenseJournal() {
     setCategoryId('none');
     setNewCategoryName('');
     setEditingId(null);
+    setSelectedAccountId(activity?.account_id || 'none');
   };
 
   const handleSubmit = async () => {
@@ -220,6 +278,11 @@ export default function ActivityExpenseJournal() {
       finalCategoryId = created.id;
     }
 
+    // Определяем account_id для транзакции (для факта или зарплаты)
+    const accountId = (isActualExpense || isSalary)
+      ? (selectedAccountId === 'none' ? (activity?.account_id || null) : selectedAccountId)
+      : null;
+
     if (editingId) {
       await updateTransaction.mutateAsync({
         id: editingId,
@@ -232,6 +295,7 @@ export default function ActivityExpenseJournal() {
         date,
         description: description || null,
         category: null,
+        account_id: accountId,
       });
     } else {
       await createTransaction.mutateAsync({
@@ -244,6 +308,7 @@ export default function ActivityExpenseJournal() {
         date,
         description: description || null,
         category: null,
+        account_id: accountId,
       });
     }
 
@@ -316,6 +381,11 @@ export default function ActivityExpenseJournal() {
       ? (quantity || 0) * (article.rate || 0)
       : Math.max(0, parsed);
 
+    // Получаем account_id для этой ячейки (если не указан, используем дефолт из активности)
+    const accountId = cellAccountIds[key] !== undefined 
+      ? (cellAccountIds[key] === 'none' ? null : cellAccountIds[key])
+      : (activity?.account_id || null);
+
     await upsertJournalEntry.mutateAsync({
       activity_id: id,
       expense_article_id: articleId,
@@ -324,7 +394,16 @@ export default function ActivityExpenseJournal() {
       amount,
       description: `Стаття: ${article.name}`,
       quantityLabel: quantity !== null ? `${quantity} од.` : null,
+      account_id: isActualExpense ? accountId : undefined, // Только для факта
     });
+  };
+
+  const handleAccountChange = (articleId: string, dateStr: string, accountId: string | null) => {
+    const key = `${articleId}-${dateStr}`;
+    setCellAccountIds((prev) => ({
+      ...prev,
+      [key]: accountId,
+    }));
   };
 
   if (isHousehold) {
@@ -403,6 +482,11 @@ export default function ActivityExpenseJournal() {
                     <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground min-w-[220px]">
                       Стаття
                     </th>
+                    {isActualExpense && (
+                      <th className="sticky left-[220px] z-10 bg-muted/50 px-2 py-3 text-left text-sm font-medium text-muted-foreground min-w-[150px]">
+                        Рахунок
+                      </th>
+                    )}
                     {days.map((day) => (
                       <th
                         key={formatDateString(day)}
@@ -430,6 +514,18 @@ export default function ActivityExpenseJournal() {
                             : 'Ручний ввід'}
                         </div>
                       </td>
+                      {isActualExpense && (
+                        <td className="sticky left-[220px] z-10 bg-card px-2 py-3">
+                          <div className="text-xs text-muted-foreground">
+                            {activity?.account_id 
+                              ? accounts.find(a => a.id === activity.account_id)?.name || 'Без рахунку'
+                              : 'Без рахунку'}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground/70 mt-1">
+                            (можна змінити в налаштуваннях активності)
+                          </div>
+                        </td>
+                      )}
                       {days.map((day) => {
                         const dateStr = formatDateString(day);
                         const key = `${article.id}-${dateStr}`;
@@ -638,67 +734,201 @@ export default function ActivityExpenseJournal() {
                     <span>{categoryName}</span>
                     <span className="text-destructive">{formatCurrency(groupTotal)}</span>
                   </div>
-                  <div className="divide-y">
-                    {items.map((t) => {
-                      const isPayout = t.source === 'payout';
-                      return (
-                      <div key={t.id} className="p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium">{formatDate(t.date)}</div>
-                            {isSalary && t.staff_id && (
-                              <div className="text-xs text-muted-foreground">
-                                {staff.find(s => s.id === t.staff_id)?.full_name || '—'}
-                              </div>
-                            )}
-                            <div className="text-xs text-muted-foreground break-words">
-                              {t.description || '—'}
-                            </div>
-                            {isPayout && (
-                              <div className="text-xs text-muted-foreground mt-1">
-                                Виплата з фінансової історії
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className={cn("text-sm font-semibold", "text-destructive")}>
-                              {formatCurrency(t.amount || 0)}
-                            </div>
-                            {!isPayout && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    setEditingId(t.id);
-                                    setAmount((t.amount || 0).toString());
-                                    setDate(t.date);
-                                    setDescription(t.description || '');
-                                    setStaffId(t.staff_id || '');
-                                    setCategoryId(t.expense_category_id || 'none');
-                                    setNewCategoryName('');
-                                    setDialogOpen(true);
-                                  }}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={async () => {
-                                    if (!window.confirm('Видалити цей запис?')) return;
-                                    await deleteTransaction.mutateAsync({ id: t.id });
-                                  }}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      );
-                    })}
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[240px]">Дата</TableHead>
+                          {isSalary && <TableHead className="w-[180px]">Співробітник</TableHead>}
+                          <TableHead>Опис</TableHead>
+                          {(isActualExpense || isSalary) && <TableHead className="w-[180px]">Рахунок</TableHead>}
+                          <TableHead className="w-[120px] text-right">Сума</TableHead>
+                          <TableHead className="w-[100px] text-center">Дії</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((t) => {
+                          const isPayout = t.source === 'payout';
+                          const accountName = t.account_id 
+                            ? accounts.find(a => a.id === t.account_id)?.name || 'Без рахунку'
+                            : (activity?.account_id 
+                                ? accounts.find(a => a.id === activity.account_id)?.name || 'Без рахунку'
+                                : 'Без рахунку');
+                          return (
+                            <TableRow key={t.id}>
+                              <TableCell className="text-sm">
+                                {formatDate(t.date)}
+                              </TableCell>
+                              {isSalary && (
+                                <TableCell className="text-sm">
+                                  {t.staff_id ? (staff.find(s => s.id === t.staff_id)?.full_name || '—') : '—'}
+                                </TableCell>
+                              )}
+                              <TableCell>
+                                <div className="text-sm break-words">
+                                  {t.description || '—'}
+                                </div>
+                                {isPayout && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    Виплата з фінансової історії
+                                  </div>
+                                )}
+                                {t.dividend_payout_id && (
+                                  <div className="text-xs text-primary mt-1 font-medium">
+                                    Виведено як дівіденд
+                                  </div>
+                                )}
+                              </TableCell>
+                              {(isActualExpense || isSalary) && (
+                                <TableCell className="text-sm">
+                                  {isSalary ? (
+                                    <Select
+                                      value={t.account_id || 'none'}
+                                      onValueChange={async (value) => {
+                                        const newAccountId = value === 'none' ? null : value;
+                                        if (isPayout) {
+                                          // Обновляем выплату из staff_payouts
+                                          const payoutId = t.id.replace('payout-', '');
+                                          const { data: payout } = await supabase
+                                            .from('staff_payouts' as any)
+                                            .select('staff_id, payout_date, amount')
+                                            .eq('id', payoutId)
+                                            .single();
+                                          
+                                          if (payout) {
+                                            await updatePayout.mutateAsync({
+                                              id: payoutId,
+                                              account_id: newAccountId,
+                                            });
+                                          }
+                                        } else {
+                                          // Обновляем транзакцию из finance_transactions
+                                          await updateTransaction.mutateAsync({
+                                            id: t.id,
+                                            account_id: newAccountId,
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 w-full">
+                                        <SelectValue>
+                                          {t.account_id 
+                                            ? accounts.find(a => a.id === t.account_id)?.name || 'Без рахунку'
+                                            : 'Без рахунку'}
+                                        </SelectValue>
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="none">Без рахунку</SelectItem>
+                                        {accounts.map((account) => (
+                                          <SelectItem key={account.id} value={account.id}>
+                                            {account.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <span className="text-muted-foreground">{accountName}</span>
+                                  )}
+                                </TableCell>
+                              )}
+                              <TableCell className="text-right">
+                                <div className={cn("text-sm font-semibold", "text-destructive")}>
+                                  {formatCurrency(t.amount || 0)}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center justify-center gap-1 flex-wrap">
+                                  {(isSalary || isActualExpense) && t.dividend_payout_id && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-muted-foreground"
+                                      title="Зняти позначку «виведено як дівіденд»"
+                                      onClick={async () => {
+                                        if (!window.confirm('Зняти позначку? Виплата в журналі дивідендів буде видалена.')) return;
+                                        try {
+                                          await deleteDividendPayout.mutateAsync(t.dividend_payout_id!);
+                                          queryClient.invalidateQueries({ queryKey: ['finance_transactions'] });
+                                          queryClient.invalidateQueries({ queryKey: ['staff-payouts-all'] });
+                                          toast({ title: 'Позначку знято' });
+                                        } catch (e: any) {
+                                          toast({ title: 'Помилка', description: e?.message, variant: 'destructive' });
+                                        }
+                                      }}
+                                    >
+                                      <Unlink className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {(isSalary || isActualExpense) && !t.dividend_payout_id && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      title="Вивести як дівіденд"
+                                      onClick={() => {
+                                        setDividendSource(isPayout ? { source: 'payout', id: t.id.replace('payout-', '') } : { source: 'transaction', id: t.id });
+                                        setDividendInitialValues({
+                                          payout_date: t.date,
+                                          total_amount: t.amount || 0,
+                                          account_id: t.account_id || null,
+                                        });
+                                        setDividendDialogOpen(true);
+                                      }}
+                                    >
+                                      <Banknote className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {!isPayout ? (
+                                    <>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => {
+                                          setEditingId(t.id);
+                                          setAmount((t.amount || 0).toString());
+                                          setDate(t.date);
+                                          setDescription(t.description || '');
+                                          setStaffId(t.staff_id || '');
+                                          setCategoryId(t.expense_category_id || 'none');
+                                          setNewCategoryName('');
+                                          setSelectedAccountId(t.account_id || activity?.account_id || 'none');
+                                          setDialogOpen(true);
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={async () => {
+                                          if (!window.confirm('Видалити цей запис?')) return;
+                                          if (isPayout) {
+                                            const payoutId = t.id.replace('payout-', '');
+                                            await deletePayout.mutateAsync({
+                                              id: payoutId,
+                                              staffId: t.staff_id || '',
+                                              deleteNote: null,
+                                            });
+                                          } else {
+                                            await deleteTransaction.mutateAsync(t.id);
+                                          }
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               );
@@ -709,7 +939,14 @@ export default function ActivityExpenseJournal() {
 
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open);
-        if (!open) resetForm();
+        if (!open) {
+          resetForm();
+        } else {
+          // При открытии диалога инициализируем account_id
+          if (!editingId) {
+            setSelectedAccountId(activity?.account_id || 'none');
+          }
+        }
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -767,6 +1004,32 @@ export default function ActivityExpenseJournal() {
               <Label>Опис</Label>
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
             </div>
+            {(isActualExpense || isSalary) && (
+              <div className="space-y-2">
+                <Label>Рахунок списання</Label>
+                <Select
+                  value={selectedAccountId}
+                  onValueChange={setSelectedAccountId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Оберіть рахунок" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Без рахунку</SelectItem>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {activity?.account_id 
+                    ? `За замовчуванням: ${accounts.find(a => a.id === activity.account_id)?.name || 'Без рахунку'}`
+                    : 'За замовчуванням: Без рахунку'}
+                </p>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Скасувати</Button>
               <Button onClick={handleSubmit} disabled={createTransaction.isPending || updateTransaction.isPending}>
@@ -776,6 +1039,27 @@ export default function ActivityExpenseJournal() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DividendPayoutFormDialog
+        open={dividendDialogOpen}
+        onOpenChange={(open) => {
+          setDividendDialogOpen(open);
+          if (!open) {
+            setDividendSource(null);
+            setDividendInitialValues(null);
+          }
+        }}
+        participants={dividendParticipants}
+        accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+        defaultCleaning={defaultCleaning}
+        editingPayout={null}
+        initialValuesForCreate={dividendInitialValues}
+        onSuccess={(createdPayoutId) => {
+          if (createdPayoutId) handleDividendCreateSuccess(createdPayoutId);
+        }}
+        createPayout={createDividendPayout}
+        updatePayout={updateDividendPayout}
+      />
     </>
   );
 }

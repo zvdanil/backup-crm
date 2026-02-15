@@ -6,10 +6,14 @@ import {
   useCreateFinanceTransaction,
 } from "@/hooks/useFinanceTransactions";
 import { formatCurrency } from "@/lib/attendance";
-import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
+import {
+  type EnrollmentWithRelations,
+  useEnrollmentPriceHistory,
+  getEnrollmentPriceForDate,
+} from "@/hooks/useEnrollments";
 import { cn } from "@/lib/utils";
 import { useActivities } from "@/hooks/useActivities";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   isGardenAttendanceController,
   type GardenAttendanceConfig,
@@ -26,6 +30,8 @@ interface StudentActivityBalanceRowProps {
   enrollment: EnrollmentWithRelations;
   month: number;
   year: number;
+  /** Викликається з сумою нарахування для рядка (для підрахунку підсумку по групі) */
+  onChargeCalculated?: (enrollmentId: string, charge: number) => void;
 }
 
 export function StudentActivityBalanceRow({
@@ -33,6 +39,7 @@ export function StudentActivityBalanceRow({
   enrollment,
   month,
   year,
+  onChargeCalculated,
 }: StudentActivityBalanceRowProps) {
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
@@ -61,6 +68,10 @@ export function StudentActivityBalanceRow({
     !isFoodActivity &&
     (presentRule?.type === "fixed" || presentRule?.type === "subscription");
 
+  // Локальная дата 1-го числа выбранного месяца (без UTC) для истории цен
+  const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  const { data: enrollmentPriceHistory } = useEnrollmentPriceHistory(enrollment.id);
+
   const accountLabel = useMemo(() => {
     // Приоритет: enrollment.account_id ?? activity.account_id
     const accountId = enrollment.account_id || activities?.account_id;
@@ -73,13 +84,19 @@ export function StudentActivityBalanceRow({
 
   const baseMonthlyCharge = useMemo(() => {
     if (!isMonthlyBilling) return 0;
+    const priceForDate = getEnrollmentPriceForDate(
+      enrollment,
+      enrollmentPriceHistory,
+      monthStartDateStr,
+    );
     if (
-      enrollment.custom_price !== null &&
-      enrollment.custom_price !== undefined
+      priceForDate.custom_price !== null &&
+      priceForDate.custom_price !== undefined
     ) {
-      const discountMultiplier = 1 - (enrollment.discount_percent || 0) / 100;
+      const discountMultiplier =
+        1 - (priceForDate.discount_percent || 0) / 100;
       return (
-        Math.round(enrollment.custom_price * discountMultiplier * 100) / 100
+        Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100
       );
     }
     if (presentRule?.rate && presentRule.rate > 0) {
@@ -88,8 +105,9 @@ export function StudentActivityBalanceRow({
     return activities?.default_price || 0;
   }, [
     isMonthlyBilling,
-    enrollment.custom_price,
-    enrollment.discount_percent,
+    enrollment,
+    enrollmentPriceHistory,
+    monthStartDateStr,
     activities?.default_price,
     presentRule?.rate,
   ]);
@@ -215,6 +233,18 @@ export function StudentActivityBalanceRow({
     enrollment.is_active,
   ]);
 
+  const charges = combinedData?.charges ?? 0;
+  const refunds = combinedData?.refunds ?? 0;
+  const displayChargesForReport = isFoodActivity ? 0 : charges;
+  const displayRefundsForReport = isFoodActivity ? refunds : 0;
+  const valueForGroupTotal = displayChargesForReport - displayRefundsForReport;
+
+  useEffect(() => {
+    if (onChargeCalculated) {
+      onChargeCalculated(enrollment.id, valueForGroupTotal);
+    }
+  }, [onChargeCalculated, enrollment.id, valueForGroupTotal]);
+
   // Check if activities data is loaded (might be null for archived activities)
   if (!activities) {
     return (
@@ -236,8 +266,6 @@ export function StudentActivityBalanceRow({
 
   const balance = combinedData?.balance || 0;
   const payments = combinedData?.payments || 0;
-  const charges = combinedData?.charges || 0;
-  const refunds = combinedData?.refunds || 0;
   const attendanceCount = combinedData?.attendanceCount || 0;
   const absentCount = combinedData?.absentCount || 0;
 
@@ -329,7 +357,7 @@ export function StudentActivityBalanceRow({
           enrollment.account_id || activities.account_id || null;
 
         // Create income transaction for subscription charge
-        const startDate = new Date(year, month, 1).toISOString().split("T")[0];
+        const startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
         const monthName = new Date(year, month).toLocaleDateString("uk-UA", {
           month: "long",
           year: "numeric",
