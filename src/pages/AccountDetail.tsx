@@ -199,28 +199,13 @@ export default function AccountDetail() {
               <CardContent>
                 <div className={cn(
                   "text-2xl font-bold",
-                  (Number(account?.opening_balance_amount) || 0) + balance.free_funds >= 0
-                    ? "text-green-600"
-                    : "text-red-600"
+                  balance.free_funds >= 0 ? "text-green-600" : "text-red-600"
                 )}>
-                  {formatCurrency(
-                    (Number(account?.opening_balance_amount) || 0) + balance.free_funds
-                  )}
+                  {formatCurrency(balance.free_funds)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  = Залишок на початок + рух коштів
+                  = Внесений залишок + Надходження − Витрати − Перекази
                 </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Очікуваний дохід
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(balance.expected_income)}</div>
               </CardContent>
             </Card>
 
@@ -250,43 +235,6 @@ export default function AccountDetail() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Вільні кошти на рахунку
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className={cn(
-                  "text-2xl font-bold",
-                  balance.free_funds >= 0 ? "text-green-600" : "text-red-600"
-                )}>
-                  {formatCurrency(balance.free_funds)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  = Надходження - Витрати - Перекази
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Очікувані надходження
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className={cn(
-                  "text-2xl font-bold",
-                  balance.expected_receipts >= 0 ? "text-blue-600" : "text-muted-foreground"
-                )}>
-                  {formatCurrency(balance.expected_receipts)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  = Очікуваний дохід - Реальні надходження
-                </p>
-              </CardContent>
-            </Card>
 
             {balance.transfers_out > 0 && (
               <Card>
