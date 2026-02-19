@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "serve dist -s -l 3000"
+    "start": "serve dist -s -l ${PORT:-3000}"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
