@@ -734,16 +734,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast({
-        title: "Помилка",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      // Очищаем кэш при выходе
+    const forceLocalLogout = () => {
+      try {
+        const ref = supabaseUrl?.match(/https:\/\/([^.]+)\.supabase/)?.[1];
+        if (ref && typeof window !== "undefined") {
+          Object.keys(localStorage)
+            .filter((k) => k.startsWith(`sb-${ref}-`))
+            .forEach((k) => localStorage.removeItem(k));
+        }
+        clearCachedProfile();
+        window.location.href = "/login";
+      } catch {
+        toast({ title: "Помилка", description: "Не вдалося вийти", variant: "destructive" });
+      }
+    };
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        forceLocalLogout();
+        return;
+      }
       clearCachedProfile();
+    } catch {
+      // Supabase може викинути при 403 — тоді примусовий вихід
+      forceLocalLogout();
     }
   }, []);
 
