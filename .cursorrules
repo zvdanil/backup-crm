@@ -3,6 +3,12 @@ Database Context & Rules:
 проект работает с базой на ресурсе supabase
 
 ---
+Git branches:
+- test-srm-iris — работает с Supabase (основная разработка).
+- railway-migration (или другая ветка после миграции) — для доработки перехода на чистый PostgreSQL (Railway + Express API вместо Supabase).
+При упоминании веток — учитывать: test-srm-iris = Supabase; railway-migration = переход на PostgreSQL.
+
+---
 
 Dates (даты):
 

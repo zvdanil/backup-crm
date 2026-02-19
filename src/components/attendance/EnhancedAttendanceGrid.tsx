@@ -2205,8 +2205,9 @@ export function EnhancedAttendanceGrid({
                                     </span>
                                   )}
                                 </div>
-                                {(enrollment.custom_price ||
-                                  enrollment.discount_percent > 0) && (
+                                {role !== "manager" &&
+                                  (enrollment.custom_price ||
+                                    enrollment.discount_percent > 0) && (
                                   <span className="ml-2 text-xs text-muted-foreground">
                                     {enrollment.custom_price &&
                                       `${enrollment.custom_price} ₴`}
@@ -2326,8 +2327,9 @@ export function EnhancedAttendanceGrid({
                                 </span>
                               )}
                             </div>
-                            {(enrollment.custom_price ||
-                              enrollment.discount_percent > 0) && (
+                            {role !== "manager" &&
+                              (enrollment.custom_price ||
+                                enrollment.discount_percent > 0) && (
                               <span className="ml-2 text-xs text-muted-foreground">
                                 {enrollment.custom_price &&
                                   `${enrollment.custom_price} ₴`}

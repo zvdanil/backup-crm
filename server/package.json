@@ -1,0 +1,25 @@
+{
+  "name": "crm-api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "create-first-owner": "node scripts/create-first-owner-railway.js",
+    "set-password": "node scripts/set-password-railway.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/bcryptjs": "^2.4.6"
+  }
+}

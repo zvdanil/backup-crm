@@ -32,6 +32,7 @@ import type {
 import { getBillingRulesForDate } from "@/hooks/useActivities";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/context/AuthContext";
 
 interface EnhancedAttendanceCellProps {
   status: AttendanceStatus | null;
@@ -75,6 +76,8 @@ export function EnhancedAttendanceCell({
   priceHistory,
   manualValueEdit = false,
 }: EnhancedAttendanceCellProps) {
+  const { role } = useAuth();
+  const hidePrices = role === "manager";
   const [open, setOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -552,7 +555,9 @@ export function EnhancedAttendanceCell({
                   <span className="text-xs opacity-80">
                     {getAttendanceFullLabel(s, customStatuses)}
                   </span>
-                  <span className="text-xs mt-1 font-medium">{priceHint}</span>
+                  <span className="text-xs mt-1 font-medium">
+                    {hidePrices ? "—" : priceHint}
+                  </span>
                 </Button>
               );
             })}
@@ -599,7 +604,7 @@ export function EnhancedAttendanceCell({
                       >
                         <span className="font-semibold">{cs.name}</span>
                         <span className="text-xs mt-1 font-medium">
-                          {priceHint}
+                          {hidePrices ? "—" : priceHint}
                         </span>
                       </Button>
                     );
@@ -654,7 +659,7 @@ export function EnhancedAttendanceCell({
             </Button>
           )}
 
-          {status && value !== null && value !== undefined && (
+          {status && value !== null && value !== undefined && !hidePrices && (
             <div className="pt-2 border-t text-center">
               <p className="text-xs text-muted-foreground">Значення:</p>
               <p className="font-semibold text-foreground">

@@ -16,6 +16,7 @@ import {
   type BaseAttendanceStatus
 } from '@/lib/attendance';
 import { X } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 interface AttendanceCellProps {
   status: AttendanceStatus | null;
@@ -38,6 +39,8 @@ export function AttendanceCell({
   customPrice,
   discountPercent
 }: AttendanceCellProps) {
+  const { role } = useAuth();
+  const hidePrices = role === 'manager';
   const [open, setOpen] = useState(false);
 
   const handleSelect = (newStatus: AttendanceStatus | null) => {
@@ -87,7 +90,7 @@ export function AttendanceCell({
                   <span className="font-semibold">{ATTENDANCE_LABELS[s]}</span>
                   <span className="text-xs opacity-80">{ATTENDANCE_FULL_LABELS[s]}</span>
                   <span className="text-xs mt-1">
-                    {formatCurrency(priceWithDiscount)}
+                    {hidePrices ? '—' : formatCurrency(priceWithDiscount)}
                   </span>
                 </Button>
               );
@@ -106,7 +109,7 @@ export function AttendanceCell({
             </Button>
           )}
 
-          {status && (
+          {status && !hidePrices && (
             <div className="pt-2 border-t text-center">
               <p className="text-xs text-muted-foreground">Нараховано:</p>
               <p className="font-semibold text-foreground">{formatCurrency(amount)}</p>

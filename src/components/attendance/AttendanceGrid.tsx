@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { AttendanceCell } from './AttendanceCell';
 import { useEnrollments } from '@/hooks/useEnrollments';
@@ -18,6 +19,7 @@ interface AttendanceGridProps {
 }
 
 export function AttendanceGrid({ activityId }: AttendanceGridProps) {
+  const { role } = useAuth();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -180,7 +182,8 @@ export function AttendanceGrid({ activityId }: AttendanceGridProps) {
                       </span>
                     )}
                   </div>
-                  {(enrollment.custom_price || enrollment.discount_percent > 0) && (
+                  {role !== "manager" &&
+                    (enrollment.custom_price || enrollment.discount_percent > 0) && (
                     <span className="ml-2 text-xs text-muted-foreground">
                       {enrollment.custom_price && `${enrollment.custom_price} ₴`}
                       {enrollment.discount_percent > 0 && ` -${enrollment.discount_percent}%`}
