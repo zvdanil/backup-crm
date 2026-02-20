@@ -252,6 +252,8 @@ export function StudentAccountBalance({
               const openingForAccount = openingByAccountId.get(group.id) ?? 0;
               const displayPreviousBalance = basePreviousBalance + openingForAccount;
               const charges = accountBalance?.charges || 0;
+              // «Нараховано на початок» — тільки subscription_charges (тарифи), НЕ charges (income)
+              const subscriptionCharges = accountBalance?.subscription_charges ?? 0;
               const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
               const endBalance = displayPreviousBalance + payments - charges + refunds;
@@ -259,7 +261,7 @@ export function StudentAccountBalance({
                 displayPreviousBalance < 0
                   ? "Борг на початок"
                   : displayPreviousBalance > 0
-                    ? "Залишок на початок"
+                    ? "Переплата на початок місяця"
                     : "Баланс на початок";
               return (
                 <div
@@ -274,6 +276,14 @@ export function StudentAccountBalance({
                   </div>
 
                   <div className="space-y-2 text-sm mb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">
+                        Нараховано на початок місяця
+                      </span>
+                      <span className="font-medium">
+                        {formatCurrency(subscriptionCharges)}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">
                         {startLabel}
@@ -293,11 +303,11 @@ export function StudentAccountBalance({
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">
-                        Нараховано за місяць
+                      <span className="text-destructive">
+                        До сплати на початок {MONTHS[month]}
                       </span>
-                      <span className="font-medium">
-                        {formatCurrency(charges)}
+                      <span className="font-medium text-destructive">
+                        {formatCurrency(subscriptionCharges - displayPreviousBalance)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
@@ -306,14 +316,6 @@ export function StudentAccountBalance({
                       </span>
                       <span className="font-medium">
                         {formatCurrency(payments)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-destructive">
-                        До сплати на початок {MONTHS[month]}
-                      </span>
-                      <span className="font-medium text-destructive">
-                        {formatCurrency(charges - displayPreviousBalance)}
                       </span>
                     </div>
                     <div className="border-t border-border my-1"></div>
@@ -382,7 +384,7 @@ export function StudentAccountBalance({
                                 </div>
                                 <div className="flex items-center justify-between text-sm mt-2 pt-2 border-t border-border">
                                   <span className="font-medium text-muted-foreground">
-                                    Всього нараховано
+                                    Всього нараховано у поточному місяці
                                   </span>
                                   <span className="font-semibold">
                                     {formatCurrency(groupTotal)}

@@ -1067,6 +1067,8 @@ export interface StudentAccountBalance {
   payments: number;
   charges: number;
   refunds: number;
+  /** Только абонплата (subscription) — для «До сплати на початок» */
+  subscription_charges?: number;
   unassigned_payments?: number;
   previous_balance?: number; // Баланс на начало выбранного месяца
   /** Баланс на кінець періоду (сума по всіх місяцях) — для реєстру боржників */
@@ -1290,6 +1292,8 @@ export function computeStudentAccountBalancesFromData(
         existing.payments += balance.payments;
         existing.charges += balance.charges;
         existing.refunds += balance.refunds;
+        existing.subscription_charges =
+          (existing.subscription_charges ?? 0) + (balance.subscription_charges ?? 0);
         existing.unassigned_payments =
           (existing.unassigned_payments || 0) + (balance.unassigned_payments || 0);
       } else {
@@ -1514,6 +1518,8 @@ function calculateMonthlyBalanceFromData(
 
   const activityIdList = Array.from(activityIds);
   const monthlyChargesByActivity: Record<string, number> = {};
+  /** Тільки абонплата з custom_status (subscription/subscription_with_logic). Не включає present fixed/subscription. */
+  const subscriptionOnlyChargesByActivity: Record<string, number> = {};
   const displayModeByActivity: Record<
     string,
     "subscription" | "recalculation" | "subscription_and_recalculation"
@@ -1534,36 +1540,58 @@ function calculateMonthlyBalanceFromData(
     displayModeByActivity[enrollment.activity_id] =
       (activity.balance_display_mode as any) || fallbackMode;
     if (foodTariffIdSet.has(enrollment.activity_id)) return;
-    if (!isMonthlyBilling) return;
     const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
     if (!isActive) return;
 
-    // Локальная календарная дата 1-го числа месяца (без UTC), чтобы выбор цены из истории не зависел от часового пояса
-    const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-    const priceHistory = enrollmentPriceHistoryMap.get(enrollmentId);
-    const priceForDate = getEnrollmentPriceForDate(
-      enrollment,
-      priceHistory,
-      monthStartDateStr,
-    );
-
     let baseMonthlyCharge = 0;
-    if (
-      priceForDate.custom_price !== null &&
-      priceForDate.custom_price !== undefined
-    ) {
-      const discountMultiplier = 1 - (priceForDate.discount_percent || 0) / 100;
-      baseMonthlyCharge =
-        Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
-    } else if (presentRule?.rate && presentRule.rate > 0) {
-      baseMonthlyCharge = presentRule.rate;
+
+    if (isMonthlyBilling) {
+      // Абонплата — тільки повна ставка, без перерахунків та знижок
+      const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const priceHistory = enrollmentPriceHistoryMap.get(enrollmentId);
+      const priceForDate = getEnrollmentPriceForDate(
+        enrollment,
+        priceHistory,
+        monthStartDateStr,
+      );
+      if (
+        priceForDate.custom_price !== null &&
+        priceForDate.custom_price !== undefined
+      ) {
+        baseMonthlyCharge = priceForDate.custom_price;
+      } else if (presentRule?.rate && presentRule.rate > 0) {
+        baseMonthlyCharge = presentRule.rate;
+      } else {
+        baseMonthlyCharge = activity.default_price || 0;
+      }
+      // «Нараховано на початок» — тільки present subscription, НЕ fixed (fixed = ставка за заняття)
+      if (presentRule?.type === "subscription" && baseMonthlyCharge > 0) {
+        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
+          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
+      }
     } else {
-      baseMonthlyCharge = activity.default_price || 0;
+      const customStatuses = activity.billing_rules?.custom_statuses || [];
+      const subscriptionCustom = customStatuses.filter(
+        (cs: any) =>
+          cs.is_active !== false &&
+          (cs.type === "subscription" || cs.type === "subscription_with_logic") &&
+          cs.rate != null &&
+          cs.rate > 0,
+      );
+      if (subscriptionCustom.length > 0) {
+        const maxRate = Math.max(...subscriptionCustom.map((cs: any) => Number(cs.rate)));
+        displayModeByActivity[enrollment.activity_id] =
+          (activity.balance_display_mode as any) || "subscription";
+        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
+          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + maxRate;
+      }
     }
 
-    monthlyChargesByActivity[enrollment.activity_id] =
-      (monthlyChargesByActivity[enrollment.activity_id] || 0) +
-      baseMonthlyCharge;
+    if (baseMonthlyCharge > 0) {
+      monthlyChargesByActivity[enrollment.activity_id] =
+        (monthlyChargesByActivity[enrollment.activity_id] || 0) +
+        baseMonthlyCharge;
+    }
   });
 
   const balancesByAccount = new Map<string | null, StudentAccountBalance>();
@@ -1621,6 +1649,9 @@ function calculateMonthlyBalanceFromData(
     }
     const refunds = expense;
     const balance = payments - charges + refunds;
+    // «Нараховано на початок» — ТІЛЬКИ custom_status subscription/subscription_with_logic.
+    // НЕ включає present fixed/subscription (наприклад Хореографія з present.rate дає 740/750).
+    const subscriptionCharges = subscriptionOnlyChargesByActivity[activityId] ?? 0;
 
     if (enrollmentsForActivity.length === 0) {
       const accountId = activityAccountMap[activityId] ?? null;
@@ -1630,6 +1661,7 @@ function calculateMonthlyBalanceFromData(
         payments: 0,
         charges: 0,
         refunds: 0,
+        subscription_charges: 0,
       };
       balancesByAccount.set(accountId, {
         account_id: accountId,
@@ -1637,6 +1669,7 @@ function calculateMonthlyBalanceFromData(
         payments: existing.payments + payments,
         charges: existing.charges + charges,
         refunds: existing.refunds + refunds,
+        subscription_charges: (existing.subscription_charges ?? 0) + subscriptionCharges,
       });
     } else {
       const perEnrollment = enrollmentsForActivity.length;
@@ -1644,6 +1677,7 @@ function calculateMonthlyBalanceFromData(
       const perEnrollmentPayments = payments / perEnrollment;
       const perEnrollmentCharges = charges / perEnrollment;
       const perEnrollmentRefunds = refunds / perEnrollment;
+      const perEnrollmentSubscriptionCharges = subscriptionCharges / perEnrollment;
 
       enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
         const accountId =
@@ -1656,6 +1690,7 @@ function calculateMonthlyBalanceFromData(
           payments: 0,
           charges: 0,
           refunds: 0,
+          subscription_charges: 0,
         };
         balancesByAccount.set(accountId, {
           account_id: accountId,
@@ -1663,6 +1698,7 @@ function calculateMonthlyBalanceFromData(
           payments: existing.payments + perEnrollmentPayments,
           charges: existing.charges + perEnrollmentCharges,
           refunds: existing.refunds + perEnrollmentRefunds,
+          subscription_charges: (existing.subscription_charges ?? 0) + perEnrollmentSubscriptionCharges,
         });
       });
     }
@@ -1675,6 +1711,7 @@ function calculateMonthlyBalanceFromData(
       payments: 0,
       charges: 0,
       refunds: 0,
+      subscription_charges: 0,
     };
     balancesByAccount.set(accountId, {
       account_id: accountId,
@@ -1682,6 +1719,7 @@ function calculateMonthlyBalanceFromData(
       payments: existing.payments + amount,
       charges: existing.charges,
       refunds: existing.refunds,
+      subscription_charges: existing.subscription_charges,
       unassigned_payments:
         (existing.unassigned_payments || 0) + (accountId === null ? amount : 0),
     });
@@ -1887,6 +1925,7 @@ async function calculateMonthlyAccountBalances(
 
   const foodTariffIdSet = new Set(foodTariffIds);
   const monthlyChargesByActivity: Record<string, number> = {};
+  const subscriptionOnlyChargesByActivity: Record<string, number> = {};
   const displayModeByActivity: Record<
     string,
     "subscription" | "recalculation" | "subscription_and_recalculation"
@@ -1906,27 +1945,58 @@ async function calculateMonthlyAccountBalances(
     displayModeByActivity[enrollment.activity_id] =
       (activity.balance_display_mode as any) || fallbackMode;
     if (foodTariffIdSet.has(enrollment.activity_id)) return;
-    if (!isMonthlyBilling) return;
     const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
     if (!isActive) return;
 
     let baseMonthlyCharge = 0;
-    if (
-      enrollment.custom_price !== null &&
-      enrollment.custom_price !== undefined
-    ) {
-      const discountMultiplier = 1 - (enrollment.discount_percent || 0) / 100;
-      baseMonthlyCharge =
-        Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
-    } else if (presentRule?.rate && presentRule.rate > 0) {
-      baseMonthlyCharge = presentRule.rate;
+
+    if (isMonthlyBilling) {
+      // Абонплата — тільки повна ставка, без перерахунків та знижок
+      const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const priceHistory = priceHistoryMap.get(enrollmentId);
+      const priceForDate = getEnrollmentPriceForDate(
+        enrollment,
+        priceHistory,
+        monthStartDateStr,
+      );
+      if (
+        priceForDate.custom_price !== null &&
+        priceForDate.custom_price !== undefined
+      ) {
+        baseMonthlyCharge = priceForDate.custom_price;
+      } else if (presentRule?.rate && presentRule.rate > 0) {
+        baseMonthlyCharge = presentRule.rate;
+      } else {
+        baseMonthlyCharge = activity.default_price || 0;
+      }
+      // «Нараховано на початок» — тільки present subscription, НЕ fixed (fixed = ставка за заняття)
+      if (presentRule?.type === "subscription" && baseMonthlyCharge > 0) {
+        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
+          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
+      }
     } else {
-      baseMonthlyCharge = activity.default_price || 0;
+      const customStatuses = activity.billing_rules?.custom_statuses || [];
+      const subscriptionCustom = customStatuses.filter(
+        (cs: any) =>
+          cs.is_active !== false &&
+          (cs.type === "subscription" || cs.type === "subscription_with_logic") &&
+          cs.rate != null &&
+          cs.rate > 0,
+      );
+      if (subscriptionCustom.length > 0) {
+        const maxRate = Math.max(...subscriptionCustom.map((cs: any) => Number(cs.rate)));
+        displayModeByActivity[enrollment.activity_id] =
+          (activity.balance_display_mode as any) || "subscription";
+        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
+          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + maxRate;
+      }
     }
 
-    monthlyChargesByActivity[enrollment.activity_id] =
-      (monthlyChargesByActivity[enrollment.activity_id] || 0) +
-      baseMonthlyCharge;
+    if (baseMonthlyCharge > 0) {
+      monthlyChargesByActivity[enrollment.activity_id] =
+        (monthlyChargesByActivity[enrollment.activity_id] || 0) +
+        baseMonthlyCharge;
+    }
   });
 
   const balancesByAccount = new Map<string | null, StudentAccountBalance>();
@@ -1980,6 +2050,9 @@ async function calculateMonthlyAccountBalances(
     }
     const refunds = expense;
     const balance = payments - charges + refunds;
+    // «Нараховано на початок» — ТІЛЬКИ custom_status subscription/subscription_with_logic.
+    // НЕ включає present fixed/subscription (наприклад Хореографія з present.rate дає 740/750).
+    const subscriptionCharges = subscriptionOnlyChargesByActivity[activityId] ?? 0;
 
     if (enrollmentsForActivity.length === 0) {
       const accountId = activityAccountMap[activityId] ?? null;
@@ -1989,6 +2062,7 @@ async function calculateMonthlyAccountBalances(
         payments: 0,
         charges: 0,
         refunds: 0,
+        subscription_charges: 0,
       };
       balancesByAccount.set(accountId, {
         account_id: accountId,
@@ -1996,6 +2070,7 @@ async function calculateMonthlyAccountBalances(
         payments: existing.payments + payments,
         charges: existing.charges + charges,
         refunds: existing.refunds + refunds,
+        subscription_charges: (existing.subscription_charges ?? 0) + subscriptionCharges,
       });
     } else {
       const perEnrollment = enrollmentsForActivity.length;
@@ -2003,6 +2078,7 @@ async function calculateMonthlyAccountBalances(
       const perEnrollmentPayments = payments / perEnrollment;
       const perEnrollmentCharges = charges / perEnrollment;
       const perEnrollmentRefunds = refunds / perEnrollment;
+      const perEnrollmentSubscriptionCharges = subscriptionCharges / perEnrollment;
 
       enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
         const accountId =
@@ -2015,6 +2091,7 @@ async function calculateMonthlyAccountBalances(
           payments: 0,
           charges: 0,
           refunds: 0,
+          subscription_charges: 0,
         };
         balancesByAccount.set(accountId, {
           account_id: accountId,
@@ -2022,6 +2099,7 @@ async function calculateMonthlyAccountBalances(
           payments: existing.payments + perEnrollmentPayments,
           charges: existing.charges + perEnrollmentCharges,
           refunds: existing.refunds + perEnrollmentRefunds,
+          subscription_charges: (existing.subscription_charges ?? 0) + perEnrollmentSubscriptionCharges,
         });
       });
     }
@@ -2034,6 +2112,7 @@ async function calculateMonthlyAccountBalances(
       payments: 0,
       charges: 0,
       refunds: 0,
+      subscription_charges: 0,
     };
     balancesByAccount.set(accountId, {
       account_id: accountId,
@@ -2041,6 +2120,7 @@ async function calculateMonthlyAccountBalances(
       payments: existing.payments + amount,
       charges: existing.charges,
       refunds: existing.refunds,
+      subscription_charges: existing.subscription_charges,
       unassigned_payments:
         (existing.unassigned_payments || 0) + (accountId === null ? amount : 0),
     });

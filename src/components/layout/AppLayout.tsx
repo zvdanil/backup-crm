@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessSection } from '@/lib/permissions';
+import { ViewportFitScale } from '@/components/layout/ViewportFitScale';
 
 // Справочники (будут в выпадающем меню "Довідники")
 const referenceItems = [
@@ -83,10 +84,13 @@ export function AppLayout({ children }: AppLayoutProps) {
     ? []
     : referenceItems.filter((item) => canAccessSection(role, item.section));
 
-  // Проверка, активен ли какой-либо пункт из справочников
   const isReferenceActive = () => {
     return refItems.some((item) => isActive(item.href));
   };
+
+  const isJournalPage = ['/attendance', '/group-lessons', '/garden-attendance'].some(
+    (path) => location.pathname === path || location.pathname.startsWith(path + '/')
+  );
 
   const NavLinks = () => (
     <>
@@ -146,10 +150,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     </>
   );
 
-  return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Horizontal Header */}
-      <header className="sticky top-0 z-50 w-full border-b border-border bg-card">
+  const layoutContent = (
+    <>
+      <header className="sticky top-0 z-50 w-full border-b border-border bg-card shrink-0">
         <div className="w-full px-2 sm:px-4 h-16 flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center">
@@ -227,10 +230,21 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 w-full">
+      <main className="flex-1 w-full min-h-0">
         {children}
       </main>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      {isJournalPage ? (
+        <ViewportFitScale className="flex-1 min-h-0 flex flex-col">
+          {layoutContent}
+        </ViewportFitScale>
+      ) : (
+        layoutContent
+      )}
     </div>
   );
 }

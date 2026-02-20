@@ -435,7 +435,7 @@ export function StudentActivityBalanceRow({
             </div>
             {isFoodActivity && displayRefunds > 0 && (
               <div className="text-xs text-muted-foreground whitespace-normal break-words">
-                Повернення: {formatCurrency(displayRefunds)}
+                Переплата в поточному місяці: {formatCurrency(displayRefunds)}
               </div>
             )}
           </div>
