@@ -387,11 +387,12 @@ export default function GardenAttendanceJournal() {
     // Process each base tariff activity
     for (const baseTariffActivityId of baseTariffIds) {
       try {
-        // 1. Get billing rules for this base tariff activity
+        // 1. Get billing rules for this base tariff activity (тільки звичайні заняття, не групові)
         const { data: billingRulesRaw = [], error: billingError } = await supabase
           .from('staff_billing_rules')
           .select('*')
           .or(`activity_id.eq.${baseTariffActivityId},activity_id.is.null`)
+          .is('group_lesson_id', null)
           .order('effective_from', { ascending: false });
 
         if (billingError) {
@@ -415,6 +416,7 @@ export default function GardenAttendanceJournal() {
             if (rule.activity_id !== null && rule.activity_id !== baseTariffActivityId) {
               return false;
             }
+            if (rule.group_lesson_id != null) return false;
             const fromDate = new Date(rule.effective_from);
             const toDate = rule.effective_to ? new Date(rule.effective_to) : null;
             return dateObj >= fromDate && (!toDate || dateObj < toDate);
@@ -541,7 +543,10 @@ export default function GardenAttendanceJournal() {
 
         // 5. Calculate accruals
         const fixedRules = billingRules.filter(
-          (rule: any) => rule.rate_type === 'fixed' && (rule.activity_id === null || rule.activity_id === baseTariffActivityId)
+          (rule: any) =>
+            rule.rate_type === 'fixed' &&
+            (rule.activity_id === null || rule.activity_id === baseTariffActivityId) &&
+            rule.group_lesson_id == null,
         );
         
         const baseTariffActivity = activitiesMap.get(baseTariffActivityId);
@@ -554,10 +559,13 @@ export default function GardenAttendanceJournal() {
           customStatuses: baseTariffActivity?.billing_rules?.custom_statuses,
         });
 
-        // 6. Collect all staff IDs that have billing rules or accruals
+        // 6. Collect all staff IDs that have billing rules or accruals (тільки звичайні заняття)
         const staffIds = new Set<string>();
         billingRules.forEach((rule: any) => {
-          if (rule.activity_id === null || rule.activity_id === baseTariffActivityId) {
+          if (
+            (rule.activity_id === null || rule.activity_id === baseTariffActivityId) &&
+            rule.group_lesson_id == null
+          ) {
             staffIds.add(rule.staff_id);
           }
         });
@@ -599,6 +607,7 @@ export default function GardenAttendanceJournal() {
                 upsertStaffJournalEntry.mutateAsync({
                   staff_id: staffId,
                   activity_id: baseTariffActivityId,
+                  group_lesson_id: null,
                   date,
                   amount: finalAmount,
                   base_amount: dayAccrual.amount,
@@ -613,6 +622,7 @@ export default function GardenAttendanceJournal() {
                 deleteStaffJournalEntry.mutateAsync({
                   staff_id: staffId,
                   activity_id: baseTariffActivityId,
+                  group_lesson_id: null,
                   date,
                   is_manual_override: false,
                 })

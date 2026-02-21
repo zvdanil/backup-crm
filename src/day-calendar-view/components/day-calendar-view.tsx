@@ -67,8 +67,12 @@ import { useToast } from "@/components/ui/use-toast";
 
 import { useActivities } from "@/hooks/useActivities";
 import { useStaff } from "@/hooks/useStaff";
-import { useStaffBillingRules } from "@/hooks/useStaffBillingRules";
 import { useGroupLessons } from "@/hooks/useGroupLessons";
+import {
+  useAllStaffBillingRules,
+  useAllStaffManualRateHistory,
+  getTeacherIdForActivityAndDate,
+} from "@/hooks/useStaffBilling";
 import {
   useLessonActivities,
   useAddLessonActivity,
@@ -125,8 +129,9 @@ const DayCalendarView = () => {
   const { data: groupLessons = [], isLoading: isLoadingGroupLessons } =
     useGroupLessons();
   const { data: availableStaff, isLoading: isLoadingStaff } = useStaff();
-  const { data: staffBillingRules, isLoading: isLoadingBillingRules } =
-    useStaffBillingRules();
+  const { data: allStaffBillingRules = [], isLoading: isLoadingBillingRules } =
+    useAllStaffBillingRules();
+  const { data: allManualRateHistory = [] } = useAllStaffManualRateHistory();
 
   const journalActivities = useMemo(() => {
     return (availableActivities || []).filter((act) => act.show_in_journals);
@@ -353,7 +358,8 @@ const DayCalendarView = () => {
           journalActivities={journalActivities}
           groupLessons={groupLessons || []}
           availableStaff={availableStaff || []}
-          staffBillingRules={staffBillingRules || []}
+          allStaffBillingRules={allStaffBillingRules}
+          allManualRateHistory={allManualRateHistory}
           isLoading={
             isLoadingActivities ||
             isLoadingStaff ||
@@ -530,7 +536,8 @@ const ActivityModal = ({
   journalActivities,
   groupLessons,
   availableStaff,
-  staffBillingRules,
+  allStaffBillingRules = [],
+  allManualRateHistory = [],
   isLoading,
   isSaving,
 }: any) => {
@@ -599,19 +606,27 @@ const ActivityModal = ({
     if (activityType === "additional") {
       const selectedActivity = journalActivities.find((a: any) => a.id === id);
       if (!selectedActivity) return;
-      const rule = staffBillingRules.find((r: any) => r.activity_id === id);
-      const teacher = rule
-        ? availableStaff.find((s: any) => s.id === rule.staff_id)
-        : null;
-      setFormData((prev) => ({
-        ...prev,
-        activityId: selectedActivity.id,
-        groupLessonId: "",
-        title: selectedActivity.name,
-        color: selectedActivity.color,
-        teacherId: teacher?.id || "",
-        teacher: teacher?.full_name || "",
-      }));
+      setFormData((prev) => {
+        const dateStr = prev.startDate || format(selectedDate, "yyyy-MM-dd");
+        const teacherId = getTeacherIdForActivityAndDate(
+          allStaffBillingRules,
+          allManualRateHistory,
+          id,
+          dateStr,
+        );
+        const teacher = teacherId
+          ? availableStaff.find((s: any) => s.id === teacherId)
+          : null;
+        return {
+          ...prev,
+          activityId: selectedActivity.id,
+          groupLessonId: "",
+          title: selectedActivity.name,
+          color: selectedActivity.color,
+          teacherId: teacher?.id || "",
+          teacher: teacher?.full_name || "",
+        };
+      });
     } else {
       const selectedLesson = groupLessons.find((l: any) => l.id === id);
       if (!selectedLesson) return;
@@ -628,9 +643,27 @@ const ActivityModal = ({
     }
   };
 
-  const handleDateChange = (date: Date | undefined) =>
-    date &&
-    setFormData((prev) => ({ ...prev, startDate: format(date, "yyyy-MM-dd") }));
+  const handleDateChange = (date: Date | undefined) => {
+    if (!date) return;
+    const dateStr = format(date, "yyyy-MM-dd");
+    setFormData((prev) => {
+      const next = { ...prev, startDate: dateStr };
+      if (activityType === "additional" && prev.activityId) {
+        const teacherId = getTeacherIdForActivityAndDate(
+          allStaffBillingRules,
+          allManualRateHistory,
+          prev.activityId,
+          dateStr,
+        );
+        const teacher = teacherId
+          ? availableStaff.find((s: any) => s.id === teacherId)
+          : null;
+        next.teacherId = teacher?.id || "";
+        next.teacher = teacher?.full_name || "";
+      }
+      return next;
+    });
+  };
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => setFormData({ ...formData, [e.target.name]: e.target.value });

@@ -40,7 +40,9 @@ import {
   useUpsertStaffJournalEntry,
   useDeleteStaffJournalEntry,
   useAllStaffBillingRulesForActivity,
+  useAllStaffManualRateHistoryForActivity,
   getStaffBillingRuleForDate,
+  getTeacherIdForActivityAndDate,
 } from "@/hooks/useStaffBilling";
 import {
   calculateMonthlyStaffAccruals,
@@ -136,6 +138,8 @@ export function EnhancedAttendanceGrid({
   }, [activity]);
   const { data: allStaffBillingRules = [] } =
     useAllStaffBillingRulesForActivity(activityId);
+  const { data: allManualRateHistory = [] } =
+    useAllStaffManualRateHistoryForActivity(activityId);
   const { data: groups = [] } = useGroups();
   const { data: students = [] } = useStudents();
   const { data: staff = [] } = useStaff();
@@ -457,40 +461,15 @@ export function EnhancedAttendanceGrid({
     [attendanceMap, days, filteredEnrollments, isStatusForSalary],
   );
 
-  // Створюємо мапу activity_id -> staff_id для швидкого пошуку вчителя за активністю
-  // Функція для пошуку teacher_id через staff_billing_rules для конкретної активності та дати
   const getTeacherIdForActivity = useCallback(
-    (activityId: string, date: string): string | null => {
-      // Знаходимо всі правила для цієї активності (де activity_id співпадає або null для глобальних)
-      const relevantRules = allStaffBillingRules.filter((rule) => {
-        // Перевіряємо, чи правило відповідає активності (конкретна активність або глобальна)
-        if (rule.activity_id !== null && rule.activity_id !== activityId) {
-          return false;
-        }
-
-        // Перевіряємо, чи правило активне на цю дату
-        const dateObj = new Date(date);
-        const fromDate = new Date(rule.effective_from);
-        const toDate = rule.effective_to ? new Date(rule.effective_to) : null;
-
-        return dateObj >= fromDate && (!toDate || dateObj < toDate);
-      });
-
-      if (relevantRules.length === 0) return null;
-
-      // Пріоритет: спочатку шукаємо конкретні правила для активності, потім глобальні
-      const specificRule = relevantRules.find(
-        (r) => r.activity_id === activityId,
-      );
-      if (specificRule) {
-        return specificRule.staff_id;
-      }
-
-      // Якщо немає конкретного правила, беремо перше глобальне (activity_id === null)
-      const globalRule = relevantRules.find((r) => r.activity_id === null);
-      return globalRule ? globalRule.staff_id : null;
-    },
-    [allStaffBillingRules],
+    (actId: string, date: string): string | null =>
+      getTeacherIdForActivityAndDate(
+        allStaffBillingRules,
+        allManualRateHistory,
+        actId,
+        date,
+      ),
+    [allStaffBillingRules, allManualRateHistory],
   );
 
   const getBillingRuleForDate = useCallback(
@@ -511,7 +490,8 @@ export function EnhancedAttendanceGrid({
       const fixedRules = allStaffBillingRules.filter(
         (rule) =>
           rule.rate_type === "fixed" &&
-          (rule.activity_id === null || rule.activity_id === activityId),
+          (rule.activity_id === null || rule.activity_id === activityId) &&
+          (rule.group_lesson_id == null),
       );
 
       const accruals = calculateMonthlyStaffAccruals({
@@ -527,7 +507,10 @@ export function EnhancedAttendanceGrid({
       const staffIds = new Set<string>();
 
       allStaffBillingRules.forEach((rule) => {
-        if (rule.activity_id === null || rule.activity_id === activityId) {
+        if (
+          (rule.activity_id === null || rule.activity_id === activityId) &&
+          rule.group_lesson_id == null
+        ) {
           staffIds.add(rule.staff_id);
         }
       });
@@ -569,6 +552,7 @@ export function EnhancedAttendanceGrid({
               upsertStaffJournalEntry.mutateAsync({
                 staff_id: staffId,
                 activity_id: activityId,
+                group_lesson_id: null,
                 date,
                 amount: finalAmount,
                 base_amount: dayAccrual.amount,
@@ -582,6 +566,7 @@ export function EnhancedAttendanceGrid({
               deleteStaffJournalEntry.mutateAsync({
                 staff_id: staffId,
                 activity_id: activityId,
+                group_lesson_id: null,
                 date,
                 is_manual_override: false,
               }),
@@ -1011,7 +996,8 @@ export function EnhancedAttendanceGrid({
     const fixedRules = allStaffBillingRules.filter(
       (rule) =>
         rule.rate_type === "fixed" &&
-        (rule.activity_id === null || rule.activity_id === activityId),
+        (rule.activity_id === null || rule.activity_id === activityId) &&
+        rule.group_lesson_id == null,
     );
 
     return calculateMonthlyStaffAccruals({

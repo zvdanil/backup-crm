@@ -182,6 +182,24 @@ export function useStaffBillingRulesByActivity(
   });
 }
 
+// Load all staff billing rules (for calendar — activity unknown until selected)
+export function useAllStaffBillingRules() {
+  return useQuery({
+    queryKey: ["staff-billing-rules-all"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_billing_rules" as any)
+        .select("*")
+        .order("effective_from", { ascending: false });
+      if (error) throw error;
+      return ((data as any[]) || []).map((r) => ({
+        ...r,
+        group_lesson_id: r.group_lesson_id ?? null,
+      })) as StaffBillingRule[];
+    },
+  });
+}
+
 // Get all staff billing rules for an activity (for all staff members)
 export function useAllStaffBillingRulesForActivity(
   activityId: string | undefined,
@@ -769,6 +787,106 @@ export function useStaffManualRateHistory(staffId: string | undefined) {
     },
     enabled: !!staffId,
   });
+}
+
+// Load all staff manual rate history (for calendar — activity unknown until selected)
+export function useAllStaffManualRateHistory() {
+  return useQuery({
+    queryKey: ["staff-manual-rate-history-all"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_manual_rate_history" as any)
+        .select("*")
+        .order("effective_from", { ascending: false });
+      if (error) throw error;
+      return ((data as any[]) || []) as StaffManualRateHistory[];
+    },
+  });
+}
+
+// Get all staff manual rate history for an activity (for teacher display in attendance journal)
+export function useAllStaffManualRateHistoryForActivity(
+  activityId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ["staff-manual-rate-history-activity", activityId],
+    queryFn: async () => {
+      if (!activityId) return [];
+
+      const { data, error } = await supabase
+        .from("staff_manual_rate_history" as any)
+        .select("*")
+        .or(`activity_id.eq.${activityId},activity_id.is.null`)
+        .order("effective_from", { ascending: false });
+
+      if (error) throw error;
+      return ((data as any[]) || []) as StaffManualRateHistory[];
+    },
+    enabled: !!activityId,
+  });
+}
+
+// Shared: get teacher for activity+date (billing rules + manual fallback). Use in journal & calendar.
+export function getTeacherIdForActivityAndDate(
+  billingRules: Array<{
+    activity_id: string | null;
+    group_lesson_id?: string | null;
+    staff_id: string;
+    effective_from: string;
+    effective_to: string | null;
+  }>,
+  manualRateHistory: StaffManualRateHistory[],
+  activityId: string,
+  date: string,
+): string | null {
+  const dateStr = date.slice(0, 10);
+  const inRange = (r: { effective_from: string; effective_to: string | null }) => {
+    const from = r.effective_from?.slice(0, 10) ?? r.effective_from;
+    const to = r.effective_to?.slice(0, 10) ?? r.effective_to;
+    if (dateStr < from) return false;
+    if (to && dateStr >= to) return false;
+    return true;
+  };
+  const relevantRules = billingRules.filter((r) => {
+    if (r.activity_id !== null && r.activity_id !== activityId) return false;
+    if (r.group_lesson_id != null) return false;
+    return inRange(r);
+  });
+  if (relevantRules.length > 0) {
+    const specific = relevantRules.find((r) => r.activity_id === activityId);
+    const global = relevantRules.find((r) => r.activity_id === null);
+    return (specific || global)?.staff_id ?? null;
+  }
+  return getTeacherIdFromManualRateHistory(
+    manualRateHistory,
+    activityId,
+    date,
+  );
+}
+
+// Get teacher staff_id from manual rate history for a date (fallback when no billing rule)
+export function getTeacherIdFromManualRateHistory(
+  entries: StaffManualRateHistory[],
+  activityId: string,
+  date: string,
+): string | null {
+  if (!entries.length) return null;
+  const dateStr = date.slice(0, 10);
+  const inRange = (e: StaffManualRateHistory) => {
+    const from = e.effective_from?.slice(0, 10) ?? e.effective_from;
+    const to = e.effective_to?.slice(0, 10) ?? e.effective_to;
+    if (dateStr < from) return false;
+    if (to && dateStr >= to) return false;
+    return true;
+  };
+  const applicable = entries.filter(
+    (e) =>
+      (e.activity_id === activityId || e.activity_id === null) && inRange(e),
+  );
+  const specific = applicable.find((e) => e.activity_id === activityId);
+  const fallback = applicable.find((e) => e.activity_id === null);
+  const found = specific || fallback;
+  return found ? found.staff_id : null;
 }
 
 // Get manual rate for a specific date
