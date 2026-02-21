@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { formatCurrency } from '@/lib/attendance';
+import { formatCurrency, formatLocalDate } from '@/lib/attendance';
 import { getActivityDisplayPrice } from '@/lib/activityPrice';
 import { useActivityPriceHistory } from '@/hooks/useActivities';
 import type { EnrollmentWithRelations } from '@/hooks/useEnrollments';
@@ -16,7 +16,7 @@ export function EnrollmentPriceDisplay({ enrollment, showLabel = false }: Enroll
   // Use current date for display (актуальна ціна на сьогодні)
   // Примітка: для історичних записів можна використовувати enrollment.enrolled_at, 
   // але для відображення поточної ціни використовуємо сьогоднішню дату
-  const currentDate = new Date().toISOString().split('T')[0];
+  const currentDate = formatLocalDate(new Date());
   
   // Get display price using billing_rules for current date
   const displayPrice = useMemo(() => {

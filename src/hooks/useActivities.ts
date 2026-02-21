@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { formatLocalDate } from '@/lib/attendance';
 
 export type ActivityCategory = 'income' | 'expense' | 'additional_income' | 'household_expense' | 'salary';
 
@@ -328,7 +329,7 @@ export function useCreateActivityPriceHistory() {
         // Віднімаємо 1 день від effective_from нового запису для effective_to попереднього
         const effectiveToDate = new Date(history.effective_from);
         effectiveToDate.setDate(effectiveToDate.getDate() - 1);
-        const effectiveToStr = effectiveToDate.toISOString().split('T')[0];
+        const effectiveToStr = formatLocalDate(effectiveToDate);
         
         const { error: updateError } = await supabase
           .from('activity_price_history')

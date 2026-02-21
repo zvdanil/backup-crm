@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 
 export interface StudentAttendanceEntry {
   id: string;
@@ -19,8 +20,8 @@ export function useStudentAttendance(studentId: string | undefined, month?: numb
     queryKey: ['student_attendance', studentId, month, year],
     queryFn: async () => {
       if (!studentId || month === undefined || year === undefined) return [];
-      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(year, month);
+      const endDate = getMonthEndDate(year, month);
 
       const { data, error } = await supabase
         .from('attendance')

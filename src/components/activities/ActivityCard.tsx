@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { formatCurrency } from '@/lib/attendance';
+import { formatCurrency, formatLocalDate } from '@/lib/attendance';
 import { getActivityDisplayPrice } from '@/lib/activityPrice';
 import { useActivityPriceHistory } from '@/hooks/useActivities';
 import type { Activity } from '@/hooks/useActivities';
@@ -22,7 +22,7 @@ interface ActivityCardProps {
 
 export function ActivityCard({ activity, enrolledCount = 0, onEdit, onDelete }: ActivityCardProps) {
   const { data: priceHistory } = useActivityPriceHistory(activity.id);
-  const currentDate = new Date().toISOString().split('T')[0];
+  const currentDate = formatLocalDate(new Date());
   
   const displayPrice = useMemo(() => {
     return getActivityDisplayPrice(

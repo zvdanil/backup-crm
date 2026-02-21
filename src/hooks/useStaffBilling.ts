@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { getMonthStartDate, getMonthEndDate } from "@/lib/attendance";
+import { getMonthStartDate, getMonthEndDate, formatLocalDate } from "@/lib/attendance";
 
 export interface StaffBillingRule {
   id: string;
@@ -250,7 +250,7 @@ export function useCreateStaffBillingRule() {
       if (previousRuleArray && previousRuleArray.length > 0) {
         const effectiveToDate = new Date(rule.effective_from);
         effectiveToDate.setDate(effectiveToDate.getDate() - 1);
-        const effectiveToStr = effectiveToDate.toISOString().split("T")[0];
+        const effectiveToStr = formatLocalDate(effectiveToDate);
 
         // Закрываем все найденные ставки (может быть несколько, если были созданы с одинаковыми параметрами)
         const ruleIds = previousRuleArray.map((r: any) => r.id);
@@ -593,7 +593,15 @@ export function useUpsertStaffJournalEntry() {
       // This ensures the expense journal refreshes regardless of which month/year is displayed
       queryClient.invalidateQueries({
         queryKey: ["staff-journal-entries-all"],
-        exact: false, // This will match all queries starting with this key
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries-filtered"],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries-all-cumulative"],
+        exact: false,
       });
       toast({ title: "Запис збережено" });
     },
@@ -663,11 +671,23 @@ export function useDeleteStaffJournalEntry() {
         queryClient.invalidateQueries({
           queryKey: ["staff-journal-entries", staffId],
         });
+      } else {
+        queryClient.invalidateQueries({
+          queryKey: ["staff-journal-entries"],
+          exact: false,
+        });
       }
-      // Invalidate all month/year combinations for staff-journal-entries-all
       queryClient.invalidateQueries({
         queryKey: ["staff-journal-entries-all"],
-        exact: false, // This will match all queries starting with this key
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries-filtered"],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["staff-journal-entries-all-cumulative"],
+        exact: false,
       });
       toast({ title: "Запис видалено" });
     },
@@ -849,7 +869,7 @@ export function useCreateStaffManualRateHistory() {
       if (previousEntry && (previousEntry as any).id) {
         const effectiveToDate = new Date(entry.effective_from);
         effectiveToDate.setDate(effectiveToDate.getDate() - 1);
-        const effectiveToStr = effectiveToDate.toISOString().split("T")[0];
+        const effectiveToStr = formatLocalDate(effectiveToDate);
 
         const { error: updateError } = await supabase
           .from("staff_manual_rate_history" as any)
@@ -990,8 +1010,8 @@ export function useCreateStaffPayout() {
 
       if (error) throw error;
 
-      // Создаем finance_transaction типа 'salary' с account_id (всегда, даже если account_id = null)
-      const { error: txError } = await supabase
+      // Создаем finance_transaction типа 'salary' з staff_payout_id для зв'язку
+      const { data: txData, error: txError } = await supabase
         .from("finance_transactions" as any)
         .insert({
           type: 'salary',
@@ -1000,33 +1020,33 @@ export function useCreateStaffPayout() {
           date: payout.payout_date,
           description: payout.notes || 'Виплата зарплати',
           account_id: payout.account_id || null,
-        });
+          staff_payout_id: data.id,
+        })
+        .select('id')
+        .single();
 
       if (txError) {
-        // Если не удалось создать транзакцию, удаляем выплату
         await supabase.from("staff_payouts" as any).delete().eq('id', data.id);
         throw txError;
       }
 
-      return data as any as StaffPayout;
+      return { payout: data as StaffPayout, salaryTransactionId: txData?.id as string };
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { payout: StaffPayout; salaryTransactionId: string }) => {
       queryClient.invalidateQueries({
-        queryKey: ["staff-payouts", data.staff_id],
+        queryKey: ["staff-payouts", data.payout.staff_id],
         exact: false,
       });
       queryClient.invalidateQueries({
         queryKey: ["staff-payouts-all"],
         exact: false,
       });
-      // Also invalidate finance_transactions to update salary journal
       queryClient.invalidateQueries({
         queryKey: ["finance_transactions"],
         exact: false,
       });
-      // Also invalidate journal entries to update calendar in StaffDetail
       queryClient.invalidateQueries({
-        queryKey: ["staff-journal-entries", data.staff_id],
+        queryKey: ["staff-journal-entries", data.payout.staff_id],
         exact: false,
       });
       toast({ title: "Виплату збережено" });
@@ -1068,18 +1088,15 @@ export function useUpdateStaffPayout() {
 
       if (error) throw error;
 
-      // Синхронизируем с finance_transactions (данные из уже обновлённой выплаты)
-      if (currentPayout?.staff_id && data) {
-        const { data: transactions, error: txFetchError } = await supabase
+      // Синхронизуємо з finance_transactions (шукаємо по staff_payout_id)
+      if (data) {
+        const { data: txRow, error: txFetchError } = await supabase
           .from("finance_transactions" as any)
           .select("id")
-          .eq("type", "salary")
-          .eq("staff_id", currentPayout.staff_id)
-          .eq("date", currentPayout.payout_date)
-          .eq("amount", currentPayout.amount)
-          .limit(1);
+          .eq("staff_payout_id", id)
+          .maybeSingle();
 
-        if (!txFetchError && transactions && transactions.length > 0) {
+        if (!txFetchError && txRow) {
           const payload: any = {
             staff_id: data.staff_id,
             amount: data.amount,
@@ -1091,7 +1108,7 @@ export function useUpdateStaffPayout() {
           const { error: txUpdateError } = await supabase
             .from("finance_transactions" as any)
             .update(payload)
-            .eq("id", transactions[0].id);
+            .eq("id", txRow.id);
 
           if (txUpdateError) throw txUpdateError;
         }

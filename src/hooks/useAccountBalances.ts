@@ -11,7 +11,7 @@ export interface AccountBalance {
   transfers_out: number; // Переводы на другой счёт
   free_funds: number; // Залишок на рахунку = (actual_receipts + opening_balance) - actual_expenses
   expected_receipts: number; // Ожидаемые поступления = expected_income - actual_receipts
-  opening_balance: number; // Внесений залишок (payment_accounts + account_opening_balances по студентах)
+  opening_balance: number; // Внесений залишок (payment_accounts). account_opening_balances тільки для корекції балансу учня, не впливає на рахунок
 }
 
 /**
@@ -27,7 +27,6 @@ export function useAccountBalance(accountId: string) {
 
       const [
         { data: accountData },
-        { data: accountOpeningBalancesData },
         { data: paymentData, error: paymentError },
         { data: incomeData, error: incomeError },
         { data: staffPayoutsData },
@@ -41,10 +40,6 @@ export function useAccountBalance(accountId: string) {
           .select('opening_balance_amount')
           .eq('id', accountId)
           .single(),
-        supabaseAny
-          .from('account_opening_balances')
-          .select('amount')
-          .eq('account_id', accountId),
         supabaseAny
           .from('finance_transactions')
           .select('amount')
@@ -85,11 +80,8 @@ export function useAccountBalance(accountId: string) {
       if (incomeError) throw incomeError;
 
       const openingFromAccount = Number(accountData?.opening_balance_amount ?? 0) || 0;
-      const openingFromStudents = (accountOpeningBalancesData || []).reduce(
-        (sum: number, row: any) => sum + Number(row.amount || 0),
-        0
-      );
-      const opening_balance = openingFromAccount + openingFromStudents;
+      // account_opening_balances (student balances) only correct student balance display, not account state
+      const opening_balance = openingFromAccount;
       const actual_receipts = (paymentData || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
       const expected_income = (incomeData || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
 

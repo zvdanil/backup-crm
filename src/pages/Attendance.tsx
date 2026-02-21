@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatLocalDate } from "@/lib/attendance";
 
 const RECENT_JOURNALS_KEY = "recentAttendanceJournals";
 
@@ -82,7 +83,7 @@ export default function Attendance() {
     if (!selectedActivityId) return;
     const currentActivityId = searchParams.get("activityId") || "";
     const currentDate = searchParams.get("date") || "";
-    const nextDate = initialDate ? initialDate.toISOString().slice(0, 10) : "";
+    const nextDate = initialDate ? formatLocalDate(initialDate) : "";
 
     if (currentActivityId === selectedActivityId && currentDate === nextDate) {
       return;

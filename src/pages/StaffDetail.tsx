@@ -9,6 +9,7 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -17,6 +18,7 @@ import { useStaffMember, useUpdateStaff } from "@/hooks/useStaff";
 import {
   formatCurrency,
   formatDate,
+  formatLocalDate,
   getDaysInMonth,
   formatShortDate,
   getWeekdayShort,
@@ -98,7 +100,19 @@ import { useMemo } from "react";
 import { toast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
+import {
+  useStaffOpeningBalancesForMonth,
+  useStaffOpeningBalancesCumulativeUpToMonth,
+  useCreateStaffOpeningBalance,
+  useUpdateStaffOpeningBalance,
+  useDeleteStaffOpeningBalance,
+  type StaffOpeningBalance,
+} from "@/hooks/useStaffOpeningBalances";
+import { StaffOpeningBalanceDialog } from "@/components/staff/StaffOpeningBalanceDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useCommissionEntry, useCommissionsForSalaryTransactions } from "@/hooks/useCommissionEntry";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 export default function StaffDetail() {
   const { id } = useParams<{ id: string }>();
@@ -132,7 +146,7 @@ export default function StaffDetail() {
   >([]);
   const [deductionsState, setDeductionsState] = useState<Deduction[]>([]);
   const [effectiveFrom, setEffectiveFrom] = useState(
-    new Date().toISOString().split("T")[0],
+    formatLocalDate(new Date()),
   );
 
   // Financial Calendar state
@@ -145,6 +159,8 @@ export default function StaffDetail() {
   );
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
   const [editingPayoutId, setEditingPayoutId] = useState<string | null>(null);
+  const [balanceDialogOpen, setBalanceDialogOpen] = useState(false);
+  const [editingBalance, setEditingBalance] = useState<StaffOpeningBalance | null>(null);
 
   // Financial Calendar data
   const { data: journalEntries = [] } = useStaffJournalEntries(
@@ -154,6 +170,36 @@ export default function StaffDetail() {
   );
   const { data: allJournalEntries = [] } = useStaffJournalEntries(id);
   const { data: payouts = [] } = useStaffPayouts(id);
+  const payoutIds = useMemo(() => payouts.map((p) => p.id), [payouts]);
+  const { data: salaryTxByPayoutId = new Map<string, string>() } = useQuery({
+    queryKey: ["salary-tx-for-payouts", payoutIds.join(",")],
+    queryFn: async () => {
+      if (payoutIds.length === 0) return new Map<string, string>();
+      const { data, error } = await supabase
+        .from("finance_transactions")
+        .select("id, staff_payout_id")
+        .in("staff_payout_id", payoutIds);
+      if (error) return new Map<string, string>();
+      const map = new Map<string, string>();
+      (data || []).forEach((row: any) => {
+        if (row.staff_payout_id) map.set(row.staff_payout_id, row.id);
+      });
+      return map;
+    },
+    enabled: payoutIds.length > 0,
+  });
+  const salaryTxIds = useMemo(
+    () => Array.from(salaryTxByPayoutId.values()),
+    [salaryTxByPayoutId]
+  );
+  const { data: commissionsMap = new Map<string, { amount: number; id: string }>() } =
+    useCommissionsForSalaryTransactions(salaryTxIds);
+  const syncCommission = useCommissionEntry();
+  const { data: staffBalancesForMonth = [] } = useStaffOpeningBalancesForMonth(id, calendarMonth, calendarYear);
+  const { data: staffBalancesCumulative = [] } = useStaffOpeningBalancesCumulativeUpToMonth(id, calendarMonth, calendarYear);
+  const createStaffBalance = useCreateStaffOpeningBalance();
+  const updateStaffBalance = useUpdateStaffOpeningBalance();
+  const deleteStaffBalance = useDeleteStaffOpeningBalance();
   const { data: activities = [] } = useActivities();
   const { data: allGroupLessons = [] } = useGroupLessons(); // Получаем все групповые занятия для получения названий
   const { data: accounts = [] } = usePaymentAccounts();
@@ -189,6 +235,7 @@ export default function StaffDetail() {
     payout_date: z.string().min(1, "Оберіть дату"),
     notes: z.string().optional(),
     account_id: z.string().min(1, "Оберіть рахунок"),
+    commission: z.number().min(0).optional(),
   });
 
   type PayoutFormData = z.infer<typeof payoutSchema>;
@@ -204,9 +251,10 @@ export default function StaffDetail() {
     resolver: zodResolver(payoutSchema),
     defaultValues: {
       amount: 0,
-      payout_date: new Date().toISOString().split("T")[0],
+      payout_date: formatLocalDate(new Date()),
       notes: "",
       account_id: "",
+      commission: 0,
     },
   });
 
@@ -334,9 +382,10 @@ export default function StaffDetail() {
           payout.payout_date >= startDate && payout.payout_date <= endDate,
       )
       .reduce((sum, payout) => sum + (Number(payout.amount) || 0), 0);
+    const openingForMonth = staffBalancesForMonth.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
-    return { accrued, paid, balance: accrued - paid };
-  }, [journalEntries, payouts, calendarMonth, calendarYear]);
+    return { accrued, paid, balance: accrued - paid + openingForMonth };
+  }, [journalEntries, payouts, staffBalancesForMonth, calendarMonth, calendarYear]);
 
   // Создаем Map для быстрого доступа к названиям групповых занятий
   const groupLessonsMap = useMemo(() => {
@@ -438,8 +487,25 @@ export default function StaffDetail() {
       (sum, payout) => sum + (Number(payout.amount) || 0),
       0,
     );
-    return { accrued, paid, balance: accrued - paid };
-  }, [allJournalEntries, payouts]);
+    const openingCumulative = staffBalancesCumulative.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+    return { accrued, paid, balance: accrued - paid + openingCumulative };
+  }, [allJournalEntries, payouts, staffBalancesCumulative]);
+
+  const handleBalanceSubmit = async (data: { amount: number }) => {
+    if (!id) return;
+    const balanceDate = getMonthStartDate(calendarYear, calendarMonth);
+    if (editingBalance) {
+      await updateStaffBalance.mutateAsync({ id: editingBalance.id, amount: data.amount });
+    } else {
+      await createStaffBalance.mutateAsync({
+        staff_id: id,
+        balance_date: balanceDate,
+        amount: data.amount,
+      });
+    }
+    setBalanceDialogOpen(false);
+    setEditingBalance(null);
+  };
 
   const handlePayoutCellClick = (date: string) => {
     setSelectedPayoutDate(date);
@@ -454,9 +520,10 @@ export default function StaffDetail() {
   };
 
   const handlePayoutSubmit = async (data: PayoutFormData) => {
-    if (!id) return;
+    if (!id || !staff) return;
 
     try {
+      let salaryTransactionId: string;
       if (editingPayoutId) {
         await updatePayout.mutateAsync({
           id: editingPayoutId,
@@ -465,13 +532,25 @@ export default function StaffDetail() {
           notes: data.notes || null,
           account_id: data.account_id,
         });
+        salaryTransactionId = salaryTxByPayoutId.get(editingPayoutId) || "";
       } else {
-        await createPayout.mutateAsync({
+        const result = await createPayout.mutateAsync({
           staff_id: id,
           amount: data.amount,
           payout_date: data.payout_date,
           notes: data.notes || null,
           account_id: data.account_id,
+        });
+        salaryTransactionId = (result as any).salaryTransactionId || "";
+      }
+      const commissionAmount = Number(data.commission ?? 0);
+      if (salaryTransactionId) {
+        await syncCommission.mutateAsync({
+          salaryTransactionId,
+          amount: commissionAmount,
+          date: data.payout_date,
+          accountId: data.account_id || null,
+          staffName: staff.full_name || "невідомий",
         });
       }
       reset();
@@ -1092,6 +1171,57 @@ export default function StaffDetail() {
                               · Виплачено: {formatCurrency(monthSummary.paid)}
                             </div>
 
+                            {/* Кнопка + залишок та список залишків */}
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingBalance(null);
+                                  setBalanceDialogOpen(true);
+                                }}
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                залишок
+                              </Button>
+                              {staffBalancesForMonth.map((b) => (
+                                <div
+                                  key={b.id}
+                                  className={cn(
+                                    "inline-flex items-center gap-1 px-2 py-1 rounded text-sm",
+                                    b.amount >= 0 ? "bg-muted" : "bg-destructive/10",
+                                  )}
+                                >
+                                  <span>
+                                    {b.amount >= 0 ? "" : "−"} {formatCurrency(Math.abs(b.amount))}
+                                  </span>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                    onClick={() => {
+                                      setEditingBalance(b);
+                                      setBalanceDialogOpen(true);
+                                    }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 text-destructive hover:text-destructive"
+                                    onClick={async () => {
+                                      if (window.confirm("Видалити залишок?")) {
+                                        await deleteStaffBalance.mutateAsync(b.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+
                             {/* Детализация по статьям выплат */}
                             {paymentItemsSummary.length > 0 && (
                               <div className="mt-4 pt-4 border-t">
@@ -1490,6 +1620,18 @@ export default function StaffDetail() {
             </div>
 
             <div>
+              <Label htmlFor="payout_commission">Комісія (₴)</Label>
+              <Input
+                id="payout_commission"
+                type="number"
+                step="0.01"
+                min="0"
+                {...register("commission", { valueAsNumber: true })}
+                placeholder="Опціонально"
+              />
+            </div>
+
+            <div>
               <Label htmlFor="payout_account">Рахунок списання</Label>
               <Select
                 value={watch("account_id") || ""}
@@ -1532,8 +1674,8 @@ export default function StaffDetail() {
               >
                 Скасувати
               </Button>
-              <Button type="submit" disabled={createPayout.isPending}>
-                {createPayout.isPending || updatePayout.isPending
+              <Button type="submit" disabled={createPayout.isPending || syncCommission.isPending}>
+                {createPayout.isPending || updatePayout.isPending || syncCommission.isPending
                   ? "Збереження..."
                   : "Зберегти"}
               </Button>
@@ -1543,7 +1685,10 @@ export default function StaffDetail() {
             <div className="mt-4 space-y-2">
               <div className="text-sm font-medium">Виплати за дату</div>
               <div className="space-y-2">
-                {payoutsForSelectedDate.map((payout) => (
+                {payoutsForSelectedDate.map((payout) => {
+                  const salTxId = salaryTxByPayoutId.get(payout.id);
+                  const comm = salTxId ? commissionsMap.get(salTxId) : undefined;
+                  return (
                   <div
                     key={payout.id}
                     className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
@@ -1551,6 +1696,11 @@ export default function StaffDetail() {
                     <div className="min-w-0">
                       <div className="font-medium text-destructive">
                         {formatCurrency(payout.amount)}
+                        {comm && comm.amount > 0 && (
+                          <span className="text-muted-foreground font-normal ml-1">
+                            + {formatCurrency(comm.amount)} комісія
+                          </span>
+                        )}
                       </div>
                       {payout.notes && (
                         <div className="text-xs text-muted-foreground break-words">
@@ -1565,11 +1715,14 @@ export default function StaffDetail() {
                         variant="outline"
                         onClick={() => {
                           setEditingPayoutId(payout.id);
+                          const salTxId = salaryTxByPayoutId.get(payout.id);
+                          const comm = salTxId ? commissionsMap.get(salTxId) : undefined;
                           reset({
                             amount: payout.amount,
                             payout_date: payout.payout_date,
                             notes: payout.notes || "",
                             account_id: payout.account_id || "",
+                            commission: comm?.amount ?? 0,
                           });
                         }}
                       >
@@ -1595,7 +1748,8 @@ export default function StaffDetail() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             </div>
           )}
@@ -1608,6 +1762,16 @@ export default function StaffDetail() {
         onSubmit={handleUpdateProfile}
         initialData={staff}
         isLoading={updateStaff.isPending}
+      />
+
+      <StaffOpeningBalanceDialog
+        open={balanceDialogOpen}
+        onOpenChange={setBalanceDialogOpen}
+        month={calendarMonth}
+        year={calendarYear}
+        editingBalance={editingBalance}
+        onSubmit={handleBalanceSubmit}
+        isLoading={createStaffBalance.isPending || updateStaffBalance.isPending}
       />
     </>
   );

@@ -28,6 +28,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { isGardenAttendanceController, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { getGroupsForCategory, ACTIVITY_GROUP_LABELS, DEFAULT_ACTIVITY_GROUP } from '@/lib/activityGroups';
+import { formatLocalDate } from '@/lib/attendance';
 
 const CATEGORY_OPTIONS: { value: ActivityCategory; label: string }[] = [
   { value: 'income', label: 'Дохід' },
@@ -74,7 +75,7 @@ interface ActivityFormProps {
 
 export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoading }: ActivityFormProps) {
   const [billingRules, setBillingRules] = useState<BillingRules | null>(null);
-  const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [effectiveFrom, setEffectiveFrom] = useState<string>(formatLocalDate(new Date()));
   const [config, setConfig] = useState<GardenAttendanceConfig>({});
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
@@ -107,7 +108,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
         show_in_children: true,
         show_in_journals: true,
         billing_rules: null,
-        effective_from: new Date().toISOString().split('T')[0],
+        effective_from: formatLocalDate(new Date()),
         is_actual_expense: false,
       },
   });
@@ -115,7 +116,7 @@ export function ActivityForm({ open, onOpenChange, onSubmit, initialData, isLoad
   // Reset form when initialData changes
   useEffect(() => {
     if (open) {
-      const defaultEffectiveFrom = new Date().toISOString().split('T')[0];
+      const defaultEffectiveFrom = formatLocalDate(new Date());
       setEffectiveFrom(defaultEffectiveFrom);
       setBillingRules(initialData?.billing_rules || null);
       const initialConfig = (initialData?.config as GardenAttendanceConfig) || {};

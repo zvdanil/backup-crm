@@ -1,6 +1,6 @@
 import type { Activity, ActivityPriceHistory, BillingRules } from '@/hooks/useActivities';
 import { getBillingRulesForDate } from '@/hooks/useActivities';
-import { formatCurrency } from './attendance';
+import { formatCurrency, formatLocalDate } from './attendance';
 import { getWorkingDaysInMonth } from './attendance';
 
 /**
@@ -12,7 +12,7 @@ export function getActivityDisplayPrice(
   priceHistory: ActivityPriceHistory[] | undefined,
   customPrice: number | null = null,
   discountPercent: number = 0,
-  date: string = new Date().toISOString().split('T')[0]
+  date: string = formatLocalDate(new Date())
 ): string | null {
   if (!activity) return null;
 
@@ -69,7 +69,7 @@ export function getActivityPriceValue(
   activity: Activity | null | undefined,
   priceHistory: ActivityPriceHistory[] | undefined,
   customPrice: number | null = null,
-  date: string = new Date().toISOString().split('T')[0]
+  date: string = formatLocalDate(new Date())
 ): number | null {
   if (!activity) return null;
 

@@ -9,7 +9,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { useActivity, useActivities, useCreateActivity } from '@/hooks/useActivities';
+import { useActivity } from '@/hooks/useActivities';
+import { useCommissionEntry, useCommissionsForSalaryTransactions } from '@/hooks/useCommissionEntry';
 import { useFinanceTransactions, useCreateFinanceTransaction, useUpdateFinanceTransaction, useDeleteFinanceTransaction, type TransactionType } from '@/hooks/useFinanceTransactions';
 import { useExpenseCategories, useCreateExpenseCategory } from '@/hooks/useExpenseCategories';
 import { useExpenseArticles, useCreateExpenseArticle, useUpdateExpenseArticle, useDeleteExpenseArticle } from '@/hooks/useExpenseArticles';
@@ -20,7 +21,7 @@ import { useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBill
 import { useDividendParticipants, useDividendSettings, useCreateDividendPayout, useUpdateDividendPayout, useDeleteDividendPayout } from '@/hooks/useDividendJournal';
 import { DividendPayoutFormDialog } from '@/components/dividend/DividendPayoutFormDialog';
 import { supabase } from '@/integrations/supabase/client';
-import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
+import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getMonthStartDate, getMonthEndDate, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -28,6 +29,8 @@ const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
   'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
 ];
+
+const EMPTY_ARRAY: never[] = [];
 
 const getTransactionTypeForCategory = (category: string | null): TransactionType => {
   if (category === 'salary') return 'salary';
@@ -66,8 +69,6 @@ export default function ActivityExpenseJournal() {
   const [dividendInitialValues, setDividendInitialValues] = useState<{ payout_date: string; total_amount: number; account_id: string | null } | null>(null);
 
   const { data: activity } = useActivity(id || '');
-  const { data: activities = [] } = useActivities();
-  const createActivity = useCreateActivity();
   const { data: dividendParticipants = [] } = useDividendParticipants();
   const { data: dividendSettings } = useDividendSettings();
   const queryClient = useQueryClient();
@@ -90,13 +91,15 @@ export default function ActivityExpenseJournal() {
   const createTransaction = useCreateFinanceTransaction();
   const updateTransaction = useUpdateFinanceTransaction();
   const deleteTransaction = useDeleteFinanceTransaction();
+  const syncCommission = useCommissionEntry();
   const updatePayout = useUpdateStaffPayout();
   const deletePayout = useDeleteStaffPayout();
   const { data: expenseArticles = [] } = useExpenseArticles(id);
   const createExpenseArticle = useCreateExpenseArticle();
   const updateExpenseArticle = useUpdateExpenseArticle();
   const deleteExpenseArticle = useDeleteExpenseArticle();
-  const { data: journalEntries = [] } = useExpenseJournalEntries(id, month, year);
+  const { data: journalEntriesData } = useExpenseJournalEntries(id, month, year);
+  const journalEntries = journalEntriesData ?? EMPTY_ARRAY;
   const upsertJournalEntry = useUpsertExpenseJournalEntry();
   const deleteJournalEntry = useDeleteExpenseJournalEntry();
 
@@ -112,22 +115,39 @@ export default function ActivityExpenseJournal() {
     type: transactionType,
   });
 
-  const { data: staffPayouts = [] } = useQuery({
+  const { data: staffPayoutsWithTxIdData } = useQuery({
     queryKey: ['staff-payouts-all', month, year],
     queryFn: async () => {
-      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
-      const { data, error } = await supabase
+      const startDate = getMonthStartDate(year, month);
+      const endDate = getMonthEndDate(year, month);
+      const { data: payouts, error } = await supabase
         .from('staff_payouts' as any)
         .select('id, staff_id, payout_date, amount, notes, account_id, dividend_payout_id')
         .or('is_deleted.is.null,is_deleted.eq.false')
         .gte('payout_date', startDate)
         .lte('payout_date', endDate);
       if (error) throw error;
-      return (data as any[]) || [];
+      const payoutIds = (payouts || []).map((p: any) => p.id);
+      const salaryTxMap = new Map<string, string>();
+      if (payoutIds.length > 0) {
+        const { data: txs, error: txErr } = await supabase
+          .from('finance_transactions')
+          .select('id, staff_payout_id')
+          .in('staff_payout_id', payoutIds);
+        if (!txErr && txs) {
+          txs.forEach((tx: any) => {
+            if (tx.staff_payout_id) salaryTxMap.set(tx.staff_payout_id, tx.id);
+          });
+        }
+      }
+      return ((payouts || []) as any[]).map((p) => ({
+        ...p,
+        salary_transaction_id: salaryTxMap.get(p.id) || null,
+      }));
     },
     enabled: isSalary,
   });
+  const staffPayoutsWithTxId = staffPayoutsWithTxIdData ?? EMPTY_ARRAY;
 
   const categoriesMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -137,20 +157,37 @@ export default function ActivityExpenseJournal() {
 
   const combinedTransactions = useMemo(() => {
     if (!isSalary) return transactions;
-    const payoutItems = staffPayouts.map((payout) => ({
+    const payoutItems = staffPayoutsWithTxId.map((payout) => ({
       id: `payout-${payout.id}`,
+      salary_transaction_id: payout.salary_transaction_id || undefined,
       activity_id: id,
       staff_id: payout.staff_id,
       expense_category_id: null,
       amount: payout.amount,
       date: payout.payout_date,
       description: payout.notes || 'Виплата із фін історії',
-      source: 'payout',
+      source: 'payout' as const,
       account_id: payout.account_id || null,
       dividend_payout_id: payout.dividend_payout_id || null,
     }));
-    return [...transactions, ...payoutItems];
-  }, [transactions, staffPayouts, isSalary, id]);
+    const txItems = transactions.map((t) => ({
+      ...t,
+      salary_transaction_id: t.id,
+    }));
+    return [...txItems, ...payoutItems];
+  }, [transactions, staffPayoutsWithTxId, isSalary, id]);
+
+  const salaryTxIds = useMemo(
+    () =>
+      isSalary
+        ? combinedTransactions
+            .map((t) => ('salary_transaction_id' in t ? t.salary_transaction_id : t.id))
+            .filter(Boolean) as string[]
+        : [],
+    [combinedTransactions, isSalary]
+  );
+  const { data: commissionsMap = new Map<string, { amount: number; id: string }>() } =
+    useCommissionsForSalaryTransactions(salaryTxIds);
 
   const filteredTransactions = useMemo(() => {
     return combinedTransactions.filter((t) => {
@@ -287,6 +324,7 @@ export default function ActivityExpenseJournal() {
       ? (selectedAccountId === 'none' ? (activity?.account_id || null) : selectedAccountId)
       : null;
 
+    let salaryTransactionId: string;
     if (editingId) {
       await updateTransaction.mutateAsync({
         id: editingId,
@@ -301,8 +339,9 @@ export default function ActivityExpenseJournal() {
         category: null,
         account_id: accountId,
       });
+      salaryTransactionId = editingId;
     } else {
-      await createTransaction.mutateAsync({
+      const created = await createTransaction.mutateAsync({
         type: transactionType,
         activity_id: id,
         staff_id: isSalary ? (staffId || null) : null,
@@ -314,50 +353,18 @@ export default function ActivityExpenseJournal() {
         category: null,
         account_id: accountId,
       });
+      salaryTransactionId = created.id;
     }
 
-    // Якщо вказана комісія для зарплати (тільки при додаванні) — створити запис у журналі «Комісії»
     const commissionAmount = parseFloat(commission || '0');
-    if (!editingId && isSalary && commissionAmount > 0) {
-      let commissionActivity = activities.find(
-        (a) => a.name === 'Комісії' && a.category === 'expense'
-      );
-      if (!commissionActivity) {
-        const created = await createActivity.mutateAsync({
-          name: 'Комісії',
-          category: 'expense',
-          color: '#EF4444',
-          is_actual_expense: true,
-          teacher_payment_percent: 50,
-          default_price: 0,
-          payment_type: 'subscription',
-          is_active: true,
-          show_in_children: true,
-          show_in_journals: true,
-          auto_journal: false,
-          activity_group: null,
-          balance_display_mode: null,
-          fixed_teacher_rate: null,
-          payment_mode: null,
-          billing_rules: null,
-          config: null,
-          account_id: null,
-          description: null,
-        });
-        commissionActivity = created;
-      }
-      const staffName = staffId ? staff.find((s) => s.id === staffId)?.full_name ?? 'невідомий' : 'невідомий';
-      await createTransaction.mutateAsync({
-        type: 'expense',
-        activity_id: commissionActivity!.id,
-        staff_id: null,
-        student_id: null,
-        expense_category_id: null,
+    const staffName = staffId ? staff.find((s) => s.id === staffId)?.full_name ?? 'невідомий' : 'невідомий';
+    if (isSalary) {
+      await syncCommission.mutateAsync({
+        salaryTransactionId,
         amount: commissionAmount,
         date,
-        description: `Комісія за ${staffName}`,
-        category: null,
-        account_id: accountId,
+        accountId,
+        staffName,
       });
     }
 
@@ -792,6 +799,7 @@ export default function ActivityExpenseJournal() {
                           <TableHead>Опис</TableHead>
                           {(isActualExpense || isSalary) && <TableHead className="w-[180px]">Рахунок</TableHead>}
                           <TableHead className="w-[120px] text-right">Сума</TableHead>
+                          {isSalary && <TableHead className="w-[100px] text-right">Комісія</TableHead>}
                           <TableHead className="w-[100px] text-center">Дії</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -885,6 +893,15 @@ export default function ActivityExpenseJournal() {
                                   {formatCurrency(t.amount || 0)}
                                 </div>
                               </TableCell>
+                              {isSalary && (
+                                <TableCell className="text-right text-sm text-muted-foreground">
+                                  {(() => {
+                                    const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
+                                    const comm = commissionsMap.get(salTxId || '');
+                                    return comm && comm.amount > 0 ? formatCurrency(comm.amount) : '—';
+                                  })()}
+                                </TableCell>
+                              )}
                               <TableCell>
                                 <div className="flex items-center justify-center gap-1 flex-wrap">
                                   {(isSalary || isActualExpense) && t.dividend_payout_id && (
@@ -936,6 +953,8 @@ export default function ActivityExpenseJournal() {
                                         onClick={() => {
                                           setEditingId(t.id);
                                           setAmount((t.amount || 0).toString());
+                                          const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
+                                          setCommission(commissionsMap.get(salTxId || '')?.amount?.toString() ?? '');
                                           setDate(t.date);
                                           setDescription(t.description || '');
                                           setStaffId(t.staff_id || '');
@@ -1095,8 +1114,8 @@ export default function ActivityExpenseJournal() {
             </div>
             <div className="flex justify-end gap-2 pt-2 flex-shrink-0 border-t pt-4 mt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Скасувати</Button>
-              <Button onClick={handleSubmit} disabled={createTransaction.isPending || updateTransaction.isPending || createActivity.isPending}>
-                {(createTransaction.isPending || updateTransaction.isPending || createActivity.isPending) ? 'Збереження...' : 'Зберегти'}
+              <Button onClick={handleSubmit} disabled={createTransaction.isPending || updateTransaction.isPending || syncCommission.isPending}>
+                {(createTransaction.isPending || updateTransaction.isPending || syncCommission.isPending) ? 'Збереження...' : 'Зберегти'}
               </Button>
             </div>
         </DialogContent>

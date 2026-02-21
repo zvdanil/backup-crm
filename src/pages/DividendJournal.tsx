@@ -16,7 +16,7 @@ import {
   type DividendPayout,
 } from "@/hooks/useDividendJournal";
 import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
-import { formatCurrency } from "@/lib/attendance";
+import { formatCurrency, formatLocalDate, getMonthStartDate } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -50,10 +50,10 @@ export default function DividendJournal() {
 
   const [periodMode, setPeriodMode] = useState<"all" | "period">("all");
   const [periodFrom, setPeriodFrom] = useState(() =>
-    new Date(new Date().getFullYear(), 0, 1).toISOString().split("T")[0]
+    getMonthStartDate(new Date().getFullYear(), 0)
   );
   const [periodTo, setPeriodTo] = useState(() =>
-    new Date().toISOString().split("T")[0]
+    formatLocalDate(new Date())
   );
 
   const filter: { mode: "all" } | { mode: "period"; from: string; to: string } =

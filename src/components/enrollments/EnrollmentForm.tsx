@@ -20,7 +20,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { useActivities, useActivityPriceHistory } from '@/hooks/useActivities';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
-import { formatCurrency } from '@/lib/attendance';
+import { formatCurrency, formatLocalDate } from '@/lib/attendance';
 import { getActivityDisplayPrice } from '@/lib/activityPrice';
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
@@ -45,7 +45,7 @@ interface SelectedActivity {
 // Component to display activity with current price from billing_rules/price_history
 function ActivityPriceDisplayItem({ activity }: { activity: any }) {
   const { data: priceHistory } = useActivityPriceHistory(activity.id);
-  const currentDate = new Date().toISOString().split('T')[0];
+  const currentDate = formatLocalDate(new Date());
   
   const displayPrice = useMemo(() => {
     return getActivityDisplayPrice(

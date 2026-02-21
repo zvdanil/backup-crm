@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 
 export interface ExpenseJournalEntry {
   id: string;
@@ -28,8 +29,8 @@ export function useExpenseJournalEntries(activityId: string | undefined, month: 
     queryKey: ['expense_journal_entries', activityId, month, year],
     queryFn: async () => {
       if (!activityId) return [];
-      const startDate = new Date(year, month, 1).toISOString().split('T')[0];
-      const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(year, month);
+      const endDate = getMonthEndDate(year, month);
       const { data, error } = await supabase
         .from('expense_journal_entries')
         .select('*')

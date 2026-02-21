@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/attendance";
+import { formatCurrency, formatLocalDate } from "@/lib/attendance";
 import type {
   DividendParticipant,
   DividendPayout,
@@ -77,7 +77,7 @@ export function DividendPayoutFormDialog({
 }: DividendPayoutFormDialogProps) {
   const [form, setForm] = useState<PayoutFormState>({
     participant_id: "",
-    payout_date: new Date().toISOString().split("T")[0],
+    payout_date: formatLocalDate(new Date()),
     type: "cash",
     total_amount: 0,
     cleaning_percent: defaultCleaning,
@@ -121,7 +121,7 @@ export function DividendPayoutFormDialog({
       } else {
         setForm({
           participant_id: participants[0]?.id ?? "",
-          payout_date: new Date().toISOString().split("T")[0],
+          payout_date: formatLocalDate(new Date()),
           type: "cash",
           total_amount: 0,
           cleaning_percent: defaultCleaning,

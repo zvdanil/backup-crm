@@ -144,27 +144,6 @@ export default function StaffExpenseJournal() {
     },
   });
 
-  // DIAGNOSTIC: Log journal entries received from server
-  React.useEffect(() => {
-    console.log('=== StaffExpenseJournal Diagnostic ===');
-    console.log('Month:', month, 'Year:', year);
-    console.log('Journal data received:', journalEntries);
-    console.log('Total entries:', journalEntries.length);
-    if (journalEntries.length > 0) {
-      console.log('Sample entry:', journalEntries[0]);
-      // Group by staff_id + date to show daily sums
-      const dailySums = new Map<string, number>();
-      journalEntries.forEach(entry => {
-        const key = `${entry.staff_id}-${entry.date}`;
-        dailySums.set(key, (dailySums.get(key) || 0) + (entry.amount || 0));
-      });
-      console.log('Daily sums (staff_id-date: amount):', Array.from(dailySums.entries()).slice(0, 10));
-    } else {
-      console.log('⚠️ WARNING: No journal entries found for this month/year!');
-    }
-    console.log('=====================================');
-  }, [journalEntries, month, year]);
-
   // Compute derived data using useMemo
   const eligibleStaffIds = useMemo(() => {
     const ids = new Set<string>();

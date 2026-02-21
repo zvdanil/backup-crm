@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { AccountOpeningBalance } from "@/hooks/useAccountOpeningBalances";
+import { getMonthStartDate } from "@/lib/attendance";
 
 const formSchema = z.object({
   account_id: z.string().min(1, "Оберіть рахунок"),
@@ -37,10 +38,6 @@ interface AccountOpeningBalanceDialogProps {
   editingBalance: AccountOpeningBalance | null;
   onSubmit: (data: { account_id: string; amount: number }) => Promise<void>;
   isLoading?: boolean;
-}
-
-function getMonthStartDate(year: number, month: number): string {
-  return new Date(year, month, 1).toISOString().split("T")[0];
 }
 
 export function AccountOpeningBalanceDialog({

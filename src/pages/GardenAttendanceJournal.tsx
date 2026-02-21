@@ -563,10 +563,30 @@ export default function GardenAttendanceJournal() {
         });
         accruals.forEach((_, staffId) => staffIds.add(staffId));
 
+        // 6b. Fetch manual overrides: skip updating auto entries where user has manual override
+        const manualOverrideKeys = new Set<string>();
+        if (staffIds.size > 0) {
+          const { data: manualEntries = [] } = await supabase
+            .from('staff_journal_entries')
+            .select('staff_id, activity_id, date')
+            .eq('is_manual_override', true)
+            .eq('activity_id', baseTariffActivityId)
+            .is('group_lesson_id', null)
+            .in('staff_id', Array.from(staffIds))
+            .gte('date', monthStart)
+            .lte('date', monthEnd);
+          manualEntries.forEach((e: { staff_id: string; activity_id: string; date: string }) => {
+            manualOverrideKeys.add(`${e.staff_id}|${e.activity_id}|${e.date}`);
+          });
+        }
+
         // 7. Create/update/delete staff journal entries
         const promises: Promise<any>[] = [];
         staffIds.forEach((staffId) => {
           dateStrings.forEach((date) => {
+            const key = `${staffId}|${baseTariffActivityId}|${date}`;
+            if (manualOverrideKeys.has(key)) return;
+
             const dayAccrual = accruals.get(staffId)?.get(date);
             if (dayAccrual && dayAccrual.amount > 0) {
               const staffMember = staffMap.get(staffId);
@@ -610,7 +630,10 @@ export default function GardenAttendanceJournal() {
     }
 
     // Invalidate staff journal entries cache
-    queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'] });
+    queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'], exact: false });
+    queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all'], exact: false });
+    queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-filtered'], exact: false });
+    queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all-cumulative'], exact: false });
     queryClient.invalidateQueries({ queryKey: ['staff-expenses'] });
   }, [
     controllerActivity,
@@ -809,7 +832,10 @@ export default function GardenAttendanceJournal() {
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
-      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'] }),
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all'], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-filtered'], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all-cumulative'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['staff-expenses'] }),
     ]);
     
@@ -972,43 +998,40 @@ export default function GardenAttendanceJournal() {
         <div className="mb-4 p-4 border rounded-lg bg-card">
           <Label className="mb-3 block font-medium">Фільтр по групах:</Label>
           <div className="flex flex-wrap gap-4">
-            <div className="flex items-center space-x-2">
+            <label className="flex items-center space-x-2 cursor-pointer font-normal">
               <Checkbox
-                id="filter-all"
                 checked={selectedGroups.has('all')}
                 onCheckedChange={() => handleGroupToggle('all')}
+                aria-label="Всі групи"
               />
-              <Label htmlFor="filter-all" className="cursor-pointer font-normal">
-                Всі групи
-              </Label>
-            </div>
+              <span>Всі групи</span>
+            </label>
             {representedGroups.map((group) => (
-              <div key={group.id} className="flex items-center space-x-2">
+              <label
+                key={group.id}
+                className="flex items-center space-x-2 cursor-pointer font-normal gap-2"
+              >
                 <Checkbox
-                  id={`filter-${group.id}`}
                   checked={selectedGroups.has(group.id)}
                   onCheckedChange={() => handleGroupToggle(group.id)}
+                  aria-label={group.name}
                 />
-                <Label htmlFor={`filter-${group.id}`} className="cursor-pointer font-normal flex items-center gap-2">
-                  <div 
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: group.color }}
-                  />
-                  {group.name}
-                </Label>
-              </div>
+                <div
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{ backgroundColor: group.color }}
+                />
+                <span>{group.name}</span>
+              </label>
             ))}
             {groupedEnrollments.noGroupEnrollments.length > 0 && (
-              <div className="flex items-center space-x-2">
+              <label className="flex items-center space-x-2 cursor-pointer font-normal">
                 <Checkbox
-                  id="filter-none"
                   checked={selectedGroups.has('none')}
                   onCheckedChange={() => handleGroupToggle('none')}
+                  aria-label="Без групи"
                 />
-                <Label htmlFor="filter-none" className="cursor-pointer font-normal">
-                  Без групи
-                </Label>
-              </div>
+                <span>Без групи</span>
+              </label>
             )}
           </div>
         </div>

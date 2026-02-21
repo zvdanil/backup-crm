@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 
 export interface GroupLessonSession {
   id: string;
@@ -27,8 +28,8 @@ export function useGroupLessonSessions(filters: { activityId?: string; month?: n
         return [];
       }
 
-      const startDate = new Date(filters.year, filters.month, 1).toISOString().split('T')[0];
-      const endDate = new Date(filters.year, filters.month + 1, 0).toISOString().split('T')[0];
+      const startDate = getMonthStartDate(filters.year, filters.month);
+      const endDate = getMonthEndDate(filters.year, filters.month);
 
       const { data, error } = await supabase
         .from('group_lesson_sessions')
@@ -82,7 +83,10 @@ export function useUpsertGroupLessonSession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group_lesson_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-filtered'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all-cumulative'], exact: false });
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });
@@ -105,7 +109,10 @@ export function useDeleteGroupLessonSession() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group_lesson_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-filtered'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all-cumulative'], exact: false });
     },
     onError: (error) => {
       toast({ title: 'Помилка', description: error.message, variant: 'destructive' });

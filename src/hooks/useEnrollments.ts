@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import { getMonthStartDate, getMonthEndDate, formatLocalDate } from '@/lib/attendance';
 import type { Student } from './useStudents';
 import type { Activity } from './useActivities';
 
@@ -206,8 +206,8 @@ export function useUpdateEnrollment() {
 
         if (priceActuallyChanged) {
           const effectiveFrom = enrollment.effective_from 
-            ? new Date(enrollment.effective_from).toISOString().split('T')[0]
-            : new Date().toISOString().split('T')[0]; // Текущая дата по умолчанию
+            ? formatLocalDate(new Date(enrollment.effective_from))
+            : formatLocalDate(new Date()); // Текущая дата по умолчанию
 
           // Закрываем предыдущую запись истории (устанавливаем effective_to)
           await supabase

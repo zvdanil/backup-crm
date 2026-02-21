@@ -71,6 +71,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 const MONTHS = [
   "Січень",
@@ -533,9 +534,29 @@ export function EnhancedAttendanceGrid({
 
       accruals.forEach((_, staffId) => staffIds.add(staffId));
 
+      // Fetch manual overrides: skip updating auto entries where user has manual override
+      const manualOverrideKeys = new Set<string>();
+      if (staffIds.size > 0) {
+        const { data: manualEntries = [] } = await supabase
+          .from("staff_journal_entries")
+          .select("staff_id, activity_id, date")
+          .eq("is_manual_override", true)
+          .eq("activity_id", activityId)
+          .is("group_lesson_id", null)
+          .in("staff_id", Array.from(staffIds))
+          .gte("date", monthStartDate)
+          .lte("date", monthEndDate);
+        manualEntries.forEach((e: { staff_id: string; activity_id: string; date: string }) => {
+          manualOverrideKeys.add(`${e.staff_id}|${e.activity_id}|${e.date}`);
+        });
+      }
+
       const promises: Promise<any>[] = [];
       staffIds.forEach((staffId) => {
         dateStrings.forEach((date) => {
+          const key = `${staffId}|${activityId}|${date}`;
+          if (manualOverrideKeys.has(key)) return;
+
           const dayAccrual = accruals.get(staffId)?.get(date);
           if (dayAccrual && dayAccrual.amount > 0) {
             const staffMember = staffMap.get(staffId);
@@ -1557,52 +1578,40 @@ export function EnhancedAttendanceGrid({
             </Button>
           </div>
           <div className="flex flex-wrap gap-4">
-            <div className="flex items-center space-x-2">
+            <label className="flex items-center space-x-2 cursor-pointer font-normal">
               <Checkbox
-                id="filter-all"
                 checked={selectedGroups.has("all")}
                 onCheckedChange={() => handleGroupToggle("all")}
+                aria-label="Всі групи"
               />
-              <Label
-                htmlFor="filter-all"
-                className="cursor-pointer font-normal"
-              >
-                Всі групи
-              </Label>
-            </div>
+              <span>Всі групи</span>
+            </label>
             {representedGroups.map((group) => (
-              <div key={group.id} className="flex items-center space-x-2">
+              <label
+                key={group.id}
+                className="flex items-center space-x-2 cursor-pointer font-normal gap-2"
+              >
                 <Checkbox
-                  id={`filter-${group.id}`}
                   checked={selectedGroups.has(group.id)}
                   onCheckedChange={() => handleGroupToggle(group.id)}
+                  aria-label={group.name}
                 />
-                <Label
-                  htmlFor={`filter-${group.id}`}
-                  className="cursor-pointer font-normal flex items-center gap-2"
-                >
-                  <div
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: group.color }}
-                  />
-                  {group.name}
-                </Label>
-              </div>
+                <div
+                  className="h-3 w-3 rounded-full shrink-0"
+                  style={{ backgroundColor: group.color }}
+                />
+                <span>{group.name}</span>
+              </label>
             ))}
             {groupedEnrollments.noGroupEnrollments.length > 0 && (
-              <div className="flex items-center space-x-2">
+              <label className="flex items-center space-x-2 cursor-pointer font-normal">
                 <Checkbox
-                  id="filter-none"
                   checked={selectedGroups.has("none")}
                   onCheckedChange={() => handleGroupToggle("none")}
+                  aria-label="Без групи"
                 />
-                <Label
-                  htmlFor="filter-none"
-                  className="cursor-pointer font-normal"
-                >
-                  Без групи
-                </Label>
-              </div>
+                <span>Без групи</span>
+              </label>
             )}
           </div>
         </div>
@@ -1667,49 +1676,40 @@ export function EnhancedAttendanceGrid({
           </Button>
         </div>
         <div className="flex flex-wrap gap-4">
-          <div className="flex items-center space-x-2">
+          <label className="flex items-center space-x-2 cursor-pointer font-normal">
             <Checkbox
-              id="filter-all"
               checked={selectedGroups.has("all")}
               onCheckedChange={() => handleGroupToggle("all")}
+              aria-label="Всі групи"
             />
-            <Label htmlFor="filter-all" className="cursor-pointer font-normal">
-              Всі групи
-            </Label>
-          </div>
+            <span>Всі групи</span>
+          </label>
           {representedGroups.map((group) => (
-            <div key={group.id} className="flex items-center space-x-2">
+            <label
+              key={group.id}
+              className="flex items-center space-x-2 cursor-pointer font-normal gap-2"
+            >
               <Checkbox
-                id={`filter-${group.id}`}
                 checked={selectedGroups.has(group.id)}
                 onCheckedChange={() => handleGroupToggle(group.id)}
+                aria-label={group.name}
               />
-              <Label
-                htmlFor={`filter-${group.id}`}
-                className="cursor-pointer font-normal flex items-center gap-2"
-              >
-                <div
-                  className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: group.color }}
-                />
-                {group.name}
-              </Label>
-            </div>
+              <div
+                className="h-3 w-3 rounded-full shrink-0"
+                style={{ backgroundColor: group.color }}
+              />
+              <span>{group.name}</span>
+            </label>
           ))}
           {groupedEnrollments.noGroupEnrollments.length > 0 && (
-            <div className="flex items-center space-x-2">
+            <label className="flex items-center space-x-2 cursor-pointer font-normal">
               <Checkbox
-                id="filter-none"
                 checked={selectedGroups.has("none")}
                 onCheckedChange={() => handleGroupToggle("none")}
+                aria-label="Без групи"
               />
-              <Label
-                htmlFor="filter-none"
-                className="cursor-pointer font-normal"
-              >
-                Без групи
-              </Label>
-            </div>
+              <span>Без групи</span>
+            </label>
           )}
         </div>
       </div>

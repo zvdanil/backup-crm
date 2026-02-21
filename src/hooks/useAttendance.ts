@@ -253,7 +253,10 @@ export function useSetAttendance() {
         }
       }
       
-      // Invalidate all related queries
+      // Invalidate all related queries.
+      // NOTE: Do NOT invalidate staff-journal-entries here — syncStaffJournalEntriesForMonth
+      // runs AFTER mutateAsync resolves, so we would trigger refetch with stale data.
+      // Staff journal invalidation happens in useUpsertStaffJournalEntry/useDeleteStaffJournalEntry onSuccess.
       console.log('[Dashboard Debug] Invalidating queries...');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['attendance'] }),
@@ -349,7 +352,9 @@ export function useDeleteAttendance() {
       }
     },
     onSuccess: async () => {
-      // Invalidate all related queries
+      // Invalidate all related queries.
+      // NOTE: Do NOT invalidate staff-journal-entries here — sync runs after this,
+      // so staff journal invalidation happens in sync's mutations onSuccess.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['attendance'] }),
         queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),

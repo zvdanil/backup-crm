@@ -4,13 +4,14 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useStaff } from '@/hooks/useStaff';
 import { useAllStaffPayouts, useCreateStaffPayout } from '@/hooks/useStaffBilling';
+import { useCommissionEntry } from '@/hooks/useCommissionEntry';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatCurrency, getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import { formatCurrency, formatLocalDate, getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +30,7 @@ const payoutSchema = z.object({
   payout_date: z.string().min(1, 'Оберіть дату'),
   notes: z.string().optional(),
   account_id: z.string().min(1, 'Оберіть рахунок списання'),
+  commission: z.number().min(0).optional(),
 });
 
 type PayoutFormData = z.infer<typeof payoutSchema>;
@@ -112,6 +114,7 @@ export default function StaffPayrollRegistry() {
     },
   });
   const createPayout = useCreateStaffPayout();
+  const syncCommission = useCommissionEntry();
   
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -120,9 +123,10 @@ export default function StaffPayrollRegistry() {
     resolver: zodResolver(payoutSchema),
     defaultValues: {
       amount: 0,
-      payout_date: new Date().toISOString().split('T')[0],
+      payout_date: formatLocalDate(new Date()),
       notes: '',
       account_id: '',
+      commission: 0,
     },
   });
 
@@ -175,13 +179,25 @@ export default function StaffPayrollRegistry() {
     if (!selectedStaffId) return;
     
     try {
-      await createPayout.mutateAsync({
+      const result = await createPayout.mutateAsync({
         staff_id: selectedStaffId,
         amount: data.amount,
         payout_date: data.payout_date,
         notes: data.notes || null,
         account_id: data.account_id || null,
       });
+      const salaryTransactionId = (result as { salaryTransactionId?: string })?.salaryTransactionId;
+      const commissionAmount = Number(data.commission ?? 0);
+      if (salaryTransactionId) {
+        const staffMember = staff.find((s) => s.id === selectedStaffId);
+        await syncCommission.mutateAsync({
+          salaryTransactionId,
+          amount: commissionAmount,
+          date: data.payout_date,
+          accountId: data.account_id || null,
+          staffName: staffMember?.full_name ?? 'невідомий',
+        });
+      }
       reset();
       setIsDialogOpen(false);
       setSelectedStaffId(null);
@@ -195,8 +211,10 @@ export default function StaffPayrollRegistry() {
     setIsDialogOpen(true);
     reset({
       amount: 0,
-      payout_date: new Date().toISOString().split('T')[0],
+      payout_date: formatLocalDate(new Date()),
       notes: '',
+      account_id: '',
+      commission: 0,
     });
   };
 
@@ -410,6 +428,18 @@ export default function StaffPayrollRegistry() {
                             </div>
                             
                             <div>
+                              <Label htmlFor="payout_commission">Комісія (₴)</Label>
+                              <Input
+                                id="payout_commission"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                {...register('commission', { valueAsNumber: true })}
+                                placeholder="Опціонально"
+                              />
+                            </div>
+                            
+                            <div>
                               <Label htmlFor="account_id">Рахунок списання *</Label>
                               <Select
                                 value={watch('account_id') || ''}
@@ -451,8 +481,8 @@ export default function StaffPayrollRegistry() {
                               >
                                 Скасувати
                               </Button>
-                              <Button type="submit" disabled={createPayout.isPending}>
-                                {createPayout.isPending ? 'Збереження...' : 'Зберегти'}
+                              <Button type="submit" disabled={createPayout.isPending || syncCommission.isPending}>
+                                {createPayout.isPending || syncCommission.isPending ? 'Збереження...' : 'Зберегти'}
                               </Button>
                             </div>
                           </form>

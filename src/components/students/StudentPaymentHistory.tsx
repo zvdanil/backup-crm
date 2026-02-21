@@ -3,7 +3,7 @@ import {
   useDeletePaymentTransaction,
   useUpdateFinanceTransaction,
 } from "@/hooks/useFinanceTransactions";
-import { formatCurrency, formatDate } from "@/lib/attendance";
+import { formatCurrency, formatDate, getMonthStartDate } from "@/lib/attendance";
 import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
 import {
   useAccountOpeningBalancesForMonth,
@@ -87,10 +87,6 @@ export function StudentPaymentHistory({
   const canEdit = role === "owner" || role === "admin" || role === "accountant";
   const canDelete = canEdit;
   const showBalanceSection = canEdit && month != null && year != null;
-
-  function getMonthStartDate(y: number, m: number): string {
-    return new Date(y, m, 1).toISOString().split("T")[0];
-  }
 
   const handleAddBalanceClick = () => {
     setEditingBalance(null);

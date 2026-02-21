@@ -24,6 +24,7 @@ import { useActivities } from '@/hooks/useActivities';
 import { useStaff } from '@/hooks/useStaff';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import type { FinanceTransactionInsert, TransactionType } from '@/hooks/useFinanceTransactions';
+import { formatLocalDate } from '@/lib/attendance';
 
 const transactionSchema = z.object({
   type: z.enum(['income', 'expense', 'payment', 'salary', 'household']),
@@ -76,7 +77,7 @@ export function TransactionForm({
       activity_id: '',
       staff_id: '',
       amount: '',
-      date: new Date().toISOString().split('T')[0],
+      date: formatLocalDate(new Date()),
       description: '',
       category: '',
     },
@@ -93,7 +94,7 @@ export function TransactionForm({
         staff_id: '',
         account_id: '',
         amount: '',
-        date: new Date().toISOString().split('T')[0],
+        date: formatLocalDate(new Date()),
         description: '',
         category: '',
       });

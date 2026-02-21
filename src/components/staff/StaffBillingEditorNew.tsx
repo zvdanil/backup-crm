@@ -14,6 +14,7 @@ import { Plus, Trash2, Calendar } from 'lucide-react';
 import { useActivities } from '@/hooks/useActivities';
 import { useGroupLessons } from '@/hooks/useGroupLessons';
 import type { StaffBillingRule } from '@/hooks/useStaffBilling';
+import { formatLocalDate } from '@/lib/attendance';
 
 type StaffBillingRuleInput = Omit<StaffBillingRule, 'id' | 'staff_id' | 'created_at' | 'updated_at'>;
 
@@ -54,7 +55,7 @@ export function StaffBillingEditorNew({
       penalty_trigger_percent: null,
       penalty_percent: null,
       extra_lesson_rate: null,
-      effective_from: effectiveFrom || new Date().toISOString().split('T')[0],
+      effective_from: effectiveFrom || formatLocalDate(new Date()),
       effective_to: null,
     };
     const updated = [...localRules, newRule];

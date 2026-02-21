@@ -12,6 +12,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Trash2, Calendar } from 'lucide-react';
 import type { StaffManualRateHistory } from '@/hooks/useStaffBilling';
+import { formatLocalDate } from '@/lib/attendance';
 import { useActivities } from '@/hooks/useActivities';
 
 type StaffManualRateHistoryInput = Omit<StaffManualRateHistory, 'id' | 'staff_id' | 'created_at' | 'updated_at'>;
@@ -41,7 +42,7 @@ export function StaffManualRateHistoryEditor({
       activity_id: null,
       manual_rate_type: 'per_session',
       manual_rate_value: 0,
-      effective_from: effectiveFrom || new Date().toISOString().split('T')[0],
+      effective_from: effectiveFrom || formatLocalDate(new Date()),
       effective_to: null,
     };
     const updated = [...localHistory, newEntry];

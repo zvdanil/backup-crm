@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { getMonthStartDate } from '@/lib/attendance';
 
 export interface AccountOpeningBalance {
   id: string;
@@ -22,10 +23,6 @@ export type AccountOpeningBalanceInsert = {
 export type AccountOpeningBalanceUpdate = {
   amount?: number;
 };
-
-function getMonthStartDate(year: number, month: number): string {
-  return new Date(year, month, 1).toISOString().split('T')[0];
-}
 
 export function useAccountOpeningBalancesForMonth(studentId: string | null, month?: number, year?: number) {
   const balanceDate = month != null && year != null ? getMonthStartDate(year, month) : null;

@@ -21,6 +21,7 @@ import { applyDeductionsToAmount } from '@/lib/staffSalary';
 import { formatCurrency, formatDateString, getDaysInMonth, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR, filterDaysByPeriod, type PeriodFilter } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -127,7 +128,20 @@ export default function GroupLessonsJournal() {
     const staffIds = (lesson.staff || []).map((member) => member.id);
     if (staffIds.length === 0) return;
 
+    // Fetch manual overrides: skip staff who have manual entry for this date
+    const { data: manualEntries = [] } = await supabase
+      .from('staff_journal_entries')
+      .select('staff_id')
+      .eq('is_manual_override', true)
+      .eq('activity_id', activityId)
+      .eq('group_lesson_id', lessonId)
+      .eq('date', dateStr)
+      .in('staff_id', staffIds);
+    const staffIdsWithManual = new Set(manualEntries.map((e: { staff_id: string }) => e.staff_id));
+
     await Promise.all(staffIds.map(async (staffId) => {
+      if (staffIdsWithManual.has(staffId)) return;
+
       const staffRules = rules.filter((rule) => rule.staff_id === staffId);
       const rule = getStaffBillingRuleForDate(staffRules, dateStr, activityId, lessonId);
       if (!rule) {
@@ -167,7 +181,20 @@ export default function GroupLessonsJournal() {
     const lesson = groupLessons.find((item) => item.id === lessonId);
     if (!lesson || !activityId) return;
     const staffIds = (lesson.staff || []).map((member) => member.id);
+    if (staffIds.length === 0) return;
+
+    const { data: manualEntries = [] } = await supabase
+      .from('staff_journal_entries')
+      .select('staff_id')
+      .eq('is_manual_override', true)
+      .eq('activity_id', activityId)
+      .eq('group_lesson_id', lessonId)
+      .eq('date', dateStr)
+      .in('staff_id', staffIds);
+    const staffIdsWithManual = new Set(manualEntries.map((e: { staff_id: string }) => e.staff_id));
+
     await Promise.all(staffIds.map(async (staffId) => {
+      if (staffIdsWithManual.has(staffId)) return;
       await deleteStaffEntry.mutateAsync({
         staff_id: staffId,
         activity_id: activityId,

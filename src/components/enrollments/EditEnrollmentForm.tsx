@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
-import { formatCurrency } from '@/lib/attendance';
+import { formatCurrency, formatLocalDate } from '@/lib/attendance';
 
 const editEnrollmentSchema = z.object({
   custom_price: z.string().optional(),
@@ -69,7 +69,7 @@ export function EditEnrollmentForm({
       reset({
         custom_price: initialCustomPrice?.toString() || '',
         discount_percent: initialDiscount?.toString() || '0',
-        effective_from: initialEffectiveFrom || new Date().toISOString().split('T')[0],
+        effective_from: initialEffectiveFrom || formatLocalDate(new Date()),
         account_id: initialAccountId || 'none',
       });
     }

@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useCreateAccountTransfer } from '@/hooks/useAccountTransfers';
-import { formatCurrency } from '@/lib/attendance';
+import { formatCurrency, formatLocalDate } from '@/lib/attendance';
 
 const transferSchema = z.object({
   from_account_id: z.string().min(1, 'Оберіть рахунок-джерело'),
@@ -66,7 +66,7 @@ export function AccountTransferDialog({
       from_account_id: defaultFromAccountId || '',
       to_account_id: '',
       amount: 0,
-      transfer_date: new Date().toISOString().split('T')[0],
+      transfer_date: formatLocalDate(new Date()),
       description: '',
     },
   });
