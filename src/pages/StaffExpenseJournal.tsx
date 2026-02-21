@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Textarea } from '@/components/ui/textarea';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -40,6 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Combobox } from '@/components/ui/combobox';
+import { AddExpenseJournalDialog } from '@/components/expense/AddExpenseJournalDialog';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -63,6 +64,7 @@ export default function StaffExpenseJournal() {
   });
   // Фільтр для відображення типів рядків
   const [rowTypeFilter, setRowTypeFilter] = useState<string[]>(['auto', 'manual', 'payouts']);
+  const [addExpenseJournalDialogOpen, setAddExpenseJournalDialogOpen] = useState(false);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
 
@@ -990,9 +992,19 @@ export default function StaffExpenseJournal() {
       />
 
       <div className="p-8">
-        {expenseActivities.length > 0 && (
-          <div className="mb-4 rounded-xl border bg-card p-4">
-            <div className="text-sm font-medium mb-3">Журнали витрат по активностях</div>
+        <div className="mb-4 rounded-xl border bg-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium">Журнали витрат по активностях</div>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setAddExpenseJournalDialogOpen(true)}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              журнал витрат
+            </Button>
+          </div>
+          {expenseActivities.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {expenseActivities.map((activity) => (
                 <Button key={activity.id} variant="outline" size="sm" asChild>
@@ -1000,8 +1012,14 @@ export default function StaffExpenseJournal() {
                 </Button>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="text-sm text-muted-foreground">Немає журналів витрат</div>
+          )}
+        </div>
+        <AddExpenseJournalDialog
+          open={addExpenseJournalDialogOpen}
+          onOpenChange={setAddExpenseJournalDialogOpen}
+        />
         {/* Month navigation */}
         <div className="flex items-center justify-between mb-6 gap-4">
           <Button variant="outline" size="icon" onClick={handlePrevMonth}>

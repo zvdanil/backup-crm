@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { useActivity } from '@/hooks/useActivities';
+import { useActivity, useActivities, useCreateActivity } from '@/hooks/useActivities';
 import { useFinanceTransactions, useCreateFinanceTransaction, useUpdateFinanceTransaction, useDeleteFinanceTransaction, type TransactionType } from '@/hooks/useFinanceTransactions';
 import { useExpenseCategories, useCreateExpenseCategory } from '@/hooks/useExpenseCategories';
 import { useExpenseArticles, useCreateExpenseArticle, useUpdateExpenseArticle, useDeleteExpenseArticle } from '@/hooks/useExpenseArticles';
@@ -60,11 +60,14 @@ export default function ActivityExpenseJournal() {
   const [cellValues, setCellValues] = useState<Record<string, string>>({});
   const [cellAccountIds, setCellAccountIds] = useState<Record<string, string | null>>({});
   const [selectedAccountId, setSelectedAccountId] = useState<string>('none');
+  const [commission, setCommission] = useState('');
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false);
   const [dividendSource, setDividendSource] = useState<{ source: 'transaction' | 'payout'; id: string } | null>(null);
   const [dividendInitialValues, setDividendInitialValues] = useState<{ payout_date: string; total_amount: number; account_id: string | null } | null>(null);
 
   const { data: activity } = useActivity(id || '');
+  const { data: activities = [] } = useActivities();
+  const createActivity = useCreateActivity();
   const { data: dividendParticipants = [] } = useDividendParticipants();
   const { data: dividendSettings } = useDividendSettings();
   const queryClient = useQueryClient();
@@ -256,6 +259,7 @@ export default function ActivityExpenseJournal() {
 
   const resetForm = () => {
     setAmount('');
+    setCommission('');
     setDate(formatDateString(new Date()));
     setDescription('');
     setStaffId('');
@@ -307,6 +311,51 @@ export default function ActivityExpenseJournal() {
         amount: parseFloat(amount),
         date,
         description: description || null,
+        category: null,
+        account_id: accountId,
+      });
+    }
+
+    // Якщо вказана комісія для зарплати (тільки при додаванні) — створити запис у журналі «Комісії»
+    const commissionAmount = parseFloat(commission || '0');
+    if (!editingId && isSalary && commissionAmount > 0) {
+      let commissionActivity = activities.find(
+        (a) => a.name === 'Комісії' && a.category === 'expense'
+      );
+      if (!commissionActivity) {
+        const created = await createActivity.mutateAsync({
+          name: 'Комісії',
+          category: 'expense',
+          color: '#EF4444',
+          is_actual_expense: true,
+          teacher_payment_percent: 50,
+          default_price: 0,
+          payment_type: 'subscription',
+          is_active: true,
+          show_in_children: true,
+          show_in_journals: true,
+          auto_journal: false,
+          activity_group: null,
+          balance_display_mode: null,
+          fixed_teacher_rate: null,
+          payment_mode: null,
+          billing_rules: null,
+          config: null,
+          account_id: null,
+          description: null,
+        });
+        commissionActivity = created;
+      }
+      const staffName = staffId ? staff.find((s) => s.id === staffId)?.full_name ?? 'невідомий' : 'невідомий';
+      await createTransaction.mutateAsync({
+        type: 'expense',
+        activity_id: commissionActivity!.id,
+        staff_id: null,
+        student_id: null,
+        expense_category_id: null,
+        amount: commissionAmount,
+        date,
+        description: `Комісія за ${staffName}`,
         category: null,
         account_id: accountId,
       });
@@ -948,15 +997,28 @@ export default function ActivityExpenseJournal() {
           }
         }
       }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>{editingId ? 'Редагувати витрату' : 'Додати витрату'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto min-h-0 flex-1 pr-1 -mr-1">
             <div className="space-y-2">
               <Label>Сума (₴)</Label>
               <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
+            {isSalary && (
+              <div className="space-y-2">
+                <Label>Комісія (₴)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={commission}
+                  onChange={(e) => setCommission(e.target.value)}
+                  placeholder="Опціонально"
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Дата</Label>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -1030,13 +1092,13 @@ export default function ActivityExpenseJournal() {
                 </p>
               </div>
             )}
-            <div className="flex justify-end gap-2 pt-2">
+            </div>
+            <div className="flex justify-end gap-2 pt-2 flex-shrink-0 border-t pt-4 mt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Скасувати</Button>
-              <Button onClick={handleSubmit} disabled={createTransaction.isPending || updateTransaction.isPending}>
-                {(createTransaction.isPending || updateTransaction.isPending) ? 'Збереження...' : 'Зберегти'}
+              <Button onClick={handleSubmit} disabled={createTransaction.isPending || updateTransaction.isPending || createActivity.isPending}>
+                {(createTransaction.isPending || updateTransaction.isPending || createActivity.isPending) ? 'Збереження...' : 'Зберегти'}
               </Button>
             </div>
-          </div>
         </DialogContent>
       </Dialog>
 
