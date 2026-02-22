@@ -975,58 +975,40 @@ export default function StaffDetail() {
         }
       />
 
-      <div className="p-8">
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Staff Info */}
-          <div className="lg:col-span-1">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                      <User className="h-8 w-8 text-primary" />
-                    </div>
-                    <div>
-                      <CardTitle>{staff.full_name}</CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {staff.position}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setEditProfileOpen(true)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Статус
-                  </p>
-                  <Badge
-                    variant={staff.is_active ? "default" : "secondary"}
-                    className="mt-1"
-                  >
-                    {staff.is_active ? "Активний" : "Неактивний"}
-                  </Badge>
-                </div>
-                <Separator />
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Дата створення
-                  </p>
-                  <p className="mt-1 text-sm">{formatDate(staff.created_at)}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+      <div className="p-8 space-y-6">
+        {/* Staff Info - compact horizontal bar under header */}
+        <Card className="py-3">
+          <CardContent className="flex flex-wrap items-center gap-6 py-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                <User className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold">{staff.full_name}</h3>
+                <p className="text-sm text-muted-foreground">{staff.position}</p>
+              </div>
+            </div>
+            <Badge
+              variant={staff.is_active ? "default" : "secondary"}
+            >
+              {staff.is_active ? "Активний" : "Неактивний"}
+            </Badge>
+            <div className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Дата створення:</span> {formatDate(staff.created_at)}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setEditProfileOpen(true)}
+              className="ml-auto"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
 
-          {/* Financial Conditions */}
-          <div className="lg:col-span-2">
+        {/* Financial Conditions - full width */}
+        <div className="w-full">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1576,7 +1558,6 @@ export default function StaffDetail() {
               </Card>
             )}
           </div>
-        </div>
       </div>
 
       {/* Payout Dialog */}

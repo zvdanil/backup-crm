@@ -244,13 +244,16 @@ export function filterDaysByPeriod(
 
 /**
  * Format currency in Ukrainian hryvnia
+ * @param amount - number to format
+ * @param includeSymbol - if false, omits the ₴ symbol (default: true)
  */
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('uk-UA', {
+export function formatCurrency(amount: number, includeSymbol = true): string {
+  const formatted = new Intl.NumberFormat('uk-UA', {
     style: 'decimal',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount) + ' ₴';
+  }).format(amount);
+  return includeSymbol ? formatted + ' ₴' : formatted;
 }
 
 /**

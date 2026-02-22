@@ -661,7 +661,7 @@ export default function StaffExpenseJournal() {
             >
               {cellValue !== null ? (
                 <>
-                  <div>{formatCurrency(cellValue.amount)}</div>
+                  <div>{formatCurrency(cellValue.amount, false)}</div>
                   {cellValue.hours !== null && (
                     <div className="text-[10px] text-muted-foreground/80">
                       {cellValue.hours.toFixed(1)} год.
@@ -845,7 +845,7 @@ export default function StaffExpenseJournal() {
                         </p>
                         {manualValue && !isNaN(parseFloat(manualValue)) && (
                           <p className="text-xs font-medium text-primary mt-1">
-                            Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                            Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue, false)}
                           </p>
                         )}
                       </div>
@@ -886,11 +886,11 @@ export default function StaffExpenseJournal() {
                           className="mt-1"
                         />
                         <p className="text-xs text-muted-foreground mt-1">
-                          Ставка: {formatCurrency(rateValue)} / заняття
+                          Ставка: {formatCurrency(rateValue, false)} / заняття
                         </p>
                         {manualValue && !isNaN(parseFloat(manualValue)) && (
                           <p className="text-xs font-medium text-primary mt-1">
-                            Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue)}
+                            Нарахування: {formatCurrency(parseFloat(manualValue) * rateValue, false)}
                           </p>
                         )}
                       </div>
@@ -1175,7 +1175,7 @@ export default function StaffExpenseJournal() {
                             )}>
                               {cellValue !== null ? (
                                 <>
-                                  <div>{formatCurrency(cellValue.amount)}</div>
+                                  <div>{formatCurrency(cellValue.amount, false)}</div>
                                   {isHourly && cellValue.hours !== null && (
                                     <div className="text-[10px] text-muted-foreground/80">
                                       {cellValue.hours.toFixed(1)} год.
@@ -1227,7 +1227,7 @@ export default function StaffExpenseJournal() {
                                 isWeekend(day) && WEEKEND_BG_COLOR
                               )}
                             >
-                              {amount > 0 ? formatCurrency(amount) : '—'}
+                              {amount > 0 ? formatCurrency(amount, false) : '—'}
                             </td>
                           );
                         })}
