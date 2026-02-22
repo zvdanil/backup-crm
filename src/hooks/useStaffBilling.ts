@@ -621,7 +621,6 @@ export function useUpsertStaffJournalEntry() {
         queryKey: ["staff-journal-entries-all-cumulative"],
         exact: false,
       });
-      toast({ title: "Запис збережено" });
     },
     onError: (error: any) => {
       toast({
@@ -707,7 +706,6 @@ export function useDeleteStaffJournalEntry() {
         queryKey: ["staff-journal-entries-all-cumulative"],
         exact: false,
       });
-      toast({ title: "Запис видалено" });
     },
     onError: (error: any) => {
       toast({

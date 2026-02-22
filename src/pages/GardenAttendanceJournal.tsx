@@ -56,6 +56,7 @@ export default function GardenAttendanceJournal() {
   const [controllerActivityId, setControllerActivityId] = useState<string>('');
   const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [optimisticOverrides, setOptimisticOverrides] = useState<Map<string, { status: AttendanceStatus | null; amount: number }>>(new Map());
   const isMobile = useIsMobile();
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const totalsScrollRef = useRef<HTMLDivElement>(null);
@@ -277,6 +278,15 @@ export default function GardenAttendanceJournal() {
     return map;
   }, [attendanceData]);
 
+  // Merge server data with optimistic overrides for instant visual feedback
+  const attendanceMapWithOptimistic = useMemo(() => {
+    const merged = new Map(attendanceMap);
+    optimisticOverrides.forEach((val, key) => {
+      merged.set(key, { ...val, value: null });
+    });
+    return merged;
+  }, [attendanceMap, optimisticOverrides]);
+
   const dailyTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     days.forEach((day) => {
@@ -287,7 +297,7 @@ export default function GardenAttendanceJournal() {
       days.forEach((day) => {
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
-        const attendance = attendanceMap.get(key);
+        const attendance = attendanceMapWithOptimistic.get(key);
         if (attendance?.status === 'present') {
           totals[dateStr] = (totals[dateStr] || 0) + 1;
         }
@@ -295,7 +305,7 @@ export default function GardenAttendanceJournal() {
     });
 
     return totals;
-  }, [days, filteredEnrollments, attendanceMap]);
+  }, [days, filteredEnrollments, attendanceMapWithOptimistic]);
 
   const visibleGroupRows = useMemo(() => {
     const ids = new Set<string>();
@@ -341,7 +351,7 @@ export default function GardenAttendanceJournal() {
       days.forEach((day) => {
         const dateStr = formatDateString(day);
         const key = `${enrollment.id}-${dateStr}`;
-        const attendance = attendanceMap.get(key);
+        const attendance = attendanceMapWithOptimistic.get(key);
         if (attendance?.status === 'present') {
           totals[groupId][dateStr] = (totals[groupId][dateStr] || 0) + 1;
         }
@@ -349,7 +359,7 @@ export default function GardenAttendanceJournal() {
     });
 
     return totals;
-  }, [visibleGroupRows, filteredEnrollments, days, attendanceMap]);
+  }, [visibleGroupRows, filteredEnrollments, days, attendanceMapWithOptimistic]);
 
   const tableColGroup = useMemo(() => (
     <colgroup>
@@ -368,6 +378,12 @@ export default function GardenAttendanceJournal() {
     });
     return map;
   }, [staff]);
+
+  // Refs for debounced sync with queue
+  const DEBOUNCE_MS = 400;
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSyncRunningRef = useRef(false);
+  const pendingSyncRef = useRef(false);
 
   // Sync staff journal entries for all base tariff activities
   const syncStaffJournalEntriesForBaseTariffs = useCallback(async () => {
@@ -658,6 +674,53 @@ export default function GardenAttendanceJournal() {
     queryClient,
   ]);
 
+  // Debounced sync with queue: 200ms after last click; if sync running, run again when it completes
+  const scheduleDebouncedSync = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+
+    const runSync = async () => {
+      if (isSyncRunningRef.current) {
+        pendingSyncRef.current = true;
+        return;
+      }
+      isSyncRunningRef.current = true;
+      pendingSyncRef.current = false;
+
+      try {
+        await syncStaffJournalEntriesForBaseTariffs();
+      } finally {
+        isSyncRunningRef.current = false;
+        if (pendingSyncRef.current) {
+          pendingSyncRef.current = false;
+          runSync();
+        }
+      }
+    };
+
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      runSync();
+    }, DEBOUNCE_MS);
+  }, [syncStaffJournalEntriesForBaseTariffs]);
+
+  // Flush pending sync on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+        pendingSyncRef.current = true;
+        if (!isSyncRunningRef.current) {
+          pendingSyncRef.current = false;
+          syncStaffJournalEntriesForBaseTariffs();
+        }
+      }
+    };
+  }, [syncStaffJournalEntriesForBaseTariffs]);
+
   // Handle status change
   const handleStatusChange = useCallback(async (
     enrollmentId: string,
@@ -739,8 +802,8 @@ export default function GardenAttendanceJournal() {
         // Then delete attendance record
         await deleteAttendance.mutateAsync({ enrollmentId, date });
 
-        // Sync staff journal entries after deletion to remove corresponding entries
-        await syncStaffJournalEntriesForBaseTariffs();
+        // Sync staff journal entries after deletion (debounced, non-blocking)
+        scheduleDebouncedSync();
       } catch (error) {
         console.error('Error deleting attendance and transactions:', error);
       }
@@ -824,9 +887,9 @@ export default function GardenAttendanceJournal() {
           }
         }
 
-        // Sync staff journal entries for all base tariff activities
+        // Sync staff journal entries for all base tariff activities (debounced, non-blocking)
         // This must be called after attendance and finance_transactions are created/updated
-        await syncStaffJournalEntriesForBaseTariffs();
+        scheduleDebouncedSync();
       } catch (error) {
         console.error('Error setting attendance:', error);
         throw error; // Пробрасываем ошибку, чтобы не продолжать выполнение
@@ -855,8 +918,29 @@ export default function GardenAttendanceJournal() {
       exact: false,
       type: 'all', // Перезапрашиваем все, включая неактивные
     });
-  }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient, syncStaffJournalEntriesForBaseTariffs]);
+  }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient, scheduleDebouncedSync]);
 
+  // Wrapper for instant optimistic UI: update display immediately, run mutations in background
+  const handleCellChange = useCallback((
+    enrollmentId: string,
+    studentId: string,
+    date: string,
+  ) => (status: AttendanceStatus | null, _value: number | null) => {
+    const key = `${enrollmentId}-${date}`;
+    const amount = 0;
+    setOptimisticOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(key, { status, amount }); // Explicit null to show "cleared" before server confirms
+      return next;
+    });
+    handleStatusChange(enrollmentId, studentId, date, status, null).finally(() => {
+      setOptimisticOverrides((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    });
+  }, [handleStatusChange]);
 
   const handlePrevMonth = () => {
     if (month === 0) {
@@ -1096,7 +1180,7 @@ export default function GardenAttendanceJournal() {
                 <div className="divide-y">
                   {groupEnrollments.map((enrollment) => {
                     const key = `${enrollment.id}-${selectedDateStr}`;
-                    const attendance = attendanceMap.get(key);
+                    const attendance = attendanceMapWithOptimistic.get(key);
                     return (
                       <div
                         key={enrollment.id}
@@ -1122,13 +1206,7 @@ export default function GardenAttendanceJournal() {
                             amount={attendance?.amount || null}
                             value={attendance?.value || null}
                             isWeekend={selectedDay ? isWeekend(selectedDay) : false}
-                            onChange={(status, value) => handleStatusChange(
-                              enrollment.id,
-                              enrollment.student_id,
-                              selectedDateStr,
-                              status,
-                              value
-                            )}
+                            onChange={handleCellChange(enrollment.id, enrollment.student_id, selectedDateStr)}
                           />
                         </div>
                       </div>
@@ -1145,7 +1223,7 @@ export default function GardenAttendanceJournal() {
               <div className="divide-y">
                 {groupedEnrollments.noGroupEnrollments.map((enrollment) => {
                   const key = `${enrollment.id}-${selectedDateStr}`;
-                  const attendance = attendanceMap.get(key);
+                  const attendance = attendanceMapWithOptimistic.get(key);
                   return (
                     <div
                       key={enrollment.id}
@@ -1171,13 +1249,7 @@ export default function GardenAttendanceJournal() {
                           amount={attendance?.amount || null}
                           value={attendance?.value || null}
                           isWeekend={selectedDay ? isWeekend(selectedDay) : false}
-                          onChange={(status, value) => handleStatusChange(
-                            enrollment.id,
-                            enrollment.student_id,
-                            selectedDateStr,
-                            status,
-                            value
-                          )}
+                          onChange={handleCellChange(enrollment.id, enrollment.student_id, selectedDateStr)}
                         />
                       </div>
                     </div>
@@ -1354,7 +1426,7 @@ export default function GardenAttendanceJournal() {
                             {days.map((day) => {
                               const dateStr = formatDateString(day);
                               const key = `${enrollment.id}-${dateStr}`;
-                              const attendance = attendanceMap.get(key);
+                              const attendance = attendanceMapWithOptimistic.get(key);
                               
                               return (
                                 <td
@@ -1369,13 +1441,7 @@ export default function GardenAttendanceJournal() {
                                     amount={attendance?.amount || null}
                                     value={attendance?.value || null}
                                     isWeekend={isWeekend(day)}
-                                    onChange={(status, value) => handleStatusChange(
-                                      enrollment.id,
-                                      enrollment.student_id,
-                                      dateStr,
-                                      status,
-                                      value
-                                    )}
+                                    onChange={handleCellChange(enrollment.id, enrollment.student_id, dateStr)}
                                   />
                                 </td>
                               );
@@ -1421,7 +1487,7 @@ export default function GardenAttendanceJournal() {
                           {days.map((day) => {
                             const dateStr = formatDateString(day);
                             const key = `${enrollment.id}-${dateStr}`;
-                            const attendance = attendanceMap.get(key);
+                            const attendance = attendanceMapWithOptimistic.get(key);
                             
                             return (
                             <td
@@ -1436,13 +1502,7 @@ export default function GardenAttendanceJournal() {
                                   amount={attendance?.amount || null}
                                   value={attendance?.value || null}
                                   isWeekend={isWeekend(day)}
-                                  onChange={(status, value) => handleStatusChange(
-                                    enrollment.id,
-                                    enrollment.student_id,
-                                    dateStr,
-                                    status,
-                                    value
-                                  )}
+                                  onChange={handleCellChange(enrollment.id, enrollment.student_id, dateStr)}
                                 />
                               </td>
                             );

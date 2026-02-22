@@ -351,7 +351,6 @@ export function useDeleteFinanceTransaction() {
         queryKey: ["staff-payouts-all"],
         exact: false,
       });
-      toast({ title: "Транзакцію видалено" });
     },
     onError: (error) => {
       toast({
