@@ -1959,11 +1959,18 @@ export function EnhancedAttendanceGrid({
           <div className="sticky top-16 z-30 bg-card">
             <div
               ref={headerScrollRef}
-              className="overflow-x-auto border rounded-xl border-b-0"
+              className={periodFilter === "month" ? "overflow-x-auto" : "overflow-x-hidden"}
             >
               <table
-                className="border-collapse"
-                style={{ width: periodFilter === "month" ? "100%" : "auto" }}
+                className={cn(
+                  "border-collapse",
+                  periodFilter !== "month" && "table-fixed"
+                )}
+                style={
+                  periodFilter !== "month"
+                    ? { width: 200 + days.length * 40 + 120 }
+                    : { width: "100%" }
+                }
               >
                 {tableColGroup}
                 <thead>
@@ -2000,9 +2007,19 @@ export function EnhancedAttendanceGrid({
           {/* Таблиця з підсумками */}
           <div
             ref={totalsScrollRef}
-            className="overflow-x-auto border rounded-xl border-b-0"
+            className={periodFilter === "month" ? "overflow-x-auto" : "overflow-x-hidden"}
           >
-            <table className="w-full border-collapse">
+            <table
+              className={cn(
+                "w-full border-collapse",
+                periodFilter !== "month" && "table-fixed"
+              )}
+              style={
+                periodFilter !== "month"
+                  ? { width: 200 + days.length * 40 + 120 }
+                  : undefined
+              }
+            >
               {tableColGroup}
               <thead>
                 {/* Рядки підсумків під датами */}
@@ -2122,11 +2139,18 @@ export function EnhancedAttendanceGrid({
           {/* Тіло таблиці з даними учнів */}
           <div
             ref={bodyScrollRef}
-            className="overflow-x-auto border rounded-xl border-t-0"
+            className={periodFilter === "month" ? "overflow-x-auto" : "overflow-x-hidden"}
           >
             <table
-              className="border-collapse"
-              style={{ width: periodFilter === "month" ? "100%" : "auto" }}
+              className={cn(
+                "border-collapse",
+                periodFilter !== "month" && "table-fixed"
+              )}
+              style={
+                periodFilter !== "month"
+                  ? { width: 200 + days.length * 40 + 120 }
+                  : { width: "100%" }
+              }
             >
               {tableColGroup}
               <tbody>
