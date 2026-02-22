@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Banknote, Unlink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Banknote, Unlink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +53,9 @@ export default function ActivityExpenseJournal() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [filterCategoryId, setFilterCategoryId] = useState<string>('all');
   const [filterStaffId, setFilterStaffId] = useState<string>('all');
+  const [filterAccountId, setFilterAccountId] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'staff' | 'amount'>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
   const [articleDialogOpen, setArticleDialogOpen] = useState(false);
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
@@ -190,7 +193,7 @@ export default function ActivityExpenseJournal() {
     useCommissionsForSalaryTransactions(salaryTxIds);
 
   const filteredTransactions = useMemo(() => {
-    return combinedTransactions.filter((t) => {
+    let list = combinedTransactions.filter((t) => {
       const matchesCategory =
         filterCategoryId === 'all' ||
         (filterCategoryId === 'none' && !t.expense_category_id) ||
@@ -199,12 +202,32 @@ export default function ActivityExpenseJournal() {
         filterStaffId === 'all' ||
         (filterStaffId === 'none' && !t.staff_id) ||
         t.staff_id === filterStaffId;
+      const matchesAccount =
+        filterAccountId === 'all' ||
+        (filterAccountId === 'none' && !t.account_id) ||
+        t.account_id === filterAccountId;
       const matchesSearch =
         !search.trim() ||
         (t.description || '').toLowerCase().includes(search.trim().toLowerCase());
-      return matchesCategory && matchesStaff && matchesSearch;
+      return matchesCategory && matchesStaff && matchesAccount && matchesSearch;
     });
-  }, [combinedTransactions, filterCategoryId, filterStaffId, search]);
+    const cmp = sortDir === 'asc' ? 1 : -1;
+    list = [...list].sort((a, b) => {
+      if (sortBy === 'date') {
+        return cmp * (a.date.localeCompare(b.date) || 0);
+      }
+      if (sortBy === 'staff') {
+        const na = a.staff_id ? (staff.find((s) => s.id === a.staff_id)?.full_name || '') : '';
+        const nb = b.staff_id ? (staff.find((s) => s.id === b.staff_id)?.full_name || '') : '';
+        return cmp * na.localeCompare(nb, 'uk-UA');
+      }
+      if (sortBy === 'amount') {
+        return cmp * ((a.amount || 0) - (b.amount || 0));
+      }
+      return 0;
+    });
+    return list;
+  }, [combinedTransactions, filterCategoryId, filterStaffId, filterAccountId, search, sortBy, sortDir, staff]);
 
   const groupedByCategory = useMemo(() => {
     const groups = new Map<string, typeof combinedTransactions>();
@@ -761,6 +784,22 @@ export default function ActivityExpenseJournal() {
                   </SelectContent>
                 </Select>
               )}
+              {(isSalary || isActualExpense) && (
+                <Select value={filterAccountId} onValueChange={setFilterAccountId}>
+                  <SelectTrigger className="w-full md:w-[220px]">
+                    <SelectValue placeholder="Фільтр по рахунку" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Всі рахунки</SelectItem>
+                    <SelectItem value="none">Без рахунку</SelectItem>
+                    {accounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <Input
                 placeholder="Пошук за описом"
                 value={search}
@@ -794,11 +833,52 @@ export default function ActivityExpenseJournal() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[240px]">Дата</TableHead>
-                          {isSalary && <TableHead className="w-[180px]">Співробітник</TableHead>}
+                          <TableHead className="w-[240px]">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="-ml-2 h-8 font-semibold hover:bg-muted/50"
+                              onClick={() => {
+                                setSortBy('date');
+                                setSortDir((d) => (sortBy === 'date' ? (d === 'asc' ? 'desc' : 'asc') : 'desc'));
+                              }}
+                            >
+                              Дата
+                              {sortBy === 'date' ? (sortDir === 'asc' ? <ArrowUp className="ml-1 h-3.5 w-3.5" /> : <ArrowDown className="ml-1 h-3.5 w-3.5" />) : <ArrowUpDown className="ml-1 h-3.5 w-3.5 opacity-50" />}
+                            </Button>
+                          </TableHead>
+                          {isSalary && (
+                            <TableHead className="w-[180px]">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="-ml-2 h-8 font-semibold hover:bg-muted/50"
+                                onClick={() => {
+                                  setSortBy('staff');
+                                  setSortDir((d) => (sortBy === 'staff' ? (d === 'asc' ? 'desc' : 'asc') : 'asc'));
+                                }}
+                              >
+                                Співробітник
+                                {sortBy === 'staff' ? (sortDir === 'asc' ? <ArrowUp className="ml-1 h-3.5 w-3.5" /> : <ArrowDown className="ml-1 h-3.5 w-3.5" />) : <ArrowUpDown className="ml-1 h-3.5 w-3.5 opacity-50" />}
+                              </Button>
+                            </TableHead>
+                          )}
                           <TableHead>Опис</TableHead>
                           {(isActualExpense || isSalary) && <TableHead className="w-[180px]">Рахунок</TableHead>}
-                          <TableHead className="w-[120px] text-right">Сума</TableHead>
+                          <TableHead className="w-[120px]">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="-mr-2 ml-auto flex h-8 font-semibold hover:bg-muted/50"
+                              onClick={() => {
+                                setSortBy('amount');
+                                setSortDir((d) => (sortBy === 'amount' ? (d === 'asc' ? 'desc' : 'asc') : 'desc'));
+                              }}
+                            >
+                              Сума
+                              {sortBy === 'amount' ? (sortDir === 'asc' ? <ArrowUp className="ml-1 h-3.5 w-3.5" /> : <ArrowDown className="ml-1 h-3.5 w-3.5" />) : <ArrowUpDown className="ml-1 h-3.5 w-3.5 opacity-50" />}
+                            </Button>
+                          </TableHead>
                           {isSalary && <TableHead className="w-[100px] text-right">Комісія</TableHead>}
                           <TableHead className="w-[100px] text-center">Дії</TableHead>
                         </TableRow>

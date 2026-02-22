@@ -92,6 +92,13 @@ export default function AccountDetail() {
     return filtered;
   }, [transactions, typeFilter, monthFilter]);
 
+  const filteredTotal = useMemo(() => {
+    return filteredTransactions.reduce((sum, t) => {
+      const amt = Number(t.amount) || 0;
+      return sum + (t.type === 'income' || t.type === 'payment' ? amt : -Math.abs(amt));
+    }, 0);
+  }, [filteredTransactions]);
+
   // Генерируем список месяцев для фильтра
   const monthOptions = useMemo(() => {
     const months = new Set<string>();
@@ -448,6 +455,23 @@ export default function AccountDetail() {
                       </TableRow>
                     );
                   })}
+                  <TableRow className="bg-muted/50 font-semibold border-t-2">
+                    <TableCell colSpan={3} className="text-right">
+                      Разом
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span
+                        className={cn(
+                          'font-medium',
+                          filteredTotal >= 0 ? 'text-green-600' : 'text-red-600'
+                        )}
+                      >
+                        {filteredTotal >= 0 ? '+' : ''}
+                        {formatCurrency(filteredTotal)}
+                      </span>
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
                 </TableBody>
               </Table>
             )}

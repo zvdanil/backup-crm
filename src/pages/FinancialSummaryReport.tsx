@@ -33,6 +33,7 @@ export default function FinancialSummaryReport() {
   const [reportEndYear, setReportEndYear] = useState(now.getFullYear());
   const [reportEndMonth, setReportEndMonth] = useState(now.getMonth());
   const [reportAccountIds, setReportAccountIds] = useState<string[]>([]);
+  const [reportRequested, setReportRequested] = useState(false); // Не завантажувати автоматично при відкритті
 
   const { data: accounts = [] } = usePaymentAccounts();
 
@@ -67,6 +68,7 @@ export default function FinancialSummaryReport() {
   });
 
   const handleGenerateReport = () => {
+    setReportRequested(true);
     setReportStartYear(filterStartYear);
     setReportStartMonth(filterStartMonth);
     setReportEndYear(filterEndYear);
@@ -77,13 +79,11 @@ export default function FinancialSummaryReport() {
   const queryClient = useQueryClient();
 
   const handleRefreshReport = async () => {
-    // Инвалидируем кэш для принудительного обновления
-    // Используем exact: false чтобы инвалидировать все варианты запроса
+    setReportRequested(true);
     await queryClient.invalidateQueries({
       queryKey: ['financial-summary-report'],
       exact: false,
     });
-    // Принудительно обновляем данные с отменой предыдущего запроса
     await refetch({ cancelRefetch: true });
   };
 
@@ -260,7 +260,7 @@ export default function FinancialSummaryReport() {
                 className="w-full md:w-auto"
               >
                 <RefreshCw className={cn("mr-2 h-4 w-4", isLoading && "animate-spin")} />
-                {filtersChanged ? 'Сформувати звіт' : 'Оновити звіт'}
+                Сформувати звіт
               </Button>
               {filtersChanged && (
                 <p className="ml-4 text-sm text-muted-foreground">

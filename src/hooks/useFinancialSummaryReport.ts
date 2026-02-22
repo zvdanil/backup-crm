@@ -30,6 +30,7 @@ interface UseFinancialSummaryReportParams {
   endYear: number;
   endMonth: number; // 0-11
   accountIds?: string[]; // Фильтр по счетам, если пусто - все счета
+  enabled?: boolean; // false = не завантажувати автоматично при відкритті
 }
 
 const MONTHS_UA = [
@@ -43,9 +44,11 @@ export function useFinancialSummaryReport({
   endYear,
   endMonth,
   accountIds,
+  enabled = true,
 }: UseFinancialSummaryReportParams) {
   return useQuery({
     queryKey: ['financial-summary-report', startYear, startMonth, endYear, endMonth, accountIds],
+    enabled,
     queryFn: async (): Promise<MonthlyFinancialData[]> => {
       // Получаем все данные для расчета
       const [

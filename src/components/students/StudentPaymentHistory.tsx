@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { Wallet, Trash2, Pencil, Plus } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { DeleteTransactionDialog } from "./DeleteTransactionDialog";
 import {
@@ -191,7 +191,24 @@ export function StudentPaymentHistory({
     }
   };
 
-  const total = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const totalsByAccount = useMemo(() => {
+    const map = new Map<string | null, number>();
+    payments.forEach((p) => {
+      const key = p.account_id ?? null;
+      const current = map.get(key) ?? 0;
+      map.set(key, current + (p.amount || 0));
+    });
+    return Array.from(map.entries())
+      .map(([accountId, amount]) => ({
+        accountId,
+        accountName: accountId
+          ? accounts.find((a) => a.id === accountId)?.name ?? accountId
+          : 'Без рахунку',
+        amount,
+      }))
+      .filter((x) => x.amount !== 0)
+      .sort((a, b) => b.amount - a.amount);
+  }, [payments, accounts]);
 
   return (
     <div className="space-y-4">
@@ -407,13 +424,17 @@ export function StudentPaymentHistory({
       )}
 
       {payments.length > 0 && (
-        <div className="flex justify-end pt-2 border-t">
-          <div className="text-sm">
-            <span className="text-muted-foreground mr-2">Всього:</span>
-            <span className="font-semibold text-success">
-              +{formatCurrency(total)}
-            </span>
-          </div>
+        <div className="pt-2 border-t space-y-2">
+          {totalsByAccount.length > 0 && (
+            <div className="flex flex-col gap-1 text-sm">
+              {totalsByAccount.map(({ accountId, accountName, amount }) => (
+                <div key={accountId ?? 'none'}>
+                  <span className="text-muted-foreground">{accountName}:</span>{' '}
+                  <span className="font-medium text-success">+{formatCurrency(amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
         </>
