@@ -62,8 +62,9 @@ export default function GroupLessonsJournal() {
   const upsertStaffEntry = useUpsertStaffJournalEntry();
   const deleteStaffEntry = useDeleteStaffJournalEntry();
 
+  const now = new Date();
   const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, new Date(year, month)), [allDays, periodFilter, year, month]);
+  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
 
   const activityOptions = useMemo(() => {
     const allowed = activities.filter(
@@ -313,8 +314,15 @@ export default function GroupLessonsJournal() {
           </div>
         ) : (
           <div className="border rounded-xl">
-            <div className="overflow-x-auto">
-              <table className={cn("border-collapse table-fixed", periodFilter === 'month' ? 'w-full' : 'w-auto')} style={{ minWidth: '100%' }}>
+            <div className={periodFilter === 'month' ? 'overflow-x-auto' : 'overflow-x-hidden'}>
+              <table
+                className={cn("border-collapse table-fixed", periodFilter === 'month' && 'w-full')}
+                style={
+                  periodFilter !== 'month'
+                    ? { width: 180 + days.length * 40 }
+                    : undefined
+                }
+              >
                 <colgroup>
                   <col style={{ width: '180px', minWidth: '180px' }} />
                   {days.map((day) => (
