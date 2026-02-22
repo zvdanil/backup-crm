@@ -234,6 +234,7 @@ export function useUpdateEnrollment() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
       queryClient.invalidateQueries({ queryKey: ['enrollment_price_history'] });
+      queryClient.invalidateQueries({ queryKey: ['student_account_balances'] });
       toast({ title: 'Запись обновлена' });
     },
     onError: (error) => {

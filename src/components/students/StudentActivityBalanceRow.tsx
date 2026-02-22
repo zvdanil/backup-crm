@@ -13,7 +13,7 @@ import {
 } from "@/hooks/useEnrollments";
 import { cn } from "@/lib/utils";
 import { useActivities } from "@/hooks/useActivities";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   isGardenAttendanceController,
   type GardenAttendanceConfig,
@@ -32,6 +32,8 @@ interface StudentActivityBalanceRowProps {
   year: number;
   /** Викликається з сумою нарахування для рядка (для підрахунку підсумку по групі) */
   onChargeCalculated?: (enrollmentId: string, charge: number) => void;
+  /** Зміна цього ключа примусово перезапускає звіт (після clear у батька) */
+  chargeResetKey?: number;
 }
 
 export function StudentActivityBalanceRow({
@@ -40,6 +42,7 @@ export function StudentActivityBalanceRow({
   month,
   year,
   onChargeCalculated,
+  chargeResetKey = 0,
 }: StudentActivityBalanceRowProps) {
   const { data: allActivities = [] } = useActivities();
   const { data: accounts = [] } = usePaymentAccounts();
@@ -239,13 +242,11 @@ export function StudentActivityBalanceRow({
   const displayRefundsForReport = isFoodActivity ? refunds : 0;
   const valueForGroupTotal = displayChargesForReport - displayRefundsForReport;
 
-  const onChargeCalculatedRef = useRef(onChargeCalculated);
-  onChargeCalculatedRef.current = onChargeCalculated;
   useEffect(() => {
-    const fn = onChargeCalculatedRef.current;
-    if (fn) fn(enrollment.id, valueForGroupTotal);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onChargeCalculated intentionally excluded to prevent infinite loop when parent passes inline callback
-  }, [enrollment.id, valueForGroupTotal]);
+    if (onChargeCalculated) {
+      onChargeCalculated(enrollment.id, valueForGroupTotal);
+    }
+  }, [onChargeCalculated, enrollment.id, valueForGroupTotal, chargeResetKey]);
 
   // Check if activities data is loaded (might be null for archived activities)
   if (!activities) {

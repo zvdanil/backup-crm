@@ -16,9 +16,51 @@ import {
   useEnrollmentPriceHistoryMap,
   enrollmentHistoryCoversMonth,
 } from "@/hooks/useEnrollments";
-import { useAccountOpeningBalancesCumulativeUpToMonth } from "@/hooks/useAccountOpeningBalances";
 import { ACTIVITY_GROUP_LABELS } from "@/lib/activityGroups";
 import type { ActivityGroup } from "@/hooks/useActivities";
+
+/** Обгортка з стабільним onChargeCalculated, щоб уникнути циклу re-render */
+function GroupEnrollmentRow({
+  studentId,
+  enrollment,
+  month,
+  year,
+  accountId,
+  groupKey,
+  reportCharge,
+  chargeResetKey,
+}: {
+  studentId: string;
+  enrollment: EnrollmentWithRelations;
+  month: number;
+  year: number;
+  accountId: string;
+  groupKey: ActivityGroup | "other";
+  reportCharge: (
+    accountId: string,
+    groupKey: ActivityGroup | "other",
+    enrollmentId: string,
+    charge: number
+  ) => void;
+  chargeResetKey: number;
+}) {
+  const onChargeCalculated = useCallback(
+    (enrollmentId: string, charge: number) => {
+      reportCharge(accountId, groupKey, enrollmentId, charge);
+    },
+    [accountId, groupKey, reportCharge]
+  );
+  return (
+    <StudentActivityBalanceRow
+      studentId={studentId}
+      enrollment={enrollment}
+      month={month}
+      year={year}
+      onChargeCalculated={onChargeCalculated}
+      chargeResetKey={chargeResetKey}
+    />
+  );
+}
 
 const MONTHS = [
   "Січень",
@@ -127,16 +169,6 @@ export function StudentAccountBalance({
     return map;
   }, [accountBalances]);
 
-  const { data: openingBalances = [] } = useAccountOpeningBalancesCumulativeUpToMonth(studentId, month, year);
-  const openingByAccountId = useMemo(() => {
-    const map = new Map<string, number>();
-    openingBalances.forEach((ob) => {
-      const id = ob.account_id || "none";
-      map.set(id, (map.get(id) ?? 0) + (ob.amount ?? 0));
-    });
-    return map;
-  }, [openingBalances]);
-
   const accountGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -179,9 +211,11 @@ export function StudentAccountBalance({
   const [chargesByGroup, setChargesByGroup] = useState<
     Record<string, Record<string, number>>
   >({});
+  const [chargeResetKey, setChargeResetKey] = useState(0);
 
   useEffect(() => {
     setChargesByGroup({});
+    setChargeResetKey((k) => k + 1);
   }, [month, year, balanceEnrollments]);
 
   const reportCharge = useCallback(
@@ -248,17 +282,17 @@ export function StudentAccountBalance({
           <div className="space-y-4">
             {accountGroups.map((group) => {
               const accountBalance = accountBalanceMap.get(group.id);
-              const basePreviousBalance = accountBalance?.previous_balance ?? 0;
-              const openingForAccount = openingByAccountId.get(group.id) ?? 0;
-              const displayPreviousBalance = basePreviousBalance + openingForAccount;
-              const charges = accountBalance?.charges || 0;
-              // «Нараховано на початок» — тільки subscription_charges (тарифи), НЕ charges (income)
+              // previous_balance і balance з API вже враховують opening (тільки в місяці внесення)
+              const prev = accountBalance?.previous_balance ?? 0;
+              const curr = accountBalance?.balance ?? 0;
+              const displayPreviousBalance = prev;
+              const endBalance = prev + curr;
               const subscriptionCharges = accountBalance?.subscription_charges ?? 0;
+              const charges = accountBalance?.charges || 0;
               const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
-              const endBalance = displayPreviousBalance + payments - charges + refunds;
               const startLabel =
-                displayPreviousBalance < 0
+              displayPreviousBalance < 0
                   ? "Борг на початок"
                   : displayPreviousBalance > 0
                     ? "Переплата на початок місяця"
@@ -346,6 +380,7 @@ export function StudentAccountBalance({
                       const groupKeys: (ActivityGroup | "other")[] = [
                         "kindergarten",
                         "additional_classes",
+                        "one_time_payments",
                         "other",
                       ];
                       const byGroup = new Map<ActivityGroup | "other", EnrollmentWithRelations[]>();
@@ -354,7 +389,9 @@ export function StudentAccountBalance({
                         const activity = allActivities.find((a) => a.id === enrollment.activity_id);
                         const ag = activity?.activity_group;
                         const key: ActivityGroup | "other" =
-                          ag === "kindergarten" || ag === "additional_classes" ? ag : "other";
+                          ag === "kindergarten" || ag === "additional_classes" || ag === "one_time_payments"
+                            ? ag
+                            : "other";
                         byGroup.get(key)!.push(enrollment);
                       });
                       return (
@@ -370,15 +407,16 @@ export function StudentAccountBalance({
                                 </div>
                                 <div className="space-y-3 pl-0">
                                   {groupEnrollments.map((enrollment) => (
-                                    <StudentActivityBalanceRow
+                                    <GroupEnrollmentRow
                                       key={enrollment.id}
                                       studentId={studentId}
                                       enrollment={enrollment}
                                       month={month}
                                       year={year}
-                                      onChargeCalculated={(enrollmentId, charge) =>
-                                        reportCharge(group.id, groupKey, enrollmentId, charge)
-                                      }
+                                      accountId={group.id}
+                                      groupKey={groupKey}
+                                      reportCharge={reportCharge}
+                                      chargeResetKey={chargeResetKey}
                                     />
                                   ))}
                                 </div>

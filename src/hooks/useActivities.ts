@@ -52,7 +52,7 @@ export interface BillingRules {
   custom_statuses?: CustomAttendanceStatus[]; // Максимум 2
 }
 
-export type ActivityGroup = 'kindergarten' | 'additional_classes';
+export type ActivityGroup = 'kindergarten' | 'additional_classes' | 'one_time_payments';
 
 export interface Activity {
   id: string;

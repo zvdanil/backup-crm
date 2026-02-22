@@ -44,7 +44,7 @@ const activitySchema = z.object({
   description: z.string().max(500).optional(),
   color: z.string(),
   category: z.enum(['income', 'expense', 'additional_income', 'household_expense', 'salary']),
-  activity_group: z.enum(['kindergarten', 'additional_classes']).optional().nullable(),
+  activity_group: z.enum(['kindergarten', 'additional_classes', 'one_time_payments']).optional().nullable(),
   account_id: z.string().optional(),
   balance_display_mode: z.enum(['subscription', 'recalculation', 'subscription_and_recalculation']).optional(),
   fixed_teacher_rate: z.string().optional(),
