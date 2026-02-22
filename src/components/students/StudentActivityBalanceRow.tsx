@@ -13,7 +13,7 @@ import {
 } from "@/hooks/useEnrollments";
 import { cn } from "@/lib/utils";
 import { useActivities } from "@/hooks/useActivities";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   isGardenAttendanceController,
   type GardenAttendanceConfig,
@@ -239,11 +239,13 @@ export function StudentActivityBalanceRow({
   const displayRefundsForReport = isFoodActivity ? refunds : 0;
   const valueForGroupTotal = displayChargesForReport - displayRefundsForReport;
 
+  const onChargeCalculatedRef = useRef(onChargeCalculated);
+  onChargeCalculatedRef.current = onChargeCalculated;
   useEffect(() => {
-    if (onChargeCalculated) {
-      onChargeCalculated(enrollment.id, valueForGroupTotal);
-    }
-  }, [onChargeCalculated, enrollment.id, valueForGroupTotal]);
+    const fn = onChargeCalculatedRef.current;
+    if (fn) fn(enrollment.id, valueForGroupTotal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onChargeCalculated intentionally excluded to prevent infinite loop when parent passes inline callback
+  }, [enrollment.id, valueForGroupTotal]);
 
   // Check if activities data is loaded (might be null for archived activities)
   if (!activities) {
@@ -313,29 +315,6 @@ export function StudentActivityBalanceRow({
   // Note: After deletion, monthlyCharges will be 0, so button will disappear
   const hasSubscriptionCharge =
     isMonthlyBilling && (monthlyCharges > 0 || !!incomeTransaction);
-
-  // Debug logging for "Прескул" activity
-  if (activities.name === "Прескул" || activities.name?.includes("Прескул")) {
-    console.log("[Прескул Debug]", {
-      activityName: activities.name,
-      isActive: enrollment.is_active,
-      isMonthlyBilling,
-      presentRuleType: presentRule?.type,
-      hasIncomeTransaction: !!incomeTransaction,
-      incomeTransaction: incomeTransaction,
-      incomeTransactionQueryLoading: incomeTransactionQuery.isLoading,
-      incomeTransactionQueryError: incomeTransactionQuery.error,
-      studentId,
-      activityId: enrollment.activity_id,
-      month,
-      year,
-      monthlyCharges,
-      baseMonthlyCharge,
-      hasSubscriptionCharge,
-      displayMode,
-      billingRules: activities.billing_rules,
-    });
-  }
 
   const handleDeleteClick = () => {
     // Allow deletion for subscription charges even if transaction doesn't exist
