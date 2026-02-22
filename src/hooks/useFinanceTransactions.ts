@@ -2230,39 +2230,55 @@ export async function fetchAllStudentsAccountBalancesForMonth({
   }, null as string | null);
   const startDate = earliestGlobal || getMonthStartDate(year, month);
 
-  const [transactions, attendance, openingBalancesAll] = await Promise.all([
-    fetchAllRows<any>((from, to) =>
-      supabaseAny
-        .from("finance_transactions")
-        .select("activity_id, type, amount, account_id, date, description, student_id")
-        .in("student_id", studentIds)
-        .not("student_id", "is", null)
-        .in("type", ["payment", "income", "expense"])
-        .gte("date", startDate)
-        .lte("date", endDate)
-        .range(from, to),
-    ),
-    enrollmentIds.length > 0
-      ? fetchAllRows<any>((from, to) =>
-          supabaseAny
-            .from("attendance")
-            .select("enrollment_id, charged_amount, date")
-            .in("enrollment_id", enrollmentIds)
-            .gte("date", startDate)
-            .lte("date", endDate)
-            .range(from, to),
-        )
-      : Promise.resolve([]),
-    (async () => {
-      const { data } = await supabaseAny
-        .from("account_opening_balances")
-        .select("balance_date, account_id, amount, student_id")
-        .in("student_id", studentIds)
-        .gte("balance_date", startDate)
-        .lte("balance_date", endDate);
-      return (data || []) as { balance_date: string; account_id: string; amount: number; student_id: string }[];
-    })(),
-  ]);
+  const [transactions, attendance, enrollmentPriceHistory, openingBalancesAll] =
+    await Promise.all([
+      fetchAllRows<any>((from, to) =>
+        supabaseAny
+          .from("finance_transactions")
+          .select("activity_id, type, amount, account_id, date, description, student_id")
+          .in("student_id", studentIds)
+          .not("student_id", "is", null)
+          .in("type", ["payment", "income", "expense"])
+          .gte("date", startDate)
+          .lte("date", endDate)
+          .range(from, to),
+      ),
+      enrollmentIds.length > 0
+        ? fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from("attendance")
+              .select("enrollment_id, charged_amount, date")
+              .in("enrollment_id", enrollmentIds)
+              .gte("date", startDate)
+              .lte("date", endDate)
+              .range(from, to),
+          )
+        : Promise.resolve([]),
+      enrollmentIds.length > 0
+        ? fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from("enrollment_price_history")
+              .select("*")
+              .in("enrollment_id", enrollmentIds)
+              .order("effective_from", { ascending: false })
+              .range(from, to),
+          )
+        : Promise.resolve([]),
+      (async () => {
+        const { data } = await supabaseAny
+          .from("account_opening_balances")
+          .select("balance_date, account_id, amount, student_id")
+          .in("student_id", studentIds)
+          .gte("balance_date", startDate)
+          .lte("balance_date", endDate);
+        return (data || []) as {
+          balance_date: string;
+          account_id: string;
+          amount: number;
+          student_id: string;
+        }[];
+      })(),
+    ]);
 
   const activityIds = [...new Set(allEnrollments.map((e: any) => e.activity_id))];
   let activityAccountMap: Record<string, string | null> = {};
@@ -2285,6 +2301,14 @@ export async function fetchAllStudentsAccountBalancesForMonth({
       };
     });
   }
+
+  const enrollmentPriceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
+  (enrollmentPriceHistory || []).forEach((ph: EnrollmentPriceHistory) => {
+    if (!enrollmentPriceHistoryMap.has(ph.enrollment_id)) {
+      enrollmentPriceHistoryMap.set(ph.enrollment_id, []);
+    }
+    enrollmentPriceHistoryMap.get(ph.enrollment_id)!.push(ph);
+  });
 
   const result = new Map<string, StudentAccountBalance[]>();
 
@@ -2321,6 +2345,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
         cumulative: false,
         excludeActivityIds,
         foodTariffIds,
+        enrollmentPriceHistoryMap,
         openingBalances: studentOpeningBalances,
       }),
       computeStudentAccountBalancesFromData({
@@ -2335,6 +2360,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
         cumulative: true,
         excludeActivityIds,
         foodTariffIds,
+        enrollmentPriceHistoryMap,
         openingBalances: studentOpeningBalances,
       }),
     ];

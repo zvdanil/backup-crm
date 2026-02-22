@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchStudentAccountBalances } from "@/hooks/useFinanceTransactions";
+import { fetchAllStudentsAccountBalancesForMonth } from "@/hooks/useFinanceTransactions";
 import {
   getGardenAttendanceConfig,
   isGardenAttendanceController,
@@ -64,17 +64,21 @@ export function useDebtorsRegistry(
       });
 
       const studentRows = (students || []) as StudentRow[];
-      const rows: DebtorRow[] = [];
+      const studentIds = studentRows.map((s) => s.id);
+      const studentNameMap = new Map(studentRows.map((s) => [s.id, s.full_name || s.id]));
 
-      for (const student of studentRows) {
-        const balances = await fetchStudentAccountBalances({
-          studentId: student.id,
-          month,
-          year,
-          excludeActivityIds: controllerActivityIds,
-          foodTariffIds: Array.from(foodTariffIds),
-        });
-        const studentName = student.full_name || student.id;
+      const balancesByStudent = await fetchAllStudentsAccountBalancesForMonth({
+        month,
+        year,
+        studentIds,
+        excludeActivityIds: controllerActivityIds,
+        foodTariffIds: Array.from(foodTariffIds),
+      });
+
+      const rows: DebtorRow[] = [];
+      for (const studentId of studentIds) {
+        const balances = balancesByStudent.get(studentId) || [];
+        const studentName = studentNameMap.get(studentId) || studentId;
         balances.forEach((balance) => {
           const previousBalance = balance.previous_balance || 0;
           const endBalance =
@@ -90,7 +94,7 @@ export function useDebtorsRegistry(
             : "Без рахунку";
 
           rows.push({
-            student_id: student.id,
+            student_id: studentId,
             student_name: studentName,
             account_id: balance.account_id,
             account_name: accountName,
