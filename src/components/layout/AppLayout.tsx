@@ -33,7 +33,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/context/AuthContext';
 import { canAccessSection } from '@/lib/permissions';
-import { ViewportFitScale } from '@/components/layout/ViewportFitScale';
 
 // Справочники (будут в выпадающем меню "Довідники")
 const referenceItems = [
@@ -87,10 +86,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isReferenceActive = () => {
     return refItems.some((item) => isActive(item.href));
   };
-
-  const isJournalPage = ['/attendance', '/group-lessons', '/garden-attendance'].some(
-    (path) => location.pathname === path || location.pathname.startsWith(path + '/')
-  );
 
   const NavLinks = () => (
     <>
@@ -236,15 +231,11 @@ export function AppLayout({ children }: AppLayoutProps) {
     </>
   );
 
+  // ViewportFitScale не використовуємо для журналів: overflow-hidden і transform
+  // ламають position:sticky для рядка з датами (залипання при вертикальному скролі)
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {isJournalPage ? (
-        <ViewportFitScale className="flex-1 min-h-0 flex flex-col">
-          {layoutContent}
-        </ViewportFitScale>
-      ) : (
-        layoutContent
-      )}
+      {layoutContent}
     </div>
   );
 }
