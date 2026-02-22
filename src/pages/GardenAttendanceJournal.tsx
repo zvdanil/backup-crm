@@ -1262,8 +1262,8 @@ export default function GardenAttendanceJournal() {
       ) : (
         <div className="space-y-3">
           <div ref={totalsScrollRef} className={periodFilter === 'month' ? 'overflow-x-auto border rounded-xl bg-card' : 'overflow-hidden border rounded-xl bg-card'}>
-            <div className="min-w-max">
-              <table className="w-full border-collapse">
+            <div className={periodFilter === 'month' ? 'min-w-max' : ''}>
+              <table className={cn("w-full border-collapse", periodFilter !== 'month' && "table-fixed")} style={periodFilter !== 'month' ? { width: 200 + days.length * 70 } : undefined}>
                 {tableColGroup}
                 <tbody>
                   <tr className="bg-muted/30 border-t-2 font-semibold">
@@ -1319,7 +1319,7 @@ export default function GardenAttendanceJournal() {
           <div className="sticky top-16 z-30 bg-card">
             <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
               <div className={periodFilter === 'month' ? 'min-w-max' : ''}>
-                <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
+                <table className={cn(periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse', periodFilter !== 'month' && 'table-fixed')} style={periodFilter !== 'month' ? { width: 200 + days.length * 70 } : undefined}>
                   {tableColGroup}
                   <thead>
                     <tr className="bg-muted/50">
@@ -1378,7 +1378,7 @@ export default function GardenAttendanceJournal() {
 
           <div ref={bodyScrollRef} className={periodFilter === 'month' ? 'overflow-x-auto border rounded-xl' : 'overflow-x-hidden border rounded-xl'}>
             <div className={periodFilter === 'month' ? 'min-w-max' : ''}>
-              <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
+              <table className={cn(periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse', periodFilter !== 'month' && 'table-fixed')} style={periodFilter !== 'month' ? { width: 200 + days.length * 70 } : undefined}>
                 {tableColGroup}
                 <tbody>
                   {/* Grouped enrollments */}
