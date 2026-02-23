@@ -98,17 +98,26 @@ export function StudentPaymentHistory({
     setBalanceDialogOpen(true);
   };
 
-  const handleBalanceSubmit = async (data: { account_id: string; amount: number }) => {
+  const handleBalanceSubmit = async (data: {
+    account_id: string;
+    amount: number;
+    notes?: string | null;
+  }) => {
     if (month == null || year == null) return;
     const balanceDate = getMonthStartDate(year, month);
     if (editingBalance) {
-      await updateBalance.mutateAsync({ id: editingBalance.id, amount: data.amount });
+      await updateBalance.mutateAsync({
+        id: editingBalance.id,
+        amount: data.amount,
+        notes: data.notes ?? null,
+      });
     } else {
       await createBalance.mutateAsync({
         student_id: studentId,
         account_id: data.account_id,
         balance_date: balanceDate,
         amount: data.amount,
+        notes: data.notes ?? null,
       });
     }
     setBalanceDialogOpen(false);
@@ -237,13 +246,14 @@ export function StudentPaymentHistory({
               <div
                 key={b.id}
                 className={cn(
-                  "inline-flex items-center gap-1 px-2 py-1 rounded",
+                  "inline-flex flex-col gap-0.5 px-2 py-1 rounded",
                   b.amount >= 0 ? "bg-muted" : "bg-destructive/10"
                 )}
               >
-                <span>
-                  {accountName}: {b.amount >= 0 ? "" : "−"} {formatCurrency(Math.abs(b.amount))}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span>
+                    {accountName}: {b.amount >= 0 ? "" : "−"} {formatCurrency(Math.abs(b.amount))}
+                  </span>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -260,6 +270,10 @@ export function StudentPaymentHistory({
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>
+                </div>
+                {b.notes && (
+                  <span className="text-xs text-muted-foreground">{b.notes}</span>
+                )}
               </div>
             );
           })}

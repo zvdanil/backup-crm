@@ -9,6 +9,7 @@ export interface AccountOpeningBalance {
   account_id: string;
   balance_date: string;
   amount: number;
+  notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -18,10 +19,12 @@ export type AccountOpeningBalanceInsert = {
   account_id: string;
   balance_date: string;
   amount: number;
+  notes?: string | null;
 };
 
 export type AccountOpeningBalanceUpdate = {
   amount?: number;
+  notes?: string | null;
 };
 
 export function useAccountOpeningBalancesForMonth(studentId: string | null, month?: number, year?: number) {

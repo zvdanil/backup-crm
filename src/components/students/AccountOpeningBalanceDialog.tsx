@@ -19,12 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import type { AccountOpeningBalance } from "@/hooks/useAccountOpeningBalances";
 import { getMonthStartDate } from "@/lib/attendance";
 
 const formSchema = z.object({
   account_id: z.string().min(1, "Оберіть рахунок"),
   amount: z.string().min(1, "Вкажіть суму"),
+  notes: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -36,7 +38,7 @@ interface AccountOpeningBalanceDialogProps {
   year: number;
   accounts: { id: string; name: string }[];
   editingBalance: AccountOpeningBalance | null;
-  onSubmit: (data: { account_id: string; amount: number }) => Promise<void>;
+  onSubmit: (data: { account_id: string; amount: number; notes?: string | null }) => Promise<void>;
   isLoading?: boolean;
 }
 
@@ -52,7 +54,7 @@ export function AccountOpeningBalanceDialog({
 }: AccountOpeningBalanceDialogProps) {
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<FormData>({
     resolver: zodResolver(formSchema),
-    defaultValues: { account_id: "", amount: "" },
+    defaultValues: { account_id: "", amount: "", notes: "" },
   });
 
   const balanceDate = getMonthStartDate(year, month);
@@ -63,9 +65,10 @@ export function AccountOpeningBalanceDialog({
         reset({
           account_id: editingBalance.account_id,
           amount: String(editingBalance.amount),
+          notes: editingBalance.notes ?? "",
         });
       } else {
-        reset({ account_id: "", amount: "" });
+        reset({ account_id: "", amount: "", notes: "" });
       }
     }
   }, [open, editingBalance, reset]);
@@ -74,6 +77,7 @@ export function AccountOpeningBalanceDialog({
     await onSubmit({
       account_id: data.account_id,
       amount: parseFloat(data.amount),
+      notes: data.notes?.trim() || null,
     });
     onOpenChange(false);
   };
@@ -130,6 +134,17 @@ export function AccountOpeningBalanceDialog({
             {errors.amount && (
               <p className="text-sm text-destructive">{errors.amount.message}</p>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="notes">Коментар</Label>
+            <Textarea
+              id="notes"
+              {...register("notes")}
+              placeholder="Примітка до залишку (опціонально)"
+              rows={2}
+              className="resize-none"
+            />
           </div>
 
           <div className="flex justify-end gap-3 pt-2 pb-2">
