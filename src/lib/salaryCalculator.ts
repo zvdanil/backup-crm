@@ -58,11 +58,15 @@ export function calculateMonthlyStaffAccruals(params: {
 }): Map<string, Map<string, DailyAccrual>> {
   const { attendanceRecords, getRuleForDate, monthStartDate, monthEndDate, fixedRules, customStatuses } = params;
 
-  // Фильтруем записи: 'present' ИЛИ кастомные статусы с use_for_salary: true
+  // Фильтруем записи: 'present', кастомные статусы с use_for_salary: true, или "Число" (status=null, value>0)
   const presentRecords = attendanceRecords.filter((record) => {
     if (record.status === 'present') return true;
-    if (!record.status || !customStatuses) return false;
-    // Проверяем кастомные статусы
+    // "Число" — статус null, но введено числовое значение
+    if (!record.status) {
+      const val = record.value ?? 0;
+      return val > 0;
+    }
+    if (!customStatuses) return false;
     const customStatus = customStatuses.find(
       (cs) => cs.id === record.status && cs.is_active !== false && cs.use_for_salary === true
     );

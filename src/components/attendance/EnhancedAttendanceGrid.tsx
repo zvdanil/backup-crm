@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { EnhancedAttendanceCell } from "./EnhancedAttendanceCell";
 import { useEnrollments, useCreateEnrollment } from "@/hooks/useEnrollments";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendance,
   useSetAttendance,
@@ -153,6 +154,11 @@ export function EnhancedAttendanceGrid({
       month,
       year,
     });
+  const queryClient = useQueryClient();
+  const attendanceFilters = useMemo(
+    () => ({ activityId, month, year }),
+    [activityId, month, year],
+  );
   const setAttendance = useSetAttendance();
   const deleteAttendance = useDeleteAttendance();
   const upsertStaffJournalEntry = useUpsertStaffJournalEntry();
@@ -438,18 +444,18 @@ export function EnhancedAttendanceGrid({
           const key = `${enrollment.id}-${dateStr}`;
           const attendance = map.get(key);
 
-          // Учитываем 'present' ИЛИ кастомные статусы с use_for_salary: true
-          if (
-            attendance?.status &&
-            isStatusForSalary(attendance.status) &&
-            studentId
-          ) {
+          // Учитываем: 'present', кастомные статусы с use_for_salary: true, или "Число" (status=null, value>0)
+          const hasValueForSalary =
+            (attendance?.status && isStatusForSalary(attendance.status)) ||
+            (!attendance?.status &&
+              ((attendance?.value ?? 0) > 0 || (attendance?.amount ?? 0) > 0));
+          if (hasValueForSalary && studentId) {
             records.push({
               date: dateStr,
               enrollment_id: enrollment.id,
               student_id: studentId,
               student_name: studentName,
-              status: attendance.status, // Сохраняем реальный статус (может быть 'present' или UUID)
+              status: attendance.status,
               value: attendance.value ?? attendance.amount ?? 0,
             });
           }
@@ -781,7 +787,7 @@ export function EnhancedAttendanceGrid({
         autoFillPromises.length,
         "attendance mutations",
       );
-      Promise.allSettled(autoFillPromises).then((results) => {
+      Promise.allSettled(autoFillPromises).then(async (results) => {
         const fulfilled = results.filter(
           (r) => r.status === "fulfilled",
         ).length;
@@ -797,7 +803,36 @@ export function EnhancedAttendanceGrid({
             results.filter((r) => r.status === "rejected"),
           );
         }
-        const optimisticRecords = buildAttendanceRecordsFromMap(optimisticMap);
+        // Refetch to avoid race: use fresh DB state for sync
+        await queryClient.refetchQueries({
+          queryKey: ["attendance", attendanceFilters],
+        });
+        const freshData =
+          (queryClient.getQueryData([
+            "attendance",
+            attendanceFilters,
+          ]) as any[]) || [];
+        const freshMap = new Map<
+          string,
+          {
+            status: AttendanceStatus | null;
+            amount: number;
+            value: number | null;
+            notes: string | null;
+            manual_value_edit: boolean;
+          }
+        >();
+        freshData.forEach((a: any) => {
+          const key = `${a.enrollment_id}-${a.date}`;
+          freshMap.set(key, {
+            status: a.status,
+            amount: a.charged_amount || 0,
+            value: a.value ?? null,
+            notes: a.notes ?? null,
+            manual_value_edit: a.manual_value_edit || false,
+          });
+        });
+        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
         syncStaffJournalEntriesForMonth(optimisticRecords).catch((error) => {
           console.error(
             "[Auto-journal] Failed to sync staff journal entries:",
@@ -821,6 +856,8 @@ export function EnhancedAttendanceGrid({
     activityId,
     buildAttendanceRecordsFromMap,
     syncStaffJournalEntriesForMonth,
+    queryClient,
+    attendanceFilters,
   ]);
 
   // Підсумки для кожного учня
@@ -1136,14 +1173,39 @@ export function EnhancedAttendanceGrid({
     ) {
       try {
         await deleteAttendance.mutateAsync({ enrollmentId, date });
+        await queryClient.refetchQueries({
+          queryKey: ["attendance", attendanceFilters],
+        });
+        const freshData =
+          (queryClient.getQueryData([
+            "attendance",
+            attendanceFilters,
+          ]) as any[]) || [];
+        const freshMap = new Map<
+          string,
+          {
+            status: AttendanceStatus | null;
+            amount: number;
+            value: number | null;
+            notes: string | null;
+            manual_value_edit: boolean;
+          }
+        >();
+        freshData.forEach((a: any) => {
+          const key = `${a.enrollment_id}-${a.date}`;
+          freshMap.set(key, {
+            status: a.status,
+            amount: a.charged_amount || 0,
+            value: a.value ?? null,
+            notes: a.notes ?? null,
+            manual_value_edit: a.manual_value_edit || false,
+          });
+        });
+        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
+        await syncStaffJournalEntriesForMonth(optimisticRecords);
       } catch (error) {
         console.error("Failed to delete attendance:", error);
       }
-
-      const updatedMap = new Map(attendanceMap);
-      updatedMap.delete(`${enrollmentId}-${date}`);
-      const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
-      await syncStaffJournalEntriesForMonth(optimisticRecords);
       return;
     }
 
@@ -1181,15 +1243,35 @@ export function EnhancedAttendanceGrid({
           notes: notes || null,
           manual_value_edit: isManualEdit,
         });
-        const updatedMap = new Map(attendanceMap);
-        updatedMap.set(`${enrollmentId}-${date}`, {
-          status: null,
-          amount: chargedAmount,
-          value: inputValue,
-          notes: notes || null,
-          manual_value_edit: isManualEdit,
+        await queryClient.refetchQueries({
+          queryKey: ["attendance", attendanceFilters],
         });
-        const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
+        const freshData =
+          (queryClient.getQueryData([
+            "attendance",
+            attendanceFilters,
+          ]) as any[]) || [];
+        const freshMap = new Map<
+          string,
+          {
+            status: AttendanceStatus | null;
+            amount: number;
+            value: number | null;
+            notes: string | null;
+            manual_value_edit: boolean;
+          }
+        >();
+        freshData.forEach((a: any) => {
+          const key = `${a.enrollment_id}-${a.date}`;
+          freshMap.set(key, {
+            status: a.status,
+            amount: a.charged_amount || 0,
+            value: a.value ?? null,
+            notes: a.notes ?? null,
+            manual_value_edit: a.manual_value_edit || false,
+          });
+        });
+        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
         await syncStaffJournalEntriesForMonth(optimisticRecords);
       } catch (error) {
         // Помилка вже обробляється в useSetAttendance
@@ -1331,15 +1413,37 @@ export function EnhancedAttendanceGrid({
           },
         );
 
-        const updatedMap = new Map(attendanceMap);
-        updatedMap.set(`${enrollmentId}-${date}`, {
-          status,
-          amount: chargedAmount,
-          value: finalValue,
-          notes: notes || null,
-          manual_value_edit: isManualEdit,
+        // Refetch attendance before sync to avoid race: at rapid clicks,
+        // attendanceMap can be stale; sync must use fresh DB state
+        await queryClient.refetchQueries({
+          queryKey: ["attendance", attendanceFilters],
         });
-        const optimisticRecords = buildAttendanceRecordsFromMap(updatedMap);
+        const freshData =
+          (queryClient.getQueryData([
+            "attendance",
+            attendanceFilters,
+          ]) as any[]) || [];
+        const freshMap = new Map<
+          string,
+          {
+            status: AttendanceStatus | null;
+            amount: number;
+            value: number | null;
+            notes: string | null;
+            manual_value_edit: boolean;
+          }
+        >();
+        freshData.forEach((a: any) => {
+          const key = `${a.enrollment_id}-${a.date}`;
+          freshMap.set(key, {
+            status: a.status,
+            amount: a.charged_amount || 0,
+            value: a.value ?? null,
+            notes: a.notes ?? null,
+            manual_value_edit: a.manual_value_edit || false,
+          });
+        });
+        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
         await syncStaffJournalEntriesForMonth(optimisticRecords);
       } catch (error) {
         // Помилка вже обробляється в useSetAttendance

@@ -92,11 +92,17 @@ export function calculateStaffSalary(input: SalaryCalculationInput): SalaryCalcu
       
       case 'per_session':
         // Fixed amount per session
-        // Проверяем: 'present' ИЛИ кастомный статус с use_for_salary: true
-        const isPresentForSalary = attendanceStatus === 'present' || 
-          (attendanceStatus && activityBillingRules?.custom_statuses?.some(
-            (cs) => cs.id === attendanceStatus && cs.is_active !== false && cs.use_for_salary === true
-          ));
+        // Проверяем: 'present', кастомный статус с use_for_salary: true, или "Число" (status=null, value>0)
+        const isPresentForSalary =
+          attendanceStatus === 'present' ||
+          (attendanceStatus &&
+            activityBillingRules?.custom_statuses?.some(
+              (cs) =>
+                cs.id === attendanceStatus &&
+                cs.is_active !== false &&
+                cs.use_for_salary === true
+            )) ||
+          (attendanceStatus === null && attendanceValue != null && attendanceValue > 0);
         if (isPresentForSalary) {
           baseAmount = staffBillingRule.rate;
         }
@@ -104,25 +110,32 @@ export function calculateStaffSalary(input: SalaryCalculationInput): SalaryCalcu
     }
   } 
   // Priority 2: Use activity billing_rules (глобальна ставка активності)
-  else if (activity && activityBillingRules && attendanceStatus) {
-    const calculatedValue = calculateValueFromBillingRules(
-      date,
-      attendanceStatus,
-      null,
-      null,
-      0,
-      activityBillingRules
-    );
-    
-    if (calculatedValue !== null) {
-      // Use activity's teacher_payment_percent or fixed_teacher_rate
-      if (activity.fixed_teacher_rate && activity.fixed_teacher_rate > 0) {
-        baseAmount = activity.fixed_teacher_rate;
-      } else if (activity.teacher_payment_percent && activity.teacher_payment_percent > 0) {
-        baseAmount = (calculatedValue * activity.teacher_payment_percent) / 100;
+  else if (activity && activityBillingRules) {
+    if (attendanceStatus) {
+      const calculatedValue = calculateValueFromBillingRules(
+        date,
+        attendanceStatus,
+        null,
+        null,
+        0,
+        activityBillingRules
+      );
+
+      if (calculatedValue !== null) {
+        if (activity.fixed_teacher_rate && activity.fixed_teacher_rate > 0) {
+          baseAmount = activity.fixed_teacher_rate;
+        } else if (activity.teacher_payment_percent && activity.teacher_payment_percent > 0) {
+          baseAmount = (calculatedValue * activity.teacher_payment_percent) / 100;
+        }
+      } else if (attendanceValue !== null && attendanceValue > 0) {
+        if (activity.fixed_teacher_rate && activity.fixed_teacher_rate > 0) {
+          baseAmount = activity.fixed_teacher_rate;
+        } else if (activity.teacher_payment_percent && activity.teacher_payment_percent > 0) {
+          baseAmount = (attendanceValue * activity.teacher_payment_percent) / 100;
+        }
       }
-    } else if (attendanceValue !== null && attendanceValue > 0) {
-      // Fallback to attendance value
+    } else if (attendanceValue != null && attendanceValue > 0) {
+      // "Число": status=null, введено число — используем attendanceValue
       if (activity.fixed_teacher_rate && activity.fixed_teacher_rate > 0) {
         baseAmount = activity.fixed_teacher_rate;
       } else if (activity.teacher_payment_percent && activity.teacher_payment_percent > 0) {

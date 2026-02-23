@@ -534,12 +534,19 @@ export default function GardenAttendanceJournal() {
           const studentId = baseTariffEnrollment.student_id;
           const studentName = baseTariffEnrollment.students?.full_name || att.enrollments?.students?.full_name || '';
 
-          // Проверяем: 'present' ИЛИ кастомный статус с use_for_salary: true
+          // Проверяем: 'present', кастомный статус с use_for_salary: true, или "Число" (status=null, value>0)
           const baseTariffActivity = activitiesMap.get(baseTariffActivityId);
-          const isPresentForSalary = att.status === 'present' || 
-            (att.status && baseTariffActivity?.billing_rules?.custom_statuses?.some(
-              (cs) => cs.id === att.status && cs.is_active !== false && cs.use_for_salary === true
-            ));
+          const isPresentForSalary =
+            att.status === 'present' ||
+            (att.status &&
+              baseTariffActivity?.billing_rules?.custom_statuses?.some(
+                (cs) =>
+                  cs.id === att.status &&
+                  cs.is_active !== false &&
+                  cs.use_for_salary === true
+              )) ||
+            (!att.status &&
+              ((att.value ?? 0) > 0 || (att.charged_amount ?? 0) > 0));
 
           if (isPresentForSalary && studentId) {
             attendanceRecords.push({
