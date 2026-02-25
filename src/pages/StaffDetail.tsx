@@ -109,8 +109,14 @@ import {
   type StaffOpeningBalance,
 } from "@/hooks/useStaffOpeningBalances";
 import { StaffOpeningBalanceDialog } from "@/components/staff/StaffOpeningBalanceDialog";
+import { PayrollPayoutDialog } from "@/components/staff/PayrollPayoutDialog";
+import {
+  resolvePayrollPayoutPrefill,
+  type ResolvedPayrollPayoutPrefill,
+} from "@/lib/payrollPayoutContract";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCommissionEntry, useCommissionsForSalaryTransactions } from "@/hooks/useCommissionEntry";
+import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 
@@ -157,6 +163,15 @@ export default function StaffDetail() {
   const [selectedPayoutDate, setSelectedPayoutDate] = useState<string | null>(
     null,
   );
+  const [payoutPrefill, setPayoutPrefill] =
+    useState<ResolvedPayrollPayoutPrefill>({
+      source: "financial-history",
+      staffId: id || undefined,
+      payoutDate: undefined,
+      accountId: undefined,
+      subcategoryId: null,
+      lockStaff: true,
+    });
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
   const [editingPayoutId, setEditingPayoutId] = useState<string | null>(null);
   const [balanceDialogOpen, setBalanceDialogOpen] = useState(false);
@@ -201,6 +216,13 @@ export default function StaffDetail() {
   const updateStaffBalance = useUpdateStaffOpeningBalance();
   const deleteStaffBalance = useDeleteStaffOpeningBalance();
   const { data: activities = [] } = useActivities();
+  const salaryActivity = useMemo(
+    () => activities.find((activity) => activity.category === "salary") || null,
+    [activities],
+  );
+  const { data: salaryExpenseCategories = [] } = useExpenseCategories(
+    salaryActivity?.id,
+  );
   const { data: allGroupLessons = [] } = useGroupLessons(); // Получаем все групповые занятия для получения названий
   const { data: accounts = [] } = usePaymentAccounts();
   const createPayout = useCreateStaffPayout();
@@ -231,11 +253,20 @@ export default function StaffDetail() {
   });
 
   const payoutSchema = z.object({
+    staff_id: z.string().min(1, "Оберіть співробітника"),
     amount: z.number().min(0.01, "Сума має бути більше 0"),
     payout_date: z.string().min(1, "Оберіть дату"),
     notes: z.string().optional(),
     account_id: z.string().min(1, "Оберіть рахунок"),
-    commission: z.number().min(0).optional(),
+    commission: z.preprocess(
+      (value) => {
+        if (value === "" || value === null || value === undefined) return 0;
+        const parsed = Number(value);
+        return Number.isNaN(parsed) ? 0 : parsed;
+      },
+      z.number().min(0),
+    ),
+    expense_category_id: z.string().optional(),
   });
 
   type PayoutFormData = z.infer<typeof payoutSchema>;
@@ -250,11 +281,13 @@ export default function StaffDetail() {
   } = useForm<PayoutFormData>({
     resolver: zodResolver(payoutSchema),
     defaultValues: {
+      staff_id: id || "",
       amount: 0,
       payout_date: formatLocalDate(new Date()),
       notes: "",
       account_id: "",
       commission: 0,
+      expense_category_id: "none",
     },
   });
 
@@ -263,6 +296,15 @@ export default function StaffDetail() {
       setDeductionsState((staff.deductions as Deduction[]) || []);
     }
   }, [staff]);
+
+  useEffect(() => {
+    setPayoutPrefill((prev) => ({
+      ...prev,
+      source: "financial-history",
+      staffId: id || undefined,
+      lockStaff: true,
+    }));
+  }, [id]);
 
   useEffect(() => {
     // Initialize with empty array for new rules
@@ -508,14 +550,22 @@ export default function StaffDetail() {
   };
 
   const handlePayoutCellClick = (date: string) => {
+    const prefill = resolvePayrollPayoutPrefill({
+      source: "financial-history",
+      staffId: id || undefined,
+      payoutDate: date,
+    });
+    setPayoutPrefill(prefill);
     setSelectedPayoutDate(date);
     setIsPayoutDialogOpen(true);
     setEditingPayoutId(null);
     reset({
+      staff_id: prefill.staffId || "",
       amount: 0,
-      payout_date: date,
+      payout_date: prefill.payoutDate || date,
       notes: "",
-      account_id: "",
+      account_id: prefill.accountId || "",
+      expense_category_id: prefill.subcategoryId || "none",
     });
   };
 
@@ -524,22 +574,29 @@ export default function StaffDetail() {
 
     try {
       let salaryTransactionId: string;
+      const selectedCategoryId =
+        data.expense_category_id && data.expense_category_id !== "none"
+          ? data.expense_category_id
+          : null;
       if (editingPayoutId) {
         await updatePayout.mutateAsync({
           id: editingPayoutId,
+          staff_id: data.staff_id,
           amount: data.amount,
           payout_date: data.payout_date,
           notes: data.notes || null,
           account_id: data.account_id,
+          expense_category_id: selectedCategoryId,
         });
         salaryTransactionId = salaryTxByPayoutId.get(editingPayoutId) || "";
       } else {
         const result = await createPayout.mutateAsync({
-          staff_id: id,
+          staff_id: data.staff_id,
           amount: data.amount,
           payout_date: data.payout_date,
           notes: data.notes || null,
           account_id: data.account_id,
+          expense_category_id: selectedCategoryId,
         });
         salaryTransactionId = (result as any).salaryTransactionId || "";
       }
@@ -1560,182 +1617,65 @@ export default function StaffDetail() {
           </div>
       </div>
 
-      {/* Payout Dialog */}
-      <Dialog open={isPayoutDialogOpen} onOpenChange={setIsPayoutDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Реєстрація виплати</DialogTitle>
-          </DialogHeader>
-          <form
-            onSubmit={handleSubmit(handlePayoutSubmit)}
-            className="space-y-4"
-          >
-            <div>
-              <Label htmlFor="payout_amount">Сума (₴)</Label>
-              <Input
-                id="payout_amount"
-                type="number"
-                step="0.01"
-                min="0.01"
-                {...register("amount", { valueAsNumber: true })}
-              />
-              {errors.amount && (
-                <p className="text-sm text-red-500 mt-1">
-                  {errors.amount.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="payout_date">Дата виплати</Label>
-              <Input
-                id="payout_date"
-                type="date"
-                {...register("payout_date")}
-              />
-              {errors.payout_date && (
-                <p className="text-sm text-red-500 mt-1">
-                  {errors.payout_date.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="payout_commission">Комісія (₴)</Label>
-              <Input
-                id="payout_commission"
-                type="number"
-                step="0.01"
-                min="0"
-                {...register("commission", { valueAsNumber: true })}
-                placeholder="Опціонально"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="payout_account">Рахунок списання</Label>
-              <Select
-                value={watch("account_id") || ""}
-                onValueChange={(value) => {
-                  setValue("account_id", value);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Оберіть рахунок" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((account) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.account_id && (
-                <p className="text-sm text-red-500 mt-1">
-                  {errors.account_id.message}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="payout_notes">Примітки (необов'язково)</Label>
-              <Textarea id="payout_notes" {...register("notes")} rows={3} />
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsPayoutDialogOpen(false);
-                  setSelectedPayoutDate(null);
-                  setEditingPayoutId(null);
-                }}
-              >
-                Скасувати
-              </Button>
-              <Button type="submit" disabled={createPayout.isPending || syncCommission.isPending}>
-                {createPayout.isPending || updatePayout.isPending || syncCommission.isPending
-                  ? "Збереження..."
-                  : "Зберегти"}
-              </Button>
-            </div>
-          </form>
-          {payoutsForSelectedDate.length > 0 && (
-            <div className="mt-4 space-y-2">
-              <div className="text-sm font-medium">Виплати за дату</div>
-              <div className="space-y-2">
-                {payoutsForSelectedDate.map((payout) => {
-                  const salTxId = salaryTxByPayoutId.get(payout.id);
-                  const comm = salTxId ? commissionsMap.get(salTxId) : undefined;
-                  return (
-                  <div
-                    key={payout.id}
-                    className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium text-destructive">
-                        {formatCurrency(payout.amount)}
-                        {comm && comm.amount > 0 && (
-                          <span className="text-muted-foreground font-normal ml-1">
-                            + {formatCurrency(comm.amount)} комісія
-                          </span>
-                        )}
-                      </div>
-                      {payout.notes && (
-                        <div className="text-xs text-muted-foreground break-words">
-                          {payout.notes}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setEditingPayoutId(payout.id);
-                          const salTxId = salaryTxByPayoutId.get(payout.id);
-                          const comm = salTxId ? commissionsMap.get(salTxId) : undefined;
-                          reset({
-                            amount: payout.amount,
-                            payout_date: payout.payout_date,
-                            notes: payout.notes || "",
-                            account_id: payout.account_id || "",
-                            commission: comm?.amount ?? 0,
-                          });
-                        }}
-                      >
-                        Редагувати
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        onClick={async () => {
-                          const note = window.prompt(
-                            "Причина видалення (обовʼязково):",
-                          );
-                          if (!note || !note.trim()) return;
-                          await deletePayout.mutateAsync({
-                            id: payout.id,
-                            staffId: staff?.id || "",
-                            deleteNote: note.trim(),
-                          });
-                        }}
-                      >
-                        Видалити
-                      </Button>
-                    </div>
-                  </div>
-                );
-                })}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <PayrollPayoutDialog
+        open={isPayoutDialogOpen}
+        onOpenChange={setIsPayoutDialogOpen}
+        onSubmit={handleSubmit(handlePayoutSubmit)}
+        register={register}
+        errors={errors}
+        watch={watch}
+        setValue={setValue}
+        accounts={accounts}
+        onCancel={() => {
+          setIsPayoutDialogOpen(false);
+          setSelectedPayoutDate(null);
+          setEditingPayoutId(null);
+        }}
+        isSaving={
+          createPayout.isPending ||
+          updatePayout.isPending ||
+          syncCommission.isPending
+        }
+        payoutsForSelectedDate={payoutsForSelectedDate}
+        salaryTxByPayoutId={salaryTxByPayoutId}
+        commissionsMap={commissionsMap}
+        formatCurrency={formatCurrency}
+        onEditPayout={(payout, commissionAmount) => {
+          setEditingPayoutId(payout.id);
+          reset({
+            staff_id: payout.staff_id || id || "",
+            amount: payout.amount,
+            payout_date: payout.payout_date,
+            notes: payout.notes || "",
+            account_id: payout.account_id || "",
+            commission: commissionAmount,
+            expense_category_id: "none",
+          });
+        }}
+        onDeletePayout={async (payout) => {
+          const note = window.prompt("Причина видалення (обовʼязково):");
+          if (!note || !note.trim()) return;
+          await deletePayout.mutateAsync({
+            id: payout.id,
+            staffId: staff?.id || "",
+            deleteNote: note.trim(),
+          });
+        }}
+        staffOptions={
+          staff ? [{ id: staff.id, name: staff.full_name || "—" }] : []
+        }
+        staffFieldValue={watch("staff_id") || ""}
+        onStaffFieldChange={(value) => setValue("staff_id", value)}
+        staffFieldDisabled={payoutPrefill.lockStaff}
+        subcategoryOptions={salaryExpenseCategories.map((category) => ({
+          id: category.id,
+          name: category.name,
+        }))}
+        subcategoryFieldValue={watch("expense_category_id") || "none"}
+        onSubcategoryFieldChange={(value) =>
+          setValue("expense_category_id", value)
+        }
+      />
 
       <StaffForm
         open={editProfileOpen}

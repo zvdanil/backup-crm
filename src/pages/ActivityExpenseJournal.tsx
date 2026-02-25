@@ -17,13 +17,15 @@ import { useExpenseArticles, useCreateExpenseArticle, useUpdateExpenseArticle, u
 import { useExpenseJournalEntries, useUpsertExpenseJournalEntry, useDeleteExpenseJournalEntry } from '@/hooks/useExpenseJournalEntries';
 import { useStaff } from '@/hooks/useStaff';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
-import { useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBilling';
+import { useCreateStaffPayout, useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBilling';
 import { useDividendParticipants, useDividendSettings, useCreateDividendPayout, useUpdateDividendPayout, useDeleteDividendPayout } from '@/hooks/useDividendJournal';
 import { DividendPayoutFormDialog } from '@/components/dividend/DividendPayoutFormDialog';
+import { PayrollPayoutDialog } from '@/components/staff/PayrollPayoutDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getMonthStartDate, getMonthEndDate, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { resolvePayrollPayoutPrefill, type ResolvedPayrollPayoutPrefill } from '@/lib/payrollPayoutContract';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -67,6 +69,15 @@ export default function ActivityExpenseJournal() {
   const [cellAccountIds, setCellAccountIds] = useState<Record<string, string | null>>({});
   const [selectedAccountId, setSelectedAccountId] = useState<string>('none');
   const [commission, setCommission] = useState('');
+  const [salaryFormErrors, setSalaryFormErrors] = useState<Record<string, { message: string }>>({});
+  const [salaryPrefill, setSalaryPrefill] = useState<ResolvedPayrollPayoutPrefill>({
+    source: 'activity-expense-journal',
+    staffId: undefined,
+    payoutDate: undefined,
+    accountId: undefined,
+    subcategoryId: null,
+    lockStaff: false,
+  });
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false);
   const [dividendSource, setDividendSource] = useState<{ source: 'transaction' | 'payout'; id: string } | null>(null);
   const [dividendInitialValues, setDividendInitialValues] = useState<{ payout_date: string; total_amount: number; account_id: string | null } | null>(null);
@@ -95,6 +106,7 @@ export default function ActivityExpenseJournal() {
   const updateTransaction = useUpdateFinanceTransaction();
   const deleteTransaction = useDeleteFinanceTransaction();
   const syncCommission = useCommissionEntry();
+  const createPayout = useCreateStaffPayout();
   const updatePayout = useUpdateStaffPayout();
   const deletePayout = useDeleteStaffPayout();
   const { data: expenseArticles = [] } = useExpenseArticles(id);
@@ -118,8 +130,8 @@ export default function ActivityExpenseJournal() {
     type: transactionType,
   });
 
-  const { data: staffPayoutsWithTxIdData } = useQuery({
-    queryKey: ['staff-payouts-all', month, year],
+  const { data: salaryPayoutRows = [], isLoading: isSalaryPayoutsLoading } = useQuery({
+    queryKey: ['salary-payout-rows', month, year],
     queryFn: async () => {
       const startDate = getMonthStartDate(year, month);
       const endDate = getMonthEndDate(year, month);
@@ -130,27 +142,39 @@ export default function ActivityExpenseJournal() {
         .gte('payout_date', startDate)
         .lte('payout_date', endDate);
       if (error) throw error;
-      const payoutIds = (payouts || []).map((p: any) => p.id);
-      const salaryTxMap = new Map<string, string>();
+
+      const payoutIds = ((payouts as any[]) || []).map((p) => p.id);
+      const txByPayoutId = new Map<string, any>();
       if (payoutIds.length > 0) {
-        const { data: txs, error: txErr } = await supabase
-          .from('finance_transactions')
-          .select('id, staff_payout_id')
+        const { data: txs, error: txError } = await supabase
+          .from('finance_transactions' as any)
+          .select('id, staff_payout_id, expense_category_id, dividend_payout_id')
+          .eq('type', 'salary')
           .in('staff_payout_id', payoutIds);
-        if (!txErr && txs) {
-          txs.forEach((tx: any) => {
-            if (tx.staff_payout_id) salaryTxMap.set(tx.staff_payout_id, tx.id);
-          });
-        }
+        if (txError) throw txError;
+        (txs || []).forEach((tx: any) => {
+          if (tx.staff_payout_id) txByPayoutId.set(tx.staff_payout_id, tx);
+        });
       }
-      return ((payouts || []) as any[]).map((p) => ({
-        ...p,
-        salary_transaction_id: salaryTxMap.get(p.id) || null,
-      }));
+
+      return ((payouts as any[]) || []).map((payout) => {
+        const tx = txByPayoutId.get(payout.id);
+        return {
+          id: `payout-${payout.id}`,
+          source: 'payout' as const,
+          staff_id: payout.staff_id,
+          amount: payout.amount,
+          date: payout.payout_date,
+          description: payout.notes || 'Виплата зарплати',
+          account_id: payout.account_id || null,
+          dividend_payout_id: payout.dividend_payout_id ?? tx?.dividend_payout_id ?? null,
+          expense_category_id: tx?.expense_category_id ?? null,
+          salary_transaction_id: tx?.id ?? undefined,
+        };
+      });
     },
     enabled: isSalary,
   });
-  const staffPayoutsWithTxId = staffPayoutsWithTxIdData ?? EMPTY_ARRAY;
 
   const categoriesMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -160,25 +184,8 @@ export default function ActivityExpenseJournal() {
 
   const combinedTransactions = useMemo(() => {
     if (!isSalary) return transactions;
-    const payoutItems = staffPayoutsWithTxId.map((payout) => ({
-      id: `payout-${payout.id}`,
-      salary_transaction_id: payout.salary_transaction_id || undefined,
-      activity_id: id,
-      staff_id: payout.staff_id,
-      expense_category_id: null,
-      amount: payout.amount,
-      date: payout.payout_date,
-      description: payout.notes || 'Виплата із фін історії',
-      source: 'payout' as const,
-      account_id: payout.account_id || null,
-      dividend_payout_id: payout.dividend_payout_id || null,
-    }));
-    const txItems = transactions.map((t) => ({
-      ...t,
-      salary_transaction_id: t.id,
-    }));
-    return [...txItems, ...payoutItems];
-  }, [transactions, staffPayoutsWithTxId, isSalary, id]);
+    return salaryPayoutRows;
+  }, [transactions, isSalary, salaryPayoutRows]);
 
   const salaryTxIds = useMemo(
     () =>
@@ -327,10 +334,31 @@ export default function ActivityExpenseJournal() {
     setNewCategoryName('');
     setEditingId(null);
     setSelectedAccountId(activity?.account_id || 'none');
+    setSalaryFormErrors({});
   };
 
   const handleSubmit = async () => {
     if (!id || !amount) return;
+
+    if (isSalary) {
+      const nextErrors: Record<string, { message: string }> = {};
+      const parsedAmount = parseFloat(amount);
+      if (!staffId) nextErrors.staff_id = { message: 'Оберіть співробітника' };
+      if (!date) nextErrors.payout_date = { message: 'Оберіть дату' };
+      if (!amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+        nextErrors.amount = { message: 'Сума має бути більше 0' };
+      }
+      const effectiveAccountId =
+        selectedAccountId === 'none' ? (activity?.account_id || null) : selectedAccountId;
+      if (!effectiveAccountId) {
+        nextErrors.account_id = { message: 'Оберіть рахунок' };
+      }
+      if (Object.keys(nextErrors).length > 0) {
+        setSalaryFormErrors(nextErrors);
+        return;
+      }
+      setSalaryFormErrors({});
+    }
 
     let finalCategoryId: string | null = categoryId === 'none' ? null : categoryId;
 
@@ -347,13 +375,38 @@ export default function ActivityExpenseJournal() {
       ? (selectedAccountId === 'none' ? (activity?.account_id || null) : selectedAccountId)
       : null;
 
-    let salaryTransactionId: string;
-    if (editingId) {
+    let salaryTransactionId = '';
+    if (isSalary) {
+      if (editingId && editingId.startsWith('payout-')) {
+        const payoutId = editingId.replace('payout-', '');
+        await updatePayout.mutateAsync({
+          id: payoutId,
+          staff_id: staffId || null,
+          amount: parseFloat(amount),
+          payout_date: date,
+          notes: description || null,
+          account_id: accountId,
+          expense_category_id: finalCategoryId,
+        });
+        const editedRow = combinedTransactions.find((t) => t.id === editingId);
+        salaryTransactionId = ('salary_transaction_id' in (editedRow || {}) ? (editedRow as any)?.salary_transaction_id : undefined) || '';
+      } else {
+        const created = await createPayout.mutateAsync({
+          staff_id: staffId || '',
+          amount: parseFloat(amount),
+          payout_date: date,
+          notes: description || null,
+          account_id: accountId,
+          expense_category_id: finalCategoryId,
+        });
+        salaryTransactionId = (created as any).salaryTransactionId || '';
+      }
+    } else if (editingId) {
       await updateTransaction.mutateAsync({
         id: editingId,
         type: transactionType,
         activity_id: id,
-        staff_id: isSalary ? (staffId || null) : null,
+        staff_id: null,
         student_id: null,
         expense_category_id: finalCategoryId,
         amount: parseFloat(amount),
@@ -367,7 +420,7 @@ export default function ActivityExpenseJournal() {
       const created = await createTransaction.mutateAsync({
         type: transactionType,
         activity_id: id,
-        staff_id: isSalary ? (staffId || null) : null,
+        staff_id: null,
         student_id: null,
         expense_category_id: finalCategoryId,
         amount: parseFloat(amount),
@@ -381,7 +434,7 @@ export default function ActivityExpenseJournal() {
 
     const commissionAmount = parseFloat(commission || '0');
     const staffName = staffId ? staff.find((s) => s.id === staffId)?.full_name ?? 'невідомий' : 'невідомий';
-    if (isSalary) {
+    if (isSalary && salaryTransactionId) {
       await syncCommission.mutateAsync({
         salaryTransactionId,
         amount: commissionAmount,
@@ -394,6 +447,21 @@ export default function ActivityExpenseJournal() {
     resetForm();
     setDialogOpen(false);
   };
+
+  const salaryDialogItemsForDate = useMemo(
+    () =>
+      isSalary
+        ? combinedTransactions.filter((t) => t.date === date)
+        : [],
+    [combinedTransactions, isSalary, date]
+  );
+  const salaryDialogTxIdMap = useMemo(() => {
+    const map = new Map<string, string>();
+    salaryDialogItemsForDate.forEach((item: any) => {
+      if (item?.salary_transaction_id) map.set(item.id, item.salary_transaction_id);
+    });
+    return map;
+  }, [salaryDialogItemsForDate]);
 
   if (!activity) {
     return (
@@ -717,7 +785,26 @@ export default function ActivityExpenseJournal() {
         title={`Журнал витрат: ${activity.name}`}
         description={`${MONTHS[month]} ${year}`}
         actions={
-          <Button onClick={() => setDialogOpen(true)}>
+          <Button onClick={() => {
+            if (isSalary) {
+              const filteredStaffId =
+                filterStaffId !== 'all' && filterStaffId !== 'none' ? filterStaffId : undefined;
+              const prefill = resolvePayrollPayoutPrefill({
+                source: 'activity-expense-journal',
+                staffId: filteredStaffId,
+                payoutDate: formatDateString(new Date()),
+                accountId: activity?.account_id || undefined,
+                subcategoryId: null,
+              });
+              setSalaryPrefill(prefill);
+              resetForm();
+              setStaffId(prefill.staffId || '');
+              setDate(prefill.payoutDate || formatDateString(new Date()));
+              setSelectedAccountId(prefill.accountId || activity?.account_id || 'none');
+              setCategoryId(prefill.subcategoryId || 'none');
+            }
+            setDialogOpen(true);
+          }}>
             <Plus className="h-4 w-4 mr-2" />
             Додати витрату
           </Button>
@@ -810,7 +897,7 @@ export default function ActivityExpenseJournal() {
           </div>
         </div>
 
-        {isLoading ? (
+        {(isLoading || (isSalary && isSalaryPayoutsLoading)) ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
@@ -1024,52 +1111,60 @@ export default function ActivityExpenseJournal() {
                                       <Banknote className="h-4 w-4" />
                                     </Button>
                                   )}
-                                  {!isPayout ? (
-                                    <>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        onClick={() => {
-                                          setEditingId(t.id);
-                                          setAmount((t.amount || 0).toString());
-                                          const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
-                                          setCommission(commissionsMap.get(salTxId || '')?.amount?.toString() ?? '');
-                                          setDate(t.date);
-                                          setDescription(t.description || '');
-                                          setStaffId(t.staff_id || '');
-                                          setCategoryId(t.expense_category_id || 'none');
-                                          setNewCategoryName('');
-                                          setSelectedAccountId(t.account_id || activity?.account_id || 'none');
-                                          setDialogOpen(true);
-                                        }}
-                                      >
-                                        <Pencil className="h-4 w-4" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        onClick={async () => {
-                                          if (!window.confirm('Видалити цей запис?')) return;
-                                          if (isPayout) {
-                                            const payoutId = t.id.replace('payout-', '');
-                                            await deletePayout.mutateAsync({
-                                              id: payoutId,
-                                              staffId: t.staff_id || '',
-                                              deleteNote: null,
-                                            });
-                                          } else {
-                                            await deleteTransaction.mutateAsync(t.id);
-                                          }
-                                        }}
-                                      >
-                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                      </Button>
-                                    </>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">—</span>
-                                  )}
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        setEditingId(t.id);
+                                        setAmount((t.amount || 0).toString());
+                                        const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
+                                        setCommission(commissionsMap.get(salTxId || '')?.amount?.toString() ?? '');
+                                        setDate(t.date);
+                                        setDescription(t.description || '');
+                                        setStaffId(t.staff_id || '');
+                                        setCategoryId(t.expense_category_id || 'none');
+                                        setNewCategoryName('');
+                                        setSelectedAccountId(t.account_id || activity?.account_id || 'none');
+                                        if (isSalary) {
+                                          const prefill = resolvePayrollPayoutPrefill({
+                                            source: 'activity-expense-journal',
+                                            staffId: t.staff_id || undefined,
+                                            payoutDate: t.date,
+                                            accountId: t.account_id || activity?.account_id || undefined,
+                                            subcategoryId: t.expense_category_id || null,
+                                          });
+                                          setSalaryPrefill(prefill);
+                                        }
+                                        setDialogOpen(true);
+                                      }}
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={async () => {
+                                        if (!window.confirm('Видалити цей запис?')) return;
+                                        if (isPayout) {
+                                          const note = window.prompt('Причина видалення (обовʼязково):', '');
+                                          if (!note || !note.trim()) return;
+                                          const payoutId = t.id.replace('payout-', '');
+                                          await deletePayout.mutateAsync({
+                                            id: payoutId,
+                                            staffId: t.staff_id || '',
+                                            deleteNote: note.trim(),
+                                          });
+                                        } else {
+                                          await deleteTransaction.mutateAsync(t.id);
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -1085,6 +1180,80 @@ export default function ActivityExpenseJournal() {
         )}
       </div>
 
+      {isSalary ? (
+        <PayrollPayoutDialog
+          open={dialogOpen}
+          onOpenChange={(open) => {
+            setDialogOpen(open);
+            if (!open) resetForm();
+          }}
+          onSubmit={(event?: any) => {
+            event?.preventDefault?.();
+            void handleSubmit();
+          }}
+          register={(field: string) => {
+            if (field === 'amount') {
+              return { value: amount, onChange: (e: any) => setAmount(e.target.value) };
+            }
+            if (field === 'payout_date') {
+              return { value: date, onChange: (e: any) => setDate(e.target.value) };
+            }
+            if (field === 'notes') {
+              return { value: description, onChange: (e: any) => setDescription(e.target.value) };
+            }
+            if (field === 'commission') {
+              return { value: commission, onChange: (e: any) => setCommission(e.target.value) };
+            }
+            return {};
+          }}
+          errors={salaryFormErrors}
+          watch={(field: string) => {
+            if (field === 'account_id') return selectedAccountId === 'none' ? '' : selectedAccountId;
+            return '';
+          }}
+          setValue={(field: string, value: string) => {
+            if (field === 'account_id') {
+              setSelectedAccountId(value || 'none');
+            }
+          }}
+          accounts={accounts}
+          onCancel={() => setDialogOpen(false)}
+          isSaving={createPayout.isPending || updatePayout.isPending || syncCommission.isPending}
+          payoutsForSelectedDate={salaryDialogItemsForDate}
+          salaryTxByPayoutId={salaryDialogTxIdMap}
+          commissionsMap={commissionsMap}
+          formatCurrency={formatCurrency}
+          onEditPayout={(payout, commissionAmount) => {
+            setEditingId(payout.id);
+            setAmount((payout.amount || 0).toString());
+            setCommission((commissionAmount || 0).toString());
+            setDate(payout.date);
+            setDescription(payout.description || '');
+            setStaffId(payout.staff_id || '');
+            setCategoryId(payout.expense_category_id || 'none');
+            setSelectedAccountId(payout.account_id || activity?.account_id || 'none');
+          }}
+          onDeletePayout={async (payout) => {
+            const note = window.prompt('Причина видалення (обовʼязково):', '');
+            if (!note || !note.trim()) return;
+            const payoutId = String(payout.id || '').replace('payout-', '');
+            await deletePayout.mutateAsync({
+              id: payoutId,
+              staffId: payout.staff_id || '',
+              deleteNote: note.trim(),
+            });
+          }}
+          staffOptions={staff
+            .filter((s) => s.is_active)
+            .map((s) => ({ id: s.id, name: s.full_name }))}
+          staffFieldValue={staffId}
+          onStaffFieldChange={setStaffId}
+          staffFieldDisabled={salaryPrefill.lockStaff}
+          subcategoryOptions={categories.map((c) => ({ id: c.id, name: c.name }))}
+          subcategoryFieldValue={categoryId}
+          onSubcategoryFieldChange={setCategoryId}
+        />
+      ) : (
       <Dialog open={dialogOpen} onOpenChange={(open) => {
         setDialogOpen(open);
         if (!open) {
@@ -1200,6 +1369,7 @@ export default function ActivityExpenseJournal() {
             </div>
         </DialogContent>
       </Dialog>
+      )}
 
       <DividendPayoutFormDialog
         open={dividendDialogOpen}

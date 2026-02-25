@@ -11,10 +11,22 @@ import {
   isGardenAttendanceController,
 } from "@/lib/gardenAttendance";
 import {
+  computePaymentAllocationFromEntries,
+  type DebtEntry,
+  type PaymentEntry,
+  type PaymentAllocationResult,
+} from "@/lib/paymentAllocation";
+import {
   getEnrollmentPriceForDate,
   enrollmentHistoryCoversMonth,
+  enrollmentInScopeForMonth,
   type EnrollmentPriceHistory,
 } from "./useEnrollments";
+import {
+  createPayrollPayoutWithDerivedTransaction,
+  deletePayrollPayoutWithDerivedTransaction,
+  updatePayrollPayoutWithDerivedTransaction,
+} from "@/lib/payrollPayoutWrite";
 
 const supabaseAny = supabase as any;
 
@@ -50,6 +62,8 @@ export interface FinanceTransaction {
   type: TransactionType;
   student_id: string | null;
   activity_id: string | null;
+  /** For payment: optional activity IDs to allocate to, in priority order. Null = auto-distribute. */
+  allocation_activity_ids?: string[] | null;
   staff_id: string | null;
   expense_category_id?: string | null;
   account_id: string | null; // Payment account for this transaction
@@ -101,6 +115,24 @@ async function fetchAttendanceV1BaseTariffIds() {
   return baseTariffIdSet;
 }
 
+/** Base + food tariff IDs from controller config (for allocation — charges for these even without direct enrollment) */
+async function fetchGardenTariffActivityIds(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("activities")
+    .select("id, config");
+
+  if (error) throw error;
+
+  const ids = new Set<string>();
+  (data || []).forEach((activity: any) => {
+    if (!isGardenAttendanceController(activity)) return;
+    const config = getGardenAttendanceConfig(activity);
+    (config.base_tariff_ids || []).forEach((id: string) => ids.add(id));
+    (config.food_tariff_ids || []).forEach((id: string) => ids.add(id));
+  });
+  return ids;
+}
+
 export function useFinanceTransactions(filters?: {
   studentId?: string;
   activityId?: string;
@@ -143,6 +175,26 @@ export function useCreateFinanceTransaction() {
 
   return useMutation({
     mutationFn: async (transaction: FinanceTransactionInsert) => {
+      if (transaction.type === "salary" && transaction.staff_id) {
+        const { transaction: createdSalaryTx } =
+          await createPayrollPayoutWithDerivedTransaction({
+            staffId: transaction.staff_id,
+            amount: transaction.amount,
+            payoutDate: transaction.date,
+            notes: transaction.description || null,
+            accountId: transaction.account_id || null,
+            financeTransaction: {
+              activityId: transaction.activity_id || null,
+              expenseCategoryId: transaction.expense_category_id || null,
+              description: transaction.description || null,
+              category: transaction.category || null,
+              dividendPayoutId: transaction.dividend_payout_id || null,
+              allocationActivityIds: transaction.allocation_activity_ids || null,
+            },
+          });
+        return createdSalaryTx as FinanceTransaction;
+      }
+
       const { data, error } = await supabaseAny
         .from("finance_transactions")
         .insert(transaction)
@@ -150,20 +202,6 @@ export function useCreateFinanceTransaction() {
         .single();
 
       if (error) throw error;
-
-      if (transaction.type === "salary" && transaction.staff_id) {
-        const { error: payoutError } = await supabaseAny
-          .from("staff_payouts" as any)
-          .insert({
-            staff_id: transaction.staff_id,
-            amount: transaction.amount,
-            payout_date: transaction.date,
-            notes: transaction.description || null,
-            account_id: transaction.account_id || null, // Передаем account_id если есть
-          });
-
-        if (payoutError) throw payoutError;
-      }
 
       return data;
     },
@@ -183,6 +221,7 @@ export function useCreateFinanceTransaction() {
         queryClient.invalidateQueries({
           queryKey: ["student_account_balances"],
         });
+        queryClient.invalidateQueries({ queryKey: ["payment_allocation"] });
         if (data.activity_id) {
           const transactionDate = new Date(data.date);
           const month = transactionDate.getMonth();
@@ -231,11 +270,67 @@ export function useUpdateFinanceTransaction() {
       // Получаем текущую транзакцию для проверки типа
       const { data: currentTx, error: fetchError } = await supabaseAny
         .from("finance_transactions")
-        .select("type, staff_id, date, amount")
+        .select(
+          "type, staff_id, date, amount, staff_payout_id, activity_id, expense_category_id, account_id, description, category, dividend_payout_id, allocation_activity_ids",
+        )
         .eq("id", id)
         .single();
 
       if (fetchError) throw fetchError;
+
+      if (currentTx?.type === "salary" && currentTx?.staff_id) {
+        // Preferred unified path: update canonical payout by direct link
+        if (currentTx.staff_payout_id) {
+          const { transaction: updatedSalaryTx } =
+            await updatePayrollPayoutWithDerivedTransaction({
+              payoutId: currentTx.staff_payout_id,
+              payout: {
+                staffId: transaction.staff_id ?? currentTx.staff_id,
+                amount: transaction.amount ?? currentTx.amount,
+                payoutDate: transaction.date ?? currentTx.date,
+                notes:
+                  transaction.description !== undefined
+                    ? transaction.description
+                    : currentTx.description,
+                accountId:
+                  transaction.account_id !== undefined
+                    ? transaction.account_id
+                    : currentTx.account_id,
+                dividendPayoutId:
+                  transaction.dividend_payout_id !== undefined
+                    ? transaction.dividend_payout_id
+                    : currentTx.dividend_payout_id,
+              },
+              financeTransaction: {
+                activityId:
+                  transaction.activity_id !== undefined
+                    ? transaction.activity_id
+                    : currentTx.activity_id,
+                expenseCategoryId:
+                  transaction.expense_category_id !== undefined
+                    ? transaction.expense_category_id
+                    : currentTx.expense_category_id,
+                description:
+                  transaction.description !== undefined
+                    ? transaction.description
+                    : currentTx.description,
+                category:
+                  transaction.category !== undefined
+                    ? transaction.category
+                    : currentTx.category,
+                dividendPayoutId:
+                  transaction.dividend_payout_id !== undefined
+                    ? transaction.dividend_payout_id
+                    : currentTx.dividend_payout_id,
+                allocationActivityIds:
+                  transaction.allocation_activity_ids !== undefined
+                    ? transaction.allocation_activity_ids
+                    : currentTx.allocation_activity_ids,
+              },
+            });
+          return updatedSalaryTx as FinanceTransaction;
+        }
+      }
 
       const { data, error } = await supabaseAny
         .from("finance_transactions")
@@ -279,6 +374,9 @@ export function useUpdateFinanceTransaction() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["finance_transactions"] });
+      if (data.student_id && data.type === "payment") {
+        queryClient.invalidateQueries({ queryKey: ["payment_allocation"] });
+      }
       if (data.staff_id && data.type === "salary") {
         queryClient.invalidateQueries({
           queryKey: ["staff-payouts", data.staff_id],
@@ -309,11 +407,19 @@ export function useDeleteFinanceTransaction() {
       // Получаем транзакцию перед удалением для проверки типа
       const { data: tx, error: fetchError } = await supabaseAny
         .from("finance_transactions")
-        .select("type, staff_id, date, amount")
+        .select("id, type, staff_id, date, amount, staff_payout_id")
         .eq("id", id)
         .single();
 
       if (fetchError) throw fetchError;
+
+      if (tx?.type === "salary" && tx?.staff_payout_id) {
+        await deletePayrollPayoutWithDerivedTransaction({
+          payoutId: tx.staff_payout_id,
+          deleteNote: "Видалено через журнал транзакцій",
+        });
+        return;
+      }
 
       const { error } = await supabaseAny
         .from("finance_transactions")
@@ -326,7 +432,11 @@ export function useDeleteFinanceTransaction() {
       if (tx?.type === "salary" && tx?.staff_id) {
         const { error: payoutDeleteError } = await supabaseAny
           .from("staff_payouts" as any)
-          .delete()
+          .update({
+            is_deleted: true,
+            deleted_at: new Date().toISOString(),
+            deleted_note: "Видалено через журнал транзакцій",
+          })
           .eq("staff_id", tx.staff_id)
           .eq("payout_date", tx.date)
           .eq("amount", tx.amount)
@@ -442,6 +552,9 @@ export function useUpsertFinanceTransaction() {
         }),
         queryClient.invalidateQueries({
           queryKey: ["student_account_balances"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["payment_allocation"],
         }),
       ]);
       // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
@@ -1409,7 +1522,7 @@ export async function fetchStudentAccountBalances({
   ] = await Promise.all([
     supabaseAny
       .from("finance_transactions")
-      .select("activity_id, type, amount, account_id, date, description")
+      .select("activity_id, allocation_activity_ids, type, amount, account_id, date, description")
       .eq("student_id", studentId)
       .not("student_id", "is", null)
       .in("type", ["payment", "income", "expense"])
@@ -2508,6 +2621,285 @@ export function useDeletePaymentTransaction() {
         variant: "destructive",
       });
     },
+  });
+}
+
+/** Fetch payment allocation for display (debts by activity/month, how payments distribute) */
+export async function fetchPaymentAllocation(params: {
+  studentId: string;
+  month: number;
+  year: number;
+  accountId?: string | null;
+  excludeActivityIds?: string[];
+}): Promise<PaymentAllocationResult> {
+  const {
+    studentId,
+    month,
+    year,
+    accountId,
+    excludeActivityIds = [],
+  } = params;
+  const endDate = getMonthEndDate(year, month);
+  const excludedSet = new Set(excludeActivityIds);
+
+  const { data: enrollments, error: enrollError } = await supabaseAny
+    .from("enrollments")
+    .select("id, activity_id, account_id, effective_from, enrolled_at, custom_price, discount_percent, is_active, unenrolled_at")
+    .eq("student_id", studentId);
+
+  if (enrollError) throw enrollError;
+  const allEnrollments = (enrollments || []).filter(
+    (e: any) => !excludedSet.has(e.activity_id),
+  );
+  if (allEnrollments.length === 0) return { items: [], totalPaid: 0, totalRemaining: 0 };
+
+  // Тільки поточний і попередній місяць (для боргів і нарахувань)
+  const prevMonth = month === 0 ? 11 : month - 1;
+  const prevYear = month === 0 ? year - 1 : year;
+  const startDate = getMonthStartDate(prevYear, prevMonth);
+  // Платежі — лише вибраного місяця, щоб «Розподіл» відповідав тому, що бачить користувач у таблиці оплат
+  const paymentStart = getMonthStartDate(year, month);
+  const paymentEnd = getMonthEndDate(year, month);
+
+  const enrollmentIds = allEnrollments.map((e: any) => e.id);
+  const activityIdSet = new Set(allEnrollments.map((e: any) => e.activity_id));
+  const gardenTariffIds = await fetchGardenTariffActivityIds();
+  gardenTariffIds.forEach((id) => activityIdSet.add(id));
+
+  const [attendanceRes, paymentsRes, incomeRes, activitiesRes, baseTariffRes, priceHistoryRes] =
+    await Promise.all([
+    supabaseAny
+      .from("attendance")
+      .select("enrollment_id, charged_amount, date")
+      .in("enrollment_id", enrollmentIds)
+      .gte("date", startDate)
+      .lte("date", endDate),
+    supabaseAny
+      .from("finance_transactions")
+      .select("id, amount, date, allocation_activity_ids, account_id")
+      .eq("student_id", studentId)
+      .eq("type", "payment")
+      .gte("date", paymentStart)
+      .lte("date", paymentEnd),
+    supabaseAny
+      .from("finance_transactions")
+      .select("activity_id, amount, date, account_id, description")
+      .eq("student_id", studentId)
+      .eq("type", "income")
+      .not("activity_id", "is", null)
+      .in("activity_id", Array.from(activityIdSet))
+      .gte("date", startDate)
+      .lte("date", endDate),
+    supabaseAny
+      .from("activities")
+      .select("id, name, account_id, billing_rules, default_price")
+      .in("id", Array.from(activityIdSet)),
+    fetchAttendanceV1BaseTariffIds(),
+    enrollmentIds.length > 0
+      ? supabaseAny
+          .from("enrollment_price_history")
+          .select("*")
+          .in("enrollment_id", enrollmentIds)
+          .order("effective_from", { ascending: false })
+      : Promise.resolve({ data: [] as EnrollmentPriceHistory[], error: null }),
+  ]);
+  const attendance = attendanceRes.data;
+  const payments = paymentsRes.data;
+  const activities = activitiesRes.data;
+  const priceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
+  ((priceHistoryRes as any)?.data || []).forEach((ph: EnrollmentPriceHistory) => {
+    if (!priceHistoryMap.has(ph.enrollment_id)) priceHistoryMap.set(ph.enrollment_id, []);
+    priceHistoryMap.get(ph.enrollment_id)!.push(ph);
+  });
+  const attendanceV1BaseTariffIdSet = baseTariffRes;
+  const incomeTransactions = (incomeRes.data || []).filter(
+    (inc: any) => !isAttendanceV1InfoIncome(inc, attendanceV1BaseTariffIdSet),
+  );
+  if (attendanceRes.error) throw attendanceRes.error;
+  if (paymentsRes.error) throw paymentsRes.error;
+  if (incomeRes.error) throw incomeRes.error;
+  if (activitiesRes.error) throw activitiesRes.error;
+
+  const activityAccountMap = new Map<string, string | null>();
+  (activities || []).forEach((a: any) =>
+    activityAccountMap.set(a.id, a.account_id ?? null),
+  );
+  // Якщо обрано рахунок — тільки записи та борги цього рахунка (не змішувати з іншими)
+  const filteredEnrollments =
+    accountId != null && accountId !== ""
+      ? allEnrollments.filter(
+          (e: any) =>
+            (e.account_id ?? activityAccountMap.get(e.activity_id)) === accountId,
+        )
+      : allEnrollments;
+  const activityIdSetFiltered = new Set(
+    filteredEnrollments.map((e: any) => e.activity_id),
+  );
+  if (filteredEnrollments.length === 0)
+    return { items: [], totalPaid: 0, totalRemaining: 0 };
+
+  const enrollToActivity = new Map<string, string>();
+  const enrollToAccount = new Map<string, string | null>();
+  const enrollmentById = new Map<string, any>();
+  filteredEnrollments.forEach((e: any) => {
+    enrollToActivity.set(e.id, e.activity_id);
+    const acc = e.account_id ?? activityAccountMap.get(e.activity_id) ?? null;
+    enrollToAccount.set(e.id, acc);
+    enrollmentById.set(e.id, e);
+  });
+  const activityNames = new Map<string, string>();
+  (activities || []).forEach((a: any) => activityNames.set(a.id, a.name || a.id));
+
+  const attendanceByKey = new Map<
+    string,
+    { activityId: string; accountId: string | null; amount: number }
+  >();
+  (attendance || []).forEach((att: any) => {
+    const enrollment = enrollmentById.get(att.enrollment_id);
+    if (!enrollment) return;
+    const d = new Date(att.date);
+    const m = d.getMonth();
+    const y = d.getFullYear();
+    const activity = (activities || []).find((a: any) => a.id === enrollment.activity_id);
+    const history = priceHistoryMap.get(enrollment.id);
+    if (!enrollmentInScopeForMonth(enrollment, activity ?? null, history, y, m)) return;
+    const activityId = enrollToActivity.get(att.enrollment_id);
+    const accountId = enrollToAccount.get(att.enrollment_id) ?? null;
+    if (!activityId) return;
+    const amt = att.charged_amount ?? 0;
+    if (amt <= 0) return;
+    const key = `${activityId}|${accountId ?? "none"}|${y}|${m}`;
+    const cur = attendanceByKey.get(key);
+    attendanceByKey.set(key, {
+      activityId,
+      accountId,
+      amount: (cur?.amount ?? 0) + amt,
+    });
+  });
+  const enrollmentsByActivity = new Map<string, any[]>();
+  filteredEnrollments.forEach((e: any) => {
+    const list = enrollmentsByActivity.get(e.activity_id) || [];
+    list.push(e);
+    enrollmentsByActivity.set(e.activity_id, list);
+  });
+  const incomeByKey = new Map<
+    string,
+    { activityId: string; accountId: string | null; amount: number }
+  >();
+  (incomeTransactions || []).forEach((inc: any) => {
+    const activityId = inc.activity_id;
+    if (!activityId || !activityIdSetFiltered.has(activityId)) return;
+    const d = new Date(inc.date);
+    const m = d.getMonth();
+    const y = d.getFullYear();
+    const list = enrollmentsByActivity.get(activityId) || [];
+    if (!list.some((e: any) => {
+      const act = (activities || []).find((a: any) => a.id === e.activity_id);
+      const hist = priceHistoryMap.get(e.id);
+      return enrollmentInScopeForMonth(e, act ?? null, hist, y, m);
+    })) return;
+    const amt = inc.amount ?? 0;
+    if (amt <= 0) return;
+    const accountId =
+      inc.account_id ?? activityAccountMap.get(activityId) ?? null;
+    const key = `${activityId}|${accountId ?? "none"}|${y}|${m}`;
+    const cur = incomeByKey.get(key);
+    incomeByKey.set(key, {
+      activityId,
+      accountId,
+      amount: (cur?.amount ?? 0) + amt,
+    });
+  });
+
+  // У розподілі — тільки фактичні нарахування: з журналу відвідувань (attendance) або з доходів (income). Тариф з активності не використовуємо.
+  const allKeys = new Set([
+    ...attendanceByKey.keys(),
+    ...incomeByKey.keys(),
+  ]);
+  const debtByKey = new Map<
+    string,
+    { activityId: string; accountId: string | null; amount: number }
+  >();
+  allKeys.forEach((key) => {
+    const att = attendanceByKey.get(key);
+    const inc = incomeByKey.get(key);
+    const incomeAmt = inc?.amount ?? 0;
+    const attendanceAmt = att?.amount ?? 0;
+    const amount = incomeAmt > 0 ? incomeAmt : attendanceAmt;
+    if (amount <= 0) return;
+    const src = inc ?? att!;
+    debtByKey.set(key, { ...src, amount });
+  });
+
+  const debts: DebtEntry[] = Array.from(debtByKey.entries())
+    .filter(([key, { activityId, accountId }]) => {
+      const parts = key.split("|");
+      const y = Number(parts[2]);
+      const m = Number(parts[3]);
+      const acc = accountId ?? null;
+      const hasInScopeEnrollment = filteredEnrollments.some((e: any) => {
+        if (e.activity_id !== activityId) return false;
+        const eAcc = e.account_id ?? activityAccountMap.get(e.activity_id) ?? null;
+        if ((eAcc ?? "none") !== (acc ?? "none")) return false;
+        const activity = (activities || []).find((a: any) => a.id === e.activity_id);
+        const history = priceHistoryMap.get(e.id);
+        return enrollmentInScopeForMonth(e, activity ?? null, history, y, m);
+      });
+      return hasInScopeEnrollment;
+    })
+    .map(([key, { activityId, accountId, amount }]) => {
+      const parts = key.split("|");
+      const y = Number(parts[2]);
+      const m = Number(parts[3]); // 0-based month
+      return {
+        activityId,
+        activityName: activityNames.get(activityId) ?? activityId,
+        accountId,
+        month: m,
+        year: y,
+        amount,
+      };
+    });
+
+  const paymentEntries: PaymentEntry[] = (payments || [])
+    .filter((p: any) => (accountId == null || p.account_id === accountId) && (p.amount ?? 0) > 0)
+    .map((p: any) => ({
+      id: p.id,
+      amount: p.amount ?? 0,
+      date: p.date,
+      allocationActivityIds: p.allocation_activity_ids ?? null,
+      accountId: p.account_id ?? null,
+    }));
+
+  return computePaymentAllocationFromEntries(debts, paymentEntries);
+}
+
+export function usePaymentAllocation(params: {
+  studentId: string;
+  month: number;
+  year: number;
+  accountId?: string | null;
+  excludeActivityIds?: string[];
+  /** Не робити запит (коли показуємо розподіл по рахунках окремими запитами) */
+  enabled?: boolean;
+}) {
+  const { enabled: enabledParam, ...rest } = params;
+  return useQuery({
+    queryKey: [
+      "payment_allocation",
+      rest.studentId,
+      rest.month,
+      rest.year,
+      rest.accountId,
+      rest.excludeActivityIds,
+    ],
+    queryFn: () => fetchPaymentAllocation(rest),
+    enabled:
+      enabledParam !== false &&
+      !!rest.studentId &&
+      rest.month >= 0 &&
+      rest.month <= 11 &&
+      rest.year > 0,
   });
 }
 

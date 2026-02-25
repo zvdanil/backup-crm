@@ -9,12 +9,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/attendance";
 import { cn } from "@/lib/utils";
-import { isGardenAttendanceController } from "@/lib/gardenAttendance";
 import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
 import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
 import {
   useEnrollmentPriceHistoryMap,
-  enrollmentHistoryCoversMonth,
+  enrollmentInScopeForMonth,
 } from "@/hooks/useEnrollments";
 import { ACTIVITY_GROUP_LABELS } from "@/lib/activityGroups";
 import type { ActivityGroup } from "@/hooks/useActivities";
@@ -109,49 +108,18 @@ export function StudentAccountBalance({
   const { data: priceHistoryMap = new Map() } = useEnrollmentPriceHistoryMap(enrollmentIds);
 
   const balanceEnrollments = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    const isFutureMonth =
-      year > currentYear || (year === currentYear && month > currentMonth);
-
-    const monthStart = new Date(year, month, 1);
-    const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
-
     return enrollments.filter((enrollment) => {
       const activity = allActivities.find(
         (a) => a.id === enrollment.activity_id,
       );
-      if (activity && isGardenAttendanceController(activity)) return false;
-
-      const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
-      if (unenrolledDate && unenrolledDate < monthStart) return false;
-
       const history = priceHistoryMap.get(enrollment.id);
-      const coversByHistory = enrollmentHistoryCoversMonth(history, year, month);
-
-      if (history && history.length > 0) {
-        if (!coversByHistory) return false;
-        if (isFutureMonth) return enrollment.is_active === true;
-        if (enrollment.is_active === true) return true;
-        if (enrollment.is_active === false && unenrolledDate) {
-          return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
-        }
-        return false;
-      }
-
-      const effectiveDate = (enrollment.effective_from ?? enrollment.enrolled_at)
-        ? new Date(enrollment.effective_from ?? enrollment.enrolled_at)
-        : null;
-      if (effectiveDate && effectiveDate > monthEnd) return false;
-      if (isFutureMonth) {
-        return enrollment.is_active === true && effectiveDate && effectiveDate <= monthEnd;
-      }
-      if (enrollment.is_active === true) return true;
-      if (enrollment.is_active === false && unenrolledDate) {
-        return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
-      }
-      return false;
+      return enrollmentInScopeForMonth(
+        enrollment,
+        activity ?? null,
+        history,
+        year,
+        month,
+      );
     });
   }, [enrollments, allActivities, month, year, priceHistoryMap]);
 

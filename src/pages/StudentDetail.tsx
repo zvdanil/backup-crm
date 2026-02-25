@@ -160,6 +160,12 @@ export default function StudentDetail() {
       Array.from(foodTariffIds),
     );
 
+  const allocationAccountIds = useMemo(
+    () =>
+      [...new Set((accountBalances || []).map((b: any) => b.account_id).filter(Boolean))] as string[],
+    [accountBalances],
+  );
+
   // Filter active/past enrollments
   // В карточке ребёнка показываем ВСЕ активности, включая управляющую
   const activeEnrollments = useMemo(() => {
@@ -459,6 +465,8 @@ export default function StudentDetail() {
                 month={balanceMonth}
                 year={balanceYear}
                 title="Історія оплат"
+                excludeActivityIds={controllerActivityIds}
+                accountIds={allocationAccountIds.length > 0 ? allocationAccountIds : undefined}
               />
             </div>
 
@@ -753,6 +761,7 @@ export default function StudentDetail() {
         }}
         initialStudentId={id}
         isLoading={createTransaction.isPending}
+        excludeActivityIds={controllerActivityIds}
       />
 
       {role !== "accountant" && editingEnrollment && (

@@ -2,6 +2,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getMonthStartDate, getMonthEndDate, formatLocalDate } from "@/lib/attendance";
+import {
+  createPayrollPayoutWithDerivedTransaction,
+  deletePayrollPayoutWithDerivedTransaction,
+  updatePayrollPayoutWithDerivedTransaction,
+} from "@/lib/payrollPayoutWrite";
 
 export interface StaffBillingRule {
   id: string;
@@ -1117,36 +1122,27 @@ export function useCreateStaffPayout() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payout: StaffPayoutInsert) => {
-      const { data, error } = await supabase
-        .from("staff_payouts" as any)
-        .insert(payout)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Создаем finance_transaction типа 'salary' з staff_payout_id для зв'язку
-      const { data: txData, error: txError } = await supabase
-        .from("finance_transactions" as any)
-        .insert({
-          type: 'salary',
-          staff_id: payout.staff_id,
+    mutationFn: async (
+      payout: StaffPayoutInsert & { expense_category_id?: string | null },
+    ) => {
+      const { payout: payoutRow, transaction: txRow } =
+        await createPayrollPayoutWithDerivedTransaction({
+          staffId: payout.staff_id,
           amount: payout.amount,
-          date: payout.payout_date,
-          description: payout.notes || 'Виплата зарплати',
-          account_id: payout.account_id || null,
-          staff_payout_id: data.id,
-        })
-        .select('id')
-        .single();
+          payoutDate: payout.payout_date,
+          notes: payout.notes || null,
+          accountId: payout.account_id || null,
+          financeTransaction: {
+            description: payout.notes || "Виплата зарплати",
+            dividendPayoutId: payout.dividend_payout_id || null,
+            expenseCategoryId: payout.expense_category_id || null,
+          },
+        });
 
-      if (txError) {
-        await supabase.from("staff_payouts" as any).delete().eq('id', data.id);
-        throw txError;
-      }
-
-      return { payout: data as StaffPayout, salaryTransactionId: txData?.id as string };
+      return {
+        payout: payoutRow as StaffPayout,
+        salaryTransactionId: txRow?.id as string,
+      };
     },
     onSuccess: (data: { payout: StaffPayout; salaryTransactionId: string }) => {
       queryClient.invalidateQueries({
@@ -1155,6 +1151,10 @@ export function useCreateStaffPayout() {
       });
       queryClient.invalidateQueries({
         queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["salary-payout-rows"],
         exact: false,
       });
       queryClient.invalidateQueries({
@@ -1185,52 +1185,22 @@ export function useUpdateStaffPayout() {
     mutationFn: async ({
       id,
       ...updates
-    }: StaffPayoutUpdate & { id: string }) => {
-      // Получаем текущую выплату для синхронизации с транзакцией
-      const { data: currentPayout, error: fetchError } = await supabase
-        .from("staff_payouts" as any)
-        .select("staff_id, payout_date, amount, account_id")
-        .eq("id", id)
-        .single();
-
-      if (fetchError) throw fetchError;
-
-      const { data, error } = await supabase
-        .from("staff_payouts" as any)
-        .update(updates)
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Синхронизуємо з finance_transactions (шукаємо по staff_payout_id)
-      if (data) {
-        const { data: txRow, error: txFetchError } = await supabase
-          .from("finance_transactions" as any)
-          .select("id")
-          .eq("staff_payout_id", id)
-          .maybeSingle();
-
-        if (!txFetchError && txRow) {
-          const payload: any = {
-            staff_id: data.staff_id,
-            amount: data.amount,
-            date: data.payout_date,
-            description: data.notes ?? null,
-            account_id: data.account_id ?? null,
-            dividend_payout_id: data.dividend_payout_id ?? null,
-          };
-          const { error: txUpdateError } = await supabase
-            .from("finance_transactions" as any)
-            .update(payload)
-            .eq("id", txRow.id);
-
-          if (txUpdateError) throw txUpdateError;
-        }
-      }
-
-      return data as any as StaffPayout;
+    }: StaffPayoutUpdate & { id: string; expense_category_id?: string | null }) => {
+      const { payout } = await updatePayrollPayoutWithDerivedTransaction({
+        payoutId: id,
+        payout: {
+          staffId: updates.staff_id,
+          amount: updates.amount,
+          payoutDate: updates.payout_date,
+          notes: updates.notes,
+          accountId: updates.account_id,
+          dividendPayoutId: updates.dividend_payout_id,
+        },
+        financeTransaction: {
+          expenseCategoryId: updates.expense_category_id,
+        },
+      });
+      return payout as StaffPayout;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({
@@ -1239,6 +1209,10 @@ export function useUpdateStaffPayout() {
       });
       queryClient.invalidateQueries({
         queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["salary-payout-rows"],
         exact: false,
       });
       // Also invalidate finance_transactions to update salary journal
@@ -1277,16 +1251,10 @@ export function useDeleteStaffPayout() {
       staffId: string;
       deleteNote?: string | null;
     }) => {
-      const { error } = await supabase
-        .from("staff_payouts" as any)
-        .update({
-          is_deleted: true,
-          deleted_at: new Date().toISOString(),
-          deleted_note: deleteNote || null,
-        })
-        .eq("id", id);
-
-      if (error) throw error;
+      await deletePayrollPayoutWithDerivedTransaction({
+        payoutId: id,
+        deleteNote: (deleteNote || "").trim(),
+      });
     },
     onSuccess: (_, { staffId }) => {
       queryClient.invalidateQueries({
@@ -1295,6 +1263,10 @@ export function useDeleteStaffPayout() {
       });
       queryClient.invalidateQueries({
         queryKey: ["staff-payouts-all"],
+        exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["salary-payout-rows"],
         exact: false,
       });
       // Also invalidate journal entries to update calendar in StaffDetail

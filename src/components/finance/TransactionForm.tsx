@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,8 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useStudents } from '@/hooks/useStudents';
 import { useActivities } from '@/hooks/useActivities';
+import { useEnrollments } from '@/hooks/useEnrollments';
 import { useStaff } from '@/hooks/useStaff';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import type { FinanceTransactionInsert, TransactionType } from '@/hooks/useFinanceTransactions';
@@ -55,6 +57,8 @@ interface TransactionFormProps {
   onSubmit: (data: FinanceTransactionInsert) => void;
   initialStudentId?: string;
   isLoading?: boolean;
+  /** Activity IDs to exclude from allocation (e.g. controller activity) — same as in balance display */
+  excludeActivityIds?: string[];
 }
 
 export function TransactionForm({ 
@@ -62,13 +66,15 @@ export function TransactionForm({
   onOpenChange, 
   onSubmit, 
   initialStudentId,
-  isLoading 
+  isLoading,
+  excludeActivityIds = [],
 }: TransactionFormProps) {
   const { data: students = [] } = useStudents();
   const { data: activities = [] } = useActivities();
   const { data: staff = [] } = useStaff();
   const { data: accounts = [] } = usePaymentAccounts();
 
+  const [allocationActivityIds, setAllocationActivityIds] = useState<string[]>([]);
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
@@ -85,7 +91,6 @@ export function TransactionForm({
 
   useEffect(() => {
     if (open) {
-      // If initialStudentId is provided, default to 'payment' type for student payments
       const defaultType = initialStudentId ? 'payment' : 'income';
       reset({
         type: defaultType,
@@ -98,19 +103,29 @@ export function TransactionForm({
         description: '',
         category: '',
       });
+      setAllocationActivityIds([]);
     } else {
-      // Reset form when dialog closes
       reset();
     }
   }, [open, initialStudentId, reset]);
 
   const selectedType = watch('type');
+  const selectedStudentId = watch('student_id') || initialStudentId || '';
+  const { data: enrollments = [] } = useEnrollments({
+    studentId: selectedStudentId || undefined,
+    activeOnly: true,
+  });
+  const enrolledActivityIds = useMemo(() => {
+    if (!selectedStudentId) return new Set<string>();
+    return new Set((enrollments as { activity_id: string }[]).map((e) => e.activity_id));
+  }, [selectedStudentId, enrollments]);
 
   const handleFormSubmit = (data: TransactionFormData) => {
     onSubmit({
       type: data.type as TransactionType,
       student_id: data.student_id || null,
-      activity_id: (data.type === 'payment' ? null : (data.activity_id && data.activity_id !== 'none') ? data.activity_id : null), // Hide activity_id for payment
+      activity_id: (data.type === 'payment' ? null : (data.activity_id && data.activity_id !== 'none') ? data.activity_id : null),
+      allocation_activity_ids: (data.type === 'payment' && allocationActivityIds.length > 0) ? allocationActivityIds : null,
       staff_id: data.staff_id || null,
       account_id: (data.account_id && data.account_id !== 'none') ? data.account_id : null,
       amount: parseFloat(data.amount),
@@ -120,6 +135,12 @@ export function TransactionForm({
     });
     reset();
     onOpenChange(false);
+  };
+
+  const toggleAllocationActivity = (activityId: string, checked: boolean) => {
+    setAllocationActivityIds((prev) =>
+      checked ? [...prev, activityId] : prev.filter((id) => id !== activityId),
+    );
   };
 
   const isIncome = selectedType === 'income' || selectedType === 'payment';
@@ -202,8 +223,32 @@ export function TransactionForm({
                     <p className="text-sm text-destructive">{errors.account_id.message}</p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Оплата буде зарахована на авансовий рахунок і автоматично розподілена по заборгованостям
+                    Оплата буде зарахована на авансовий рахунок. Можна вказати цільові послуги або залишити авторасподіл.
                   </p>
+                  <div className="space-y-2 pt-1">
+                    <Label className="text-sm">Привʼязка до послуг (необовʼязково)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Порядок вибору визначає пріоритет. Якщо не вказано — авторасподіл по заборгованостях.
+                    </p>
+                    <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1.5">
+                      {activities
+                        .filter((a) => a.is_active && (enrolledActivityIds.size === 0 || enrolledActivityIds.has(a.id)) && !excludeActivityIds.includes(a.id))
+                        .map((activity) => (
+                        <label
+                          key={activity.id}
+                          className="flex items-center gap-2 cursor-pointer text-sm"
+                        >
+                          <Checkbox
+                            checked={allocationActivityIds.includes(activity.id)}
+                            onCheckedChange={(c) =>
+                              toggleAllocationActivity(activity.id, !!c)
+                            }
+                          />
+                          {activity.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <>

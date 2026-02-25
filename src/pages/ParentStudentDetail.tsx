@@ -130,6 +130,7 @@ export default function ParentStudentDetail() {
             month={month}
             year={year}
             title="Історія оплат"
+            excludeActivityIds={controllerActivityIds}
           />
         </div>
       </div>

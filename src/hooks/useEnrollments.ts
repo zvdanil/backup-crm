@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { getMonthStartDate, getMonthEndDate, formatLocalDate } from '@/lib/attendance';
+import { isGardenAttendanceController } from '@/lib/gardenAttendance';
 import type { Student } from './useStudents';
 import type { Activity } from './useActivities';
 
@@ -235,6 +236,7 @@ export function useUpdateEnrollment() {
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
       queryClient.invalidateQueries({ queryKey: ['enrollment_price_history'] });
       queryClient.invalidateQueries({ queryKey: ['student_account_balances'] });
+      queryClient.invalidateQueries({ queryKey: ['payment_allocation'] });
       toast({ title: 'Запись обновлена' });
     },
     onError: (error) => {
@@ -279,6 +281,8 @@ export function useUnenrollStudent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
       queryClient.invalidateQueries({ queryKey: ['students'] });
+      queryClient.invalidateQueries({ queryKey: ['student_account_balances'] });
+      queryClient.invalidateQueries({ queryKey: ['payment_allocation'] });
       toast({ title: 'Дитину відписано від активності' });
     },
     onError: (error) => {
@@ -363,6 +367,57 @@ export function enrollmentHistoryCoversMonth(
     if (to != null && to <= firstDay) return false;
     return true;
   });
+}
+
+/**
+ * Чи потрапляє запис у нарахування балансу для даного місяця.
+ * Одна логіка для «Баланс по рахунках» і «Розподіл по послугах» — тільки ці записи показуються.
+ */
+export function enrollmentInScopeForMonth(
+  enrollment: {
+    id: string;
+    activity_id: string;
+    is_active: boolean;
+    unenrolled_at: string | null;
+    effective_from: string | null;
+    enrolled_at: string;
+  },
+  activity: { id: string; config?: unknown } | null | undefined,
+  history: EnrollmentPriceHistory[] | undefined,
+  year: number,
+  month: number,
+): boolean {
+  if (activity && isGardenAttendanceController(activity)) return false;
+  const isActive = enrollment.is_active === true;
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const isFutureMonth = year > currentYear || (year === currentYear && month > currentMonth);
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+  const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
+
+  // Архивний запис (is_active не true): тільки якщо знятий саме в цьому місяці
+  if (!isActive) {
+    if (!enrollment.unenrolled_at) return false;
+    if (unenrolledDate! < monthStart) return false;
+    if (unenrolledDate! > monthEnd) return false;
+    return true;
+  }
+
+  if (unenrolledDate && unenrolledDate < monthStart) return false;
+  const coversByHistory = enrollmentHistoryCoversMonth(history, year, month);
+  if (history && history.length > 0) {
+    if (!coversByHistory) return false;
+    if (isFutureMonth) return true;
+    return true;
+  }
+  const effectiveDate = (enrollment.effective_from ?? enrollment.enrolled_at)
+    ? new Date(enrollment.effective_from ?? enrollment.enrolled_at)
+    : null;
+  if (effectiveDate && effectiveDate > monthEnd) return false;
+  if (isFutureMonth) return !!effectiveDate && effectiveDate <= monthEnd;
+  return true;
 }
 
 /**

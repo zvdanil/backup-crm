@@ -2,8 +2,10 @@ import {
   useFinanceTransactions,
   useDeletePaymentTransaction,
   useUpdateFinanceTransaction,
+  usePaymentAllocation,
 } from "@/hooks/useFinanceTransactions";
 import { formatCurrency, formatDate, getMonthStartDate } from "@/lib/attendance";
+import { cn } from "@/lib/utils";
 import { usePaymentAccounts } from "@/hooks/usePaymentAccounts";
 import {
   useAccountOpeningBalancesForMonth,
@@ -20,7 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { Wallet, Trash2, Pencil, Plus } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/context/AuthContext";
@@ -44,11 +45,122 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 
+const MONTHS_TITLE = [
+  "Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
+  "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень",
+];
+
+/** Один блок «Розподіл по послугах» для одного рахунку (викликає usePaymentAllocation з accountId) */
+function AllocationBlockForAccount({
+  studentId,
+  month,
+  year,
+  accountId,
+  accountName,
+  excludeActivityIds,
+}: {
+  studentId: string;
+  month: number;
+  year: number;
+  accountId: string;
+  accountName: string;
+  excludeActivityIds: string[];
+}) {
+  const { data: allocationData } = usePaymentAllocation({
+    studentId,
+    month,
+    year,
+    accountId,
+    excludeActivityIds,
+  });
+  const currentMonth = month;
+  const currentYear = year;
+  const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+  const items = allocationData?.items ?? [];
+  const byMonth = new Map<string, typeof items>();
+  items.forEach((item) => {
+    const key = `${item.year}-${item.month}`;
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key)!.push(item);
+  });
+  const order: { year: number; month: number }[] = [
+    { year: currentYear, month: currentMonth },
+    { year: prevYear, month: prevMonth },
+  ];
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm font-medium text-muted-foreground">
+        Розподіл по послугах ({accountName})
+      </div>
+      <div className="text-xs space-y-3">
+        {items.length === 0 ? (
+          <p className="text-muted-foreground py-1">
+            Немає нарахувань за поточний та попередній місяць
+          </p>
+        ) : (
+          <>
+            {order.map(({ year: y, month: m }) => {
+              const key = `${y}-${m}`;
+              const monthItems = byMonth.get(key);
+              if (!monthItems?.length) return null;
+              const monthTitle = `${MONTHS_TITLE[m]} ${y}`;
+              return (
+                <div key={key} className="space-y-1">
+                  <div className="font-medium text-muted-foreground pb-0.5">
+                    {monthTitle}
+                  </div>
+                  {monthItems
+                    .sort((a, b) => (a.remainder > 0 ? 1 : 0) - (b.remainder > 0 ? 1 : 0))
+                    .map((item) => {
+                      const isPaid = item.remainder <= 0;
+                      const isPartial = item.paid > 0 && item.remainder > 0;
+                      return (
+                        <div
+                          key={`${item.activityId}-${item.accountId ?? "none"}-${item.year}-${item.month}`}
+                          className={cn(
+                            "flex justify-between gap-2 py-0.5 pl-2",
+                            isPaid && "text-success",
+                            isPartial && "text-muted-foreground",
+                            !isPaid && !isPartial && "text-destructive",
+                          )}
+                        >
+                          <span>{item.activityName}</span>
+                          <span>
+                            {isPaid && `оплачено ${formatCurrency(item.paid)}`}
+                            {isPartial &&
+                              `оплачено ${formatCurrency(item.paid)}, борг ${formatCurrency(item.remainder)}`}
+                            {!isPaid && !isPartial && `борг ${formatCurrency(item.remainder)}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            })}
+            {allocationData && allocationData.totalRemaining > 0 && (
+              <div className="flex justify-between gap-2 py-0.5 pt-1 border-t border-border font-medium text-destructive">
+                <span>Всього борг по послугах</span>
+                <span>{formatCurrency(allocationData.totalRemaining)}</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface StudentPaymentHistoryProps {
   studentId: string;
   month?: number;
   year?: number;
   title?: string;
+  /** Activity IDs to exclude (e.g. controller activity) — same as in balance display */
+  excludeActivityIds?: string[];
+  /** Рахунки для розподілу окремо по кожному (з «Баланс по рахунках»). Якщо передано — показуємо блок по кожному рахунку окремо */
+  accountIds?: string[];
+  accountLabelMap?: Map<string, string> | Record<string, string>;
 }
 
 export function StudentPaymentHistory({
@@ -56,6 +168,9 @@ export function StudentPaymentHistory({
   month,
   year,
   title = "Історія оплат",
+  excludeActivityIds = [],
+  accountIds,
+  accountLabelMap,
 }: StudentPaymentHistoryProps) {
   const { data: payments = [], isLoading } = useFinanceTransactions({
     studentId,
@@ -84,6 +199,30 @@ export function StudentPaymentHistory({
   } | null>(null);
   const [paymentToEdit, setPaymentToEdit] = useState<PaymentToEdit | null>(null);
 
+  const monthNum = month ?? new Date().getMonth();
+  const yearNum = year ?? new Date().getFullYear();
+
+  const { data: allocationData } = usePaymentAllocation({
+    studentId,
+    month: monthNum,
+    year: yearNum,
+    excludeActivityIds,
+  });
+
+  // Рахунки для блоків «Розподіл по послугах»: з балансів (пропс) + усі, по яких є оплати в цьому місяці
+  const displayAccountIds = useMemo(() => {
+    const fromPayments = [
+      ...new Set((payments || []).map((p) => p.account_id).filter(Boolean)),
+    ] as string[];
+    if ((accountIds?.length ?? 0) > 0)
+      return [...new Set([...accountIds, ...fromPayments])];
+    return fromPayments.length > 0 ? fromPayments : undefined;
+  }, [accountIds, payments]);
+
+  const usePerAccountAllocation = (displayAccountIds?.length ?? 0) > 0;
+  const hasAnyAllocation =
+    (allocationData && allocationData.items.length > 0) ||
+    (usePerAccountAllocation && (displayAccountIds?.length ?? 0) > 0);
   const canEdit = role === "owner" || role === "admin" || role === "accountant";
   const canDelete = canEdit;
   const showBalanceSection = canEdit && month != null && year != null;
@@ -436,22 +575,107 @@ export function StudentPaymentHistory({
           </Table>
         </div>
       )}
+        </>
+      )}
 
-      {payments.length > 0 && (
-        <div className="pt-2 border-t space-y-2">
-          {totalsByAccount.length > 0 && (
+      {(payments.length > 0 || hasAnyAllocation) && (
+        <div className="pt-2 border-t space-y-3">
+          {payments.length > 0 && totalsByAccount.length > 0 && (
             <div className="flex flex-col gap-1 text-sm">
               {totalsByAccount.map(({ accountId, accountName, amount }) => (
-                <div key={accountId ?? 'none'}>
-                  <span className="text-muted-foreground">{accountName}:</span>{' '}
+                <div key={accountId ?? "none"}>
+                  <span className="text-muted-foreground">{accountName}:</span>{" "}
                   <span className="font-medium text-success">+{formatCurrency(amount)}</span>
                 </div>
               ))}
             </div>
           )}
+          {usePerAccountAllocation && displayAccountIds?.length
+            ? displayAccountIds.map((aid) => (
+                <AllocationBlockForAccount
+                  key={aid}
+                  studentId={studentId}
+                  month={monthNum}
+                  year={yearNum}
+                  accountId={aid}
+                  accountName={
+                    (accountLabelMap && (accountLabelMap instanceof Map ? accountLabelMap.get(aid) : accountLabelMap[aid]))
+                    ?? accounts.find((a) => a.id === aid)?.name
+                    ?? aid
+                  }
+                  excludeActivityIds={excludeActivityIds}
+                />
+              ))
+            : allocationData && allocationData.items.length > 0 && (() => {
+                const currentMonth = monthNum;
+                const currentYear = yearNum;
+                const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+                const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+                const byMonth = new Map<string, typeof allocationData.items>();
+                allocationData.items.forEach((item) => {
+                  const key = `${item.year}-${item.month}`;
+                  if (!byMonth.has(key)) byMonth.set(key, []);
+                  byMonth.get(key)!.push(item);
+                });
+                const order: { year: number; month: number }[] = [
+                  { year: currentYear, month: currentMonth },
+                  { year: prevYear, month: prevMonth },
+                ];
+                return (
+                  <div className="space-y-1.5">
+                    <div className="text-sm font-medium text-muted-foreground">
+                      Розподіл по послугах
+                    </div>
+                    <div className="text-xs space-y-3">
+                      {order.map(({ year: y, month: m }) => {
+                        const key = `${y}-${m}`;
+                        const items = byMonth.get(key);
+                        if (!items?.length) return null;
+                        const monthTitle = `${MONTHS_TITLE[m]} ${y}`;
+                        return (
+                          <div key={key} className="space-y-1">
+                            <div className="font-medium text-muted-foreground pb-0.5">
+                              {monthTitle}
+                            </div>
+                            {items
+                              .sort((a, b) => (a.remainder > 0 ? 1 : 0) - (b.remainder > 0 ? 1 : 0))
+                              .map((item) => {
+                                const isPaid = item.remainder <= 0;
+                                const isPartial = item.paid > 0 && item.remainder > 0;
+                                return (
+                                  <div
+                                    key={`${item.activityId}-${item.accountId ?? "none"}-${item.year}-${item.month}`}
+                                    className={cn(
+                                      "flex justify-between gap-2 py-0.5 pl-2",
+                                      isPaid && "text-success",
+                                      isPartial && "text-muted-foreground",
+                                      !isPaid && !isPartial && "text-destructive",
+                                    )}
+                                  >
+                                    <span>{item.activityName}</span>
+                                    <span>
+                                      {isPaid && `оплачено ${formatCurrency(item.paid)}`}
+                                      {isPartial &&
+                                        `оплачено ${formatCurrency(item.paid)}, борг ${formatCurrency(item.remainder)}`}
+                                      {!isPaid && !isPartial && `борг ${formatCurrency(item.remainder)}`}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        );
+                      })}
+                      {allocationData.totalRemaining > 0 && (
+                        <div className="flex justify-between gap-2 py-0.5 pt-1 border-t border-border font-medium text-destructive">
+                          <span>Всього борг по послугах</span>
+                          <span>{formatCurrency(allocationData.totalRemaining)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
         </div>
-      )}
-        </>
       )}
 
       {selectedPayment && (
