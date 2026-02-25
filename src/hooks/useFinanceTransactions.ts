@@ -139,27 +139,32 @@ export function useFinanceTransactions(filters?: {
   month?: number;
   year?: number;
   type?: TransactionType;
+  enabled?: boolean;
 }) {
+  const { enabled = true, ...queryFilters } = filters || {};
   return useQuery({
-    queryKey: ["finance_transactions", filters],
+    queryKey: ["finance_transactions", queryFilters],
     queryFn: async () => {
       let query = supabaseAny
         .from("finance_transactions")
         .select("*")
         .order("date", { ascending: false });
 
-      if (filters?.studentId) {
-        query = query.eq("student_id", filters.studentId);
+      if (queryFilters.studentId) {
+        query = query.eq("student_id", queryFilters.studentId);
       }
-      if (filters?.activityId) {
-        query = query.eq("activity_id", filters.activityId);
+      if (queryFilters.activityId) {
+        query = query.eq("activity_id", queryFilters.activityId);
       }
-      if (filters?.type) {
-        query = query.eq("type", filters.type);
+      if (queryFilters.type) {
+        query = query.eq("type", queryFilters.type);
       }
-      if (filters?.month !== undefined && filters?.year !== undefined) {
-        const startDate = getMonthStartDate(filters.year, filters.month);
-        const endDate = getMonthEndDate(filters.year, filters.month);
+      if (
+        queryFilters.month !== undefined &&
+        queryFilters.year !== undefined
+      ) {
+        const startDate = getMonthStartDate(queryFilters.year, queryFilters.month);
+        const endDate = getMonthEndDate(queryFilters.year, queryFilters.month);
         query = query.gte("date", startDate).lte("date", endDate);
       }
 
@@ -167,6 +172,7 @@ export function useFinanceTransactions(filters?: {
       if (error) throw error;
       return data as FinanceTransaction[];
     },
+    enabled,
   });
 }
 

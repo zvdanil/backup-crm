@@ -70,12 +70,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -186,8 +180,12 @@ export default function StaffDetail() {
   const { data: allJournalEntries = [] } = useStaffJournalEntries(id);
   const { data: payouts = [] } = useStaffPayouts(id);
   const payoutIds = useMemo(() => payouts.map((p) => p.id), [payouts]);
+  const payoutIdsKey = useMemo(
+    () => [...payoutIds].sort().join(","),
+    [payoutIds],
+  );
   const { data: salaryTxByPayoutId = new Map<string, string>() } = useQuery({
-    queryKey: ["salary-tx-for-payouts", payoutIds.join(",")],
+    queryKey: ["salary-tx-for-payouts", payoutIdsKey],
     queryFn: async () => {
       if (payoutIds.length === 0) return new Map<string, string>();
       const { data, error } = await supabase
@@ -611,12 +609,16 @@ export default function StaffDetail() {
         });
       }
       reset();
-      setIsPayoutDialogOpen(false);
-      setSelectedPayoutDate(null);
-      setEditingPayoutId(null);
+      closePayoutDialog();
     } catch (error) {
       // Error handling is done in the mutation
     }
+  };
+
+  const closePayoutDialog = () => {
+    setIsPayoutDialogOpen(false);
+    setSelectedPayoutDate(null);
+    setEditingPayoutId(null);
   };
 
   const payoutsForSelectedDate = useMemo(() => {
@@ -658,14 +660,6 @@ export default function StaffDetail() {
         entry.date === date &&
         entry.is_manual_override === true,
     );
-
-    console.log("[DEBUG handleJournalEntryCellClick]", {
-      date,
-      realActivityId,
-      existing,
-      description: existing?.description,
-      allEntriesForDate: journalEntries.filter((e) => e.date === date),
-    });
 
     // Get manual rate for this date and activity
     const currentRate = getStaffManualRateForDate(
@@ -1619,18 +1613,20 @@ export default function StaffDetail() {
 
       <PayrollPayoutDialog
         open={isPayoutDialogOpen}
-        onOpenChange={setIsPayoutDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setIsPayoutDialogOpen(true);
+          } else {
+            closePayoutDialog();
+          }
+        }}
         onSubmit={handleSubmit(handlePayoutSubmit)}
         register={register}
         errors={errors}
         watch={watch}
         setValue={setValue}
         accounts={accounts}
-        onCancel={() => {
-          setIsPayoutDialogOpen(false);
-          setSelectedPayoutDate(null);
-          setEditingPayoutId(null);
-        }}
+        onCancel={closePayoutDialog}
         isSaving={
           createPayout.isPending ||
           updatePayout.isPending ||

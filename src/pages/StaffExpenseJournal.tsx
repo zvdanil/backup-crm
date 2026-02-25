@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useStaff } from '@/hooks/useStaff';
 import { Link } from 'react-router-dom';
-import { useAllStaffJournalEntries, useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, getStaffManualRateForDate, StaffManualRateHistory, useCreateStaffManualRateHistory, useCreateStaffPayout, useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBilling';
+import { useAllStaffJournalEntries, useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, getStaffManualRateForDate, StaffManualRateHistory, useCreateStaffPayout, useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBilling';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAttendance } from '@/hooks/useAttendance';
@@ -49,6 +49,11 @@ const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
   'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
 ];
+const STAFF_EXPENSE_QUERY_KEYS = {
+  staffPayoutsAll: 'staff-payouts-all',
+  salaryTxForPayouts: 'salary-tx-for-payouts',
+  salaryTxMetaForPayouts: 'salary-tx-meta-for-payouts',
+} as const;
 
 export default function StaffExpenseJournal() {
   const now = new Date();
@@ -90,7 +95,6 @@ export default function StaffExpenseJournal() {
   const { data: enrollments = [] } = useEnrollments({ activeOnly: true });
   const upsertJournalEntry = useUpsertStaffJournalEntry();
   const deleteJournalEntry = useDeleteStaffJournalEntry();
-  const createManualRateHistory = useCreateStaffManualRateHistory();
   const { data: accounts = [] } = usePaymentAccounts();
   const createPayout = useCreateStaffPayout();
   const updatePayout = useUpdateStaffPayout();
@@ -121,7 +125,7 @@ export default function StaffExpenseJournal() {
   });
 
   const { data: staffPayouts = [] } = useQuery({
-    queryKey: ['staff-payouts-all', month, year],
+    queryKey: [STAFF_EXPENSE_QUERY_KEYS.staffPayoutsAll, month, year],
     queryFn: async () => {
       const startDate = getMonthStartDate(year, month);
       const endDate = getMonthEndDate(year, month);
@@ -136,8 +140,9 @@ export default function StaffExpenseJournal() {
     },
   });
   const payoutIds = useMemo(() => staffPayouts.map((p) => p.id), [staffPayouts]);
+  const payoutIdsKey = useMemo(() => [...payoutIds].sort().join(','), [payoutIds]);
   const { data: salaryTxByPayoutId = new Map<string, string>() } = useQuery({
-    queryKey: ['salary-tx-for-payouts', payoutIds.join(',')],
+    queryKey: [STAFF_EXPENSE_QUERY_KEYS.salaryTxForPayouts, payoutIdsKey],
     queryFn: async () => {
       if (payoutIds.length === 0) return new Map<string, string>();
       const { data, error } = await supabase
@@ -157,12 +162,12 @@ export default function StaffExpenseJournal() {
   const { data: commissionsMap = new Map<string, { amount: number; id: string }>() } =
     useCommissionsForSalaryTransactions(salaryTxIds);
   const { data: salaryTxMeta = [] } = useQuery({
-    queryKey: ['salary-tx-meta-for-payouts', payoutIds.join(',')],
+    queryKey: [STAFF_EXPENSE_QUERY_KEYS.salaryTxMetaForPayouts, payoutIdsKey],
     queryFn: async () => {
       if (payoutIds.length === 0) return [];
       const { data, error } = await supabase
         .from('finance_transactions' as any)
-        .select('id, staff_payout_id, expense_category_id')
+        .select('staff_payout_id, expense_category_id')
         .eq('type', 'salary')
         .in('staff_payout_id', payoutIds);
       if (error) return [];
@@ -171,11 +176,10 @@ export default function StaffExpenseJournal() {
     enabled: payoutIds.length > 0,
   });
   const salaryTxMetaByPayoutId = useMemo(() => {
-    const map = new Map<string, { id: string; expense_category_id: string | null }>();
+    const map = new Map<string, { expense_category_id: string | null }>();
     salaryTxMeta.forEach((row: any) => {
       if (row.staff_payout_id) {
         map.set(row.staff_payout_id, {
-          id: row.id,
           expense_category_id: row.expense_category_id || null,
         });
       }
@@ -208,7 +212,7 @@ export default function StaffExpenseJournal() {
   const resetPayoutForm = (nextDate?: string) => {
     setEditingPayoutId(null);
     setPayoutAmount('');
-    setPayoutDate(nextDate || selectedPayoutDate || formatDateString(new Date()));
+    setPayoutDate(nextDate || formatDateString(new Date()));
     setPayoutNotes('');
     setPayoutAccountId('');
     setPayoutCommission('');
@@ -221,6 +225,13 @@ export default function StaffExpenseJournal() {
     setSelectedPayoutStaffId(staffId);
     setSelectedPayoutDate(dateStr);
     setPayoutDialogOpen(true);
+  };
+
+  const closePayoutDialog = () => {
+    setPayoutDialogOpen(false);
+    setSelectedPayoutStaffId('');
+    setSelectedPayoutDate('');
+    resetPayoutForm(formatDateString(new Date()));
   };
 
   const handlePayoutSubmit = async () => {
@@ -274,8 +285,7 @@ export default function StaffExpenseJournal() {
         staffName,
       });
     }
-    setPayoutDialogOpen(false);
-    resetPayoutForm();
+    closePayoutDialog();
   };
 
   const { data: allBillingRules = [] } = useQuery({
@@ -1372,16 +1382,19 @@ export default function StaffExpenseJournal() {
                                 isWeekend(day) && WEEKEND_BG_COLOR
                               )}
                             >
-                              {amount > 0 ? (
-                                <button
-                                  type="button"
-                                  className="underline decoration-dotted underline-offset-2 hover:text-red-700"
-                                  title="Редагувати виплати за дату"
-                                  onClick={() => openPayoutDialogForCell(staffMember.id, dateStr)}
-                                >
-                                  {formatCurrency(amount, false)}
-                                </button>
-                              ) : '—'}
+                              <button
+                                type="button"
+                                className={cn(
+                                  "w-full h-8 rounded transition-colors",
+                                  amount > 0
+                                    ? "underline decoration-dotted underline-offset-2 hover:text-red-700"
+                                    : "text-muted-foreground hover:bg-muted"
+                                )}
+                                title={amount > 0 ? "Редагувати виплати за дату" : "Додати виплату за дату"}
+                                onClick={() => openPayoutDialogForCell(staffMember.id, dateStr)}
+                              >
+                                {amount > 0 ? formatCurrency(amount, false) : '—'}
+                              </button>
                             </td>
                           );
                         })}
@@ -1403,8 +1416,11 @@ export default function StaffExpenseJournal() {
       <PayrollPayoutDialog
         open={payoutDialogOpen}
         onOpenChange={(open) => {
-          setPayoutDialogOpen(open);
-          if (!open) resetPayoutForm();
+          if (open) {
+            setPayoutDialogOpen(true);
+          } else {
+            closePayoutDialog();
+          }
         }}
         onSubmit={(event?: any) => {
           event?.preventDefault?.();
@@ -1426,7 +1442,7 @@ export default function StaffExpenseJournal() {
           if (field === 'account_id') setPayoutAccountId(value);
         }}
         accounts={accounts}
-        onCancel={() => setPayoutDialogOpen(false)}
+        onCancel={closePayoutDialog}
         isSaving={createPayout.isPending || updatePayout.isPending || syncCommission.isPending}
         payoutsForSelectedDate={payoutDialogRows}
         salaryTxByPayoutId={salaryTxByPayoutId}

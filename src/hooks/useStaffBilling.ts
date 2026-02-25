@@ -80,26 +80,6 @@ export interface StaffManualRateHistory {
   updated_at: string;
 }
 
-export interface StaffPayout {
-  id: string;
-  staff_id: string;
-  amount: number;
-  payout_date: string;
-  notes: string | null;
-  account_id: string | null;
-  created_at: string;
-  updated_at: string;
-  is_deleted?: boolean;
-  deleted_at?: string | null;
-  deleted_note?: string | null;
-}
-
-export type StaffPayoutInsert = Omit<
-  StaffPayout,
-  "id" | "created_at" | "updated_at"
->;
-export type StaffPayoutUpdate = Partial<StaffPayoutInsert>;
-
 export type StaffBillingRuleInsert = Omit<
   StaffBillingRule,
   "id" | "created_at" | "updated_at" | "activity"
@@ -1067,6 +1047,9 @@ export interface StaffPayout {
   notes: string | null;
   account_id: string | null;
   dividend_payout_id?: string | null;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+  deleted_note?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1079,10 +1062,57 @@ export type StaffPayoutUpdate = Partial<
   Omit<StaffPayout, "id" | "staff_id" | "created_at">
 >;
 
+const PAYROLL_QUERY_KEYS = {
+  staffPayouts: "staff-payouts",
+  staffPayoutsAll: "staff-payouts-all",
+  salaryPayoutRows: "salary-payout-rows",
+  salaryTxForPayouts: "salary-tx-for-payouts",
+  salaryTxMetaForPayouts: "salary-tx-meta-for-payouts",
+  financeTransactions: "finance_transactions",
+  staffJournalEntries: "staff-journal-entries",
+} as const;
+
+function invalidatePayrollPayoutQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  staffId: string,
+  options?: { includeFinanceTransactions?: boolean },
+) {
+  queryClient.invalidateQueries({
+    queryKey: [PAYROLL_QUERY_KEYS.staffPayouts, staffId],
+    exact: false,
+  });
+  queryClient.invalidateQueries({
+    queryKey: [PAYROLL_QUERY_KEYS.staffPayoutsAll],
+    exact: false,
+  });
+  queryClient.invalidateQueries({
+    queryKey: [PAYROLL_QUERY_KEYS.salaryPayoutRows],
+    exact: false,
+  });
+  queryClient.invalidateQueries({
+    queryKey: [PAYROLL_QUERY_KEYS.salaryTxForPayouts],
+    exact: false,
+  });
+  queryClient.invalidateQueries({
+    queryKey: [PAYROLL_QUERY_KEYS.salaryTxMetaForPayouts],
+    exact: false,
+  });
+  if (options?.includeFinanceTransactions) {
+    queryClient.invalidateQueries({
+      queryKey: [PAYROLL_QUERY_KEYS.financeTransactions],
+      exact: false,
+    });
+  }
+  queryClient.invalidateQueries({
+    queryKey: [PAYROLL_QUERY_KEYS.staffJournalEntries, staffId],
+    exact: false,
+  });
+}
+
 // Get all payouts for a specific staff member
 export function useStaffPayouts(staffId: string | undefined) {
   return useQuery({
-    queryKey: ["staff-payouts", staffId],
+    queryKey: [PAYROLL_QUERY_KEYS.staffPayouts, staffId],
     queryFn: async () => {
       if (!staffId) return [];
 
@@ -1103,7 +1133,7 @@ export function useStaffPayouts(staffId: string | undefined) {
 // Get all payouts for all staff (for payroll registry)
 export function useAllStaffPayouts() {
   return useQuery({
-    queryKey: ["staff-payouts-all"],
+    queryKey: [PAYROLL_QUERY_KEYS.staffPayoutsAll],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_payouts" as any)
@@ -1145,25 +1175,8 @@ export function useCreateStaffPayout() {
       };
     },
     onSuccess: (data: { payout: StaffPayout; salaryTransactionId: string }) => {
-      queryClient.invalidateQueries({
-        queryKey: ["staff-payouts", data.payout.staff_id],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["staff-payouts-all"],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["salary-payout-rows"],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["finance_transactions"],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["staff-journal-entries", data.payout.staff_id],
-        exact: false,
+      invalidatePayrollPayoutQueries(queryClient, data.payout.staff_id, {
+        includeFinanceTransactions: true,
       });
       toast({ title: "Виплату збережено" });
     },
@@ -1203,27 +1216,8 @@ export function useUpdateStaffPayout() {
       return payout as StaffPayout;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({
-        queryKey: ["staff-payouts", data.staff_id],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["staff-payouts-all"],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["salary-payout-rows"],
-        exact: false,
-      });
-      // Also invalidate finance_transactions to update salary journal
-      queryClient.invalidateQueries({
-        queryKey: ["finance_transactions"],
-        exact: false,
-      });
-      // Also invalidate journal entries to update calendar in StaffDetail
-      queryClient.invalidateQueries({
-        queryKey: ["staff-journal-entries", data.staff_id],
-        exact: false,
+      invalidatePayrollPayoutQueries(queryClient, data.staff_id, {
+        includeFinanceTransactions: true,
       });
       toast({ title: "Виплату оновлено" });
     },
@@ -1257,23 +1251,7 @@ export function useDeleteStaffPayout() {
       });
     },
     onSuccess: (_, { staffId }) => {
-      queryClient.invalidateQueries({
-        queryKey: ["staff-payouts", staffId],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["staff-payouts-all"],
-        exact: false,
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["salary-payout-rows"],
-        exact: false,
-      });
-      // Also invalidate journal entries to update calendar in StaffDetail
-      queryClient.invalidateQueries({
-        queryKey: ["staff-journal-entries", staffId],
-        exact: false,
-      });
+      invalidatePayrollPayoutQueries(queryClient, staffId);
       toast({ title: "Виплату видалено" });
     },
     onError: (error: any) => {
