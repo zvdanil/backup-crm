@@ -299,6 +299,18 @@ export function StudentActivityBalanceRow({
   const displayCharges = isFoodActivity ? 0 : charges;
   const displayRefunds = isFoodActivity ? refunds : 0;
 
+  // Permanent UI rule:
+  // for pure subscription activities, the row value must show monthly accrual
+  // (charges/baseMonthlyCharge), not balance/debt. This keeps the "Абонплата"
+  // row semantically correct and prevents showing opening-balance artifacts here.
+  const isPureSubscriptionDisplay =
+    !isFoodActivity &&
+    displayMode === "subscription" &&
+    presentRule?.type === "subscription";
+  const rowPrimaryValue = isPureSubscriptionDisplay
+    ? displayCharges
+    : displayBalance;
+
   // For food activity: if there are refunds, balance is always positive (green) for client
   // For other activities: balance can be positive or negative
   const isPositive = isFoodActivity
@@ -400,11 +412,15 @@ export function StudentActivityBalanceRow({
             <div
               className={cn(
                 "text-sm font-semibold",
-                isPositive ? "text-success" : "text-destructive",
+                isPureSubscriptionDisplay
+                  ? "text-destructive"
+                  : isPositive
+                    ? "text-success"
+                    : "text-destructive",
               )}
             >
-              {displayBalance > 0 ? "+" : ""}
-              {formatCurrency(Math.abs(displayBalance))}
+              {!isPureSubscriptionDisplay && rowPrimaryValue > 0 ? "+" : ""}
+              {formatCurrency(Math.abs(rowPrimaryValue))}
             </div>
             <div className="text-xs text-muted-foreground whitespace-normal break-words">
               {isFoodActivity
