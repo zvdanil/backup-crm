@@ -43,6 +43,47 @@ const queryClient = new QueryClient({
   },
 });
 
+// Suppress verbose dashboard debug noise in production-like usage.
+// To re-enable these logs for diagnostics, set:
+// localStorage.setItem('dashboard_debug', '1') and reload page.
+if (typeof window !== "undefined") {
+  const win = window as any;
+  if (!win.__dashboardDebugConsolePatched) {
+    const dashboardDebugEnabled =
+      window.localStorage.getItem("dashboard_debug") === "1";
+
+    if (!dashboardDebugEnabled) {
+      const suppressedPrefixes = [
+        "[Dashboard Debug]",
+        "[Auto-journal]",
+        "[EnhancedAttendanceGrid]",
+      ];
+      const shouldSuppress = (args: any[]) =>
+        typeof args[0] === "string" &&
+        suppressedPrefixes.some((prefix) => args[0].startsWith(prefix));
+
+      const originalLog = console.log.bind(console);
+      const originalWarn = console.warn.bind(console);
+      const originalError = console.error.bind(console);
+
+      console.log = (...args: any[]) => {
+        if (shouldSuppress(args)) return;
+        originalLog(...args);
+      };
+      console.warn = (...args: any[]) => {
+        if (shouldSuppress(args)) return;
+        originalWarn(...args);
+      };
+      console.error = (...args: any[]) => {
+        if (shouldSuppress(args)) return;
+        originalError(...args);
+      };
+    }
+
+    win.__dashboardDebugConsolePatched = true;
+  }
+}
+
 // Expose queryClient to window for manual cache clearing (development/debugging)
 if (typeof window !== "undefined") {
   (window as any).clearCache = () => {
