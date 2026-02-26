@@ -544,7 +544,20 @@ export function EnhancedAttendanceGrid({
       staffIds.forEach((staffId) => {
         dateStrings.forEach((date) => {
           const key = `${staffId}|${activityId}|${date}`;
-          if (manualOverrideKeys.has(key)) return;
+          if (manualOverrideKeys.has(key)) {
+            // If manual override exists for this day, auto entry must not survive.
+            // This prevents stale auto accrual after attendance mark deletion.
+            promises.push(
+              deleteStaffJournalEntry.mutateAsync({
+                staff_id: staffId,
+                activity_id: activityId,
+                group_lesson_id: null,
+                date,
+                is_manual_override: false,
+              }),
+            );
+            return;
+          }
 
           const dayAccrual = accruals.get(staffId)?.get(date);
           if (dayAccrual && dayAccrual.amount > 0) {
@@ -582,7 +595,20 @@ export function EnhancedAttendanceGrid({
       });
 
       if (promises.length > 0) {
-        await Promise.allSettled(promises);
+        const results = await Promise.allSettled(promises);
+        const rejected = results.filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === "rejected",
+        );
+        if (rejected.length > 0) {
+          const firstReason =
+            rejected[0].reason instanceof Error
+              ? rejected[0].reason.message
+              : String(rejected[0].reason || "Unknown error");
+          throw new Error(
+            `Failed to sync staff journal entries (${rejected.length}/${results.length}): ${firstReason}`,
+          );
+        }
       }
     },
     [
@@ -1205,6 +1231,14 @@ export function EnhancedAttendanceGrid({
         await syncStaffJournalEntriesForMonth(optimisticRecords);
       } catch (error) {
         console.error("Failed to delete attendance:", error);
+        toast({
+          title: "Помилка синхронізації",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Не вдалося оновити фінансові дані після видалення відмітки",
+          variant: "destructive",
+        });
       }
       return;
     }
