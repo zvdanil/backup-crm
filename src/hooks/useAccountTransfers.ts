@@ -7,6 +7,7 @@ export interface AccountTransfer {
   from_account_id: string;
   to_account_id: string;
   amount: number;
+  commission_amount: number;
   transfer_date: string;
   description: string | null;
   created_at: string;
@@ -31,6 +32,7 @@ export interface AccountTransferInsert {
   amount: number;
   transfer_date: string;
   description?: string | null;
+  commission_amount?: number;
 }
 
 export function useAccountTransfers(accountId?: string) {
@@ -54,7 +56,51 @@ export function useAccountTransfers(accountId?: string) {
       const { data, error } = await query;
 
       if (error) throw error;
-      return (data || []) as AccountTransfer[];
+      
+      // If no transfers, return empty array
+      if (!data || data.length === 0) {
+        return [] as AccountTransfer[];
+      }
+      
+      // Get commission amounts from finance_transactions
+      // Commission is an expense transaction with transfer_id and activity_id linked to "Комісії"
+      const transferIds = data.map(t => t.id);
+      
+      // First, get the "Комісії" activity id
+      const { data: commissionActivity } = await supabase
+        .from('activities')
+        .select('id')
+        .eq('name', 'Комісії')
+        .eq('category', 'expense')
+        .maybeSingle();
+      
+      // Build a map of transfer_id -> commission_amount
+      const commissionMap: Record<string, number> = {};
+      
+      if (commissionActivity) {
+        const { data: commissionTxs } = await supabase
+          .from('finance_transactions')
+          .select('transfer_id, amount')
+          .in('transfer_id', transferIds)
+          .eq('activity_id', commissionActivity.id)
+          .eq('type', 'expense');
+        
+        if (commissionTxs) {
+          commissionTxs.forEach(tx => {
+            if (tx.transfer_id) {
+              commissionMap[tx.transfer_id] = Number(tx.amount) || 0;
+            }
+          });
+        }
+      }
+      
+      // Enrich transfers with commission_amount
+      const enrichedData = data.map(transfer => ({
+        ...transfer,
+        commission_amount: commissionMap[transfer.id] || 0,
+      }));
+      
+      return enrichedData as AccountTransfer[];
     },
   });
 }
@@ -65,6 +111,19 @@ export function useCreateAccountTransfer() {
   return useMutation({
     mutationFn: async (transfer: AccountTransferInsert) => {
       const { data: { user } } = await supabase.auth.getUser();
+      
+      // Get account names for commission description
+      const { data: fromAccount } = await supabase
+        .from('payment_accounts')
+        .select('name')
+        .eq('id', transfer.from_account_id)
+        .single();
+      
+      const { data: toAccount } = await supabase
+        .from('payment_accounts')
+        .select('name')
+        .eq('id', transfer.to_account_id)
+        .single();
       
       // Проверяем, существует ли функция (миграция применена)
       const { data, error } = await supabase.rpc('create_account_transfer', {
@@ -85,13 +144,15 @@ export function useCreateAccountTransfer() {
         throw error;
       }
       
+      const transferId = data;
+      
       // Проверяем, что обе транзакции созданы
-      if (data) {
+      if (transferId) {
         // Проверяем expense транзакцию
         const { data: expenseTx, error: expenseError } = await supabase
           .from('finance_transactions')
           .select('id, type, account_id, amount')
-          .eq('transfer_id', data)
+          .eq('transfer_id', transferId)
           .eq('type', 'expense')
           .eq('account_id', transfer.from_account_id)
           .single();
@@ -100,11 +161,15 @@ export function useCreateAccountTransfer() {
           console.error('Expense transaction not found after transfer creation:', expenseError);
         }
         
-        // Проверяем payment транзакцию
+        // Проверяем payment транзакцию (amount - commission)
+        const receivedAmount = transfer.commission_amount 
+          ? transfer.amount - transfer.commission_amount 
+          : transfer.amount;
+          
         const { data: paymentTx, error: paymentError } = await supabase
           .from('finance_transactions')
           .select('id, type, account_id, amount')
-          .eq('transfer_id', data)
+          .eq('transfer_id', transferId)
           .eq('type', 'payment')
           .eq('account_id', transfer.to_account_id)
           .single();
@@ -112,9 +177,45 @@ export function useCreateAccountTransfer() {
         if (paymentError || !paymentTx) {
           console.error('Payment transaction not found after transfer creation:', paymentError);
         }
+        
+        // Update payment amount to received amount (after commission)
+        if (transfer.commission_amount && transfer.commission_amount > 0 && paymentTx) {
+          await (supabase as any)
+            .from('finance_transactions')
+            .update({ amount: receivedAmount })
+            .eq('id', paymentTx.id);
+        }
+        
+        // Создаём транзакцию комиссии в журнале "Комісії"
+        if (transfer.commission_amount && transfer.commission_amount > 0) {
+          // Ищем activity "Комісії"
+          const { data: commissionActivity } = await supabase
+            .from('activities')
+            .select('id')
+            .eq('name', 'Комісії')
+            .eq('category', 'expense')
+            .maybeSingle();
+          
+          if (commissionActivity) {
+            const commissionDescription = `комісія за переказ ${fromAccount?.name || 'рахунок'} → ${toAccount?.name || 'рахунок'}${transfer.description ? ': ' + transfer.description : ''}`;
+            
+            await (supabase as any).from('finance_transactions').insert({
+              type: 'expense',
+              activity_id: commissionActivity.id,
+              staff_id: null,
+              student_id: null,
+              expense_category_id: null,
+              amount: transfer.commission_amount,
+              date: transfer.transfer_date,
+              description: commissionDescription,
+              account_id: transfer.from_account_id,
+              transfer_id: transferId,
+            });
+          }
+        }
       }
       
-      return data as string; // Returns transfer ID
+      return transferId as string; // Returns transfer ID
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['account_transfers'], exact: false });

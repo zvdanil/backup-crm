@@ -29,6 +29,8 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useCreateAccountTransfer } from '@/hooks/useAccountTransfers';
 import { formatCurrency, formatLocalDate } from '@/lib/attendance';
@@ -37,6 +39,8 @@ const transferSchema = z.object({
   from_account_id: z.string().min(1, 'Оберіть рахунок-джерело'),
   to_account_id: z.string().min(1, 'Оберіть рахунок-отримувач'),
   amount: z.coerce.number().positive('Сума повинна бути більше 0'),
+  commission_type: z.enum(['percent', 'fixed']),
+  commission: z.coerce.number().min(0).default(0),
   transfer_date: z.string().min(1, 'Оберіть дату'),
   description: z.string().optional(),
 }).refine((data) => data.from_account_id !== data.to_account_id, {
@@ -66,6 +70,8 @@ export function AccountTransferDialog({
       from_account_id: defaultFromAccountId || '',
       to_account_id: '',
       amount: 0,
+      commission_type: 'percent',
+      commission: 0,
       transfer_date: formatLocalDate(new Date()),
       description: '',
     },
@@ -74,6 +80,14 @@ export function AccountTransferDialog({
   const fromAccountId = form.watch('from_account_id');
   const toAccountId = form.watch('to_account_id');
   const amount = form.watch('amount');
+  const commissionType = form.watch('commission_type');
+  const commission = form.watch('commission');
+
+  // Calculate commission amount
+  const commissionAmount = commissionType === 'percent' 
+    ? (amount * commission) / 100 
+    : commission;
+  const receivedAmount = amount - commissionAmount;
 
   // Filter out the selected from account from to account options
   const availableToAccounts = accounts.filter(
@@ -87,12 +101,18 @@ export function AccountTransferDialog({
 
   const onSubmit = async (data: TransferFormValues) => {
     try {
+      // Calculate actual commission amount
+      const commissionAmount = data.commission_type === 'percent' 
+        ? (data.amount * data.commission) / 100 
+        : data.commission;
+      
       await createTransfer.mutateAsync({
         from_account_id: data.from_account_id,
         to_account_id: data.to_account_id,
         amount: data.amount,
         transfer_date: data.transfer_date,
         description: data.description || null,
+        commission_amount: commissionAmount,
       });
       form.reset();
       onOpenChange(false);
@@ -202,6 +222,72 @@ export function AccountTransferDialog({
                 </FormItem>
               )}
             />
+
+            <div className="space-y-4 border rounded-md p-4 bg-muted/30">
+              <div className="flex items-center justify-between">
+                <FormLabel className="text-base">Комісія</FormLabel>
+              </div>
+              
+              <FormField
+                control={form.control}
+                name="commission_type"
+                render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormControl>
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        className="flex gap-4"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="percent" id="percent" />
+                          <Label htmlFor="percent">Відсотки (%)</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="fixed" id="fixed" />
+                          <Label htmlFor="fixed">Сума (грн)</Label>
+                        </div>
+                      </RadioGroup>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="commission"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {commissionType === 'percent' ? 'Комісія (%)' : 'Комісія (грн)'}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step={commissionType === 'percent' ? '0.1' : '0.01'}
+                        min="0"
+                        placeholder={commissionType === 'percent' ? '0' : '0.00'}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {commission > 0 && amount > 0 && (
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>
+                    <span className="font-medium">Комісія:</span>{' '}
+                    {formatCurrency(commissionAmount)}
+                  </p>
+                  <p>
+                    <span className="font-medium">До отримання:</span>{' '}
+                    {formatCurrency(receivedAmount)}
+                  </p>
+                </div>
+              )}
+            </div>
 
             <FormField
               control={form.control}

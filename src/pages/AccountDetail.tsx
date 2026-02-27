@@ -274,6 +274,8 @@ export default function AccountDetail() {
                     <TableHead>З рахунку</TableHead>
                     <TableHead>На рахунок</TableHead>
                     <TableHead>Сума</TableHead>
+                    <TableHead>Комісія</TableHead>
+                    <TableHead>Зараховано</TableHead>
                     <TableHead>Опис</TableHead>
                     <TableHead>Статус</TableHead>
                     <TableHead className="text-right">Дії</TableHead>
@@ -296,6 +298,12 @@ export default function AccountDetail() {
                       </TableCell>
                       <TableCell className="font-medium">
                         {formatCurrency(transfer.amount)}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatCurrency(transfer.commission_amount || 0)}
+                      </TableCell>
+                      <TableCell className="font-medium text-green-600">
+                        {formatCurrency(transfer.amount - (transfer.commission_amount || 0))}
                       </TableCell>
                       <TableCell>
                         {transfer.description || (
