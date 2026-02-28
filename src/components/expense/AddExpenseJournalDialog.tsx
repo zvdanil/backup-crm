@@ -98,7 +98,7 @@ export function AddExpenseJournalDialog({ open, onOpenChange }: AddExpenseJourna
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Додати журнал витрат</DialogTitle>
         </DialogHeader>

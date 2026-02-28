@@ -69,7 +69,7 @@ export function PayrollPayoutDialog({
 }: PayrollPayoutDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Реєстрація виплати</DialogTitle>
         </DialogHeader>
@@ -78,7 +78,9 @@ export function PayrollPayoutDialog({
             <Label htmlFor="payout_staff">Співробітник</Label>
             <Select
               value={staffFieldValue}
-              onValueChange={onStaffFieldChange}
+              onValueChange={(value) => {
+                onStaffFieldChange(value);
+              }}
               disabled={staffFieldDisabled}
             >
               <SelectTrigger id="payout_staff">

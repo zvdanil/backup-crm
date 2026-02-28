@@ -463,9 +463,13 @@ export default function ActivityExpenseJournal() {
   const salaryDialogItemsForDate = useMemo(
     () =>
       isSalary && dialogOpen
-        ? combinedTransactions.filter((t) => t.date === date)
+        ? combinedTransactions.filter(
+            (t) =>
+              t.date === date &&
+              (!staffId || !t.staff_id || t.staff_id === staffId),
+          )
         : [],
-    [combinedTransactions, isSalary, date, dialogOpen]
+    [combinedTransactions, isSalary, date, dialogOpen, staffId]
   );
   const salaryDialogTxIdMap = useMemo(() => {
     const map = new Map<string, string>();

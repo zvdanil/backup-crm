@@ -1469,7 +1469,9 @@ export default function StaffExpenseJournal() {
         }}
         staffOptions={activeStaff.map((s) => ({ id: s.id, name: s.full_name }))}
         staffFieldValue={selectedPayoutStaffId}
-        onStaffFieldChange={setSelectedPayoutStaffId}
+        onStaffFieldChange={(value) => {
+          setSelectedPayoutStaffId(value);
+        }}
         staffFieldDisabled={false}
         subcategoryOptions={salaryExpenseCategories.map((c) => ({ id: c.id, name: c.name }))}
         subcategoryFieldValue={payoutCategoryId}
