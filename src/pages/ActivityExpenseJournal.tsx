@@ -22,7 +22,7 @@ import { useDividendParticipants, useDividendSettings, useCreateDividendPayout, 
 import { DividendPayoutFormDialog } from '@/components/dividend/DividendPayoutFormDialog';
 import { PayrollPayoutDialog } from '@/components/staff/PayrollPayoutDialog';
 import { supabase } from '@/integrations/supabase/client';
-import { formatCurrency, formatDate, formatDateString, getDaysInMonth, getMonthStartDate, getMonthEndDate, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
+import { formatDate, formatDateString, getDaysInMonth, getMonthStartDate, getMonthEndDate, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
 import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { resolvePayrollPayoutPrefill, type ResolvedPayrollPayoutPrefill } from '@/lib/payrollPayoutContract';
@@ -49,6 +49,15 @@ const getTransactionTypeForCategory = (category: string | null): TransactionType
 };
 
 const toPayoutId = (value: string) => value.replace('payout-', '');
+
+const formatCurrency = (amount: number, includeSymbol = true): string => {
+  const formatted = new Intl.NumberFormat('uk-UA', {
+    style: 'decimal',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return includeSymbol ? `${formatted} ₴` : formatted;
+};
 
 export default function ActivityExpenseJournal() {
   const { id } = useParams<{ id: string }>();

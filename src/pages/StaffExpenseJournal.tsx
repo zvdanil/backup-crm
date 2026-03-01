@@ -21,7 +21,6 @@ import {
   getWeekdayShort, 
   isWeekend,
   WEEKEND_BG_COLOR,
-  formatCurrency,
   formatDateString,
   formatDate,
   filterDaysByPeriod,
@@ -54,6 +53,15 @@ const STAFF_EXPENSE_QUERY_KEYS = {
   salaryTxForPayouts: 'salary-tx-for-payouts',
   salaryTxMetaForPayouts: 'salary-tx-meta-for-payouts',
 } as const;
+
+const formatCurrency = (amount: number, includeSymbol = true): string => {
+  const formatted = new Intl.NumberFormat('uk-UA', {
+    style: 'decimal',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return includeSymbol ? `${formatted} ₴` : formatted;
+};
 
 export default function StaffExpenseJournal() {
   const now = new Date();
