@@ -324,12 +324,12 @@ export function StudentAccountBalance({
                     <div className="flex items-center justify-between">
                       <span className="text-foreground">Поточний баланс</span>
                       {endBalance < 0 ? (
-                        <span className="font-semibold text-foreground">
-                          До сплати: {formatCurrency(Math.abs(endBalance))}
+                        <span className="font-semibold text-destructive">
+                          -{formatCurrency(Math.abs(endBalance))}
                         </span>
                       ) : endBalance > 0 ? (
-                        <span className="font-semibold text-foreground">
-                          Переплата: +{formatCurrency(endBalance)}
+                        <span className="font-semibold text-success">
+                          +{formatCurrency(endBalance)}
                         </span>
                       ) : (
                         <span className="font-semibold text-foreground">
