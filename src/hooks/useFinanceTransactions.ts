@@ -1710,8 +1710,7 @@ function calculateMonthlyBalanceFromData(
     const activity = activityDataMap[enrollment.activity_id];
     if (!activity) return;
     const presentRule = activity.billing_rules?.present;
-    const isMonthlyBilling =
-      presentRule?.type === "fixed" || presentRule?.type === "subscription";
+    const isMonthlyBilling = presentRule?.type === "subscription";
     const fallbackMode = isMonthlyBilling ? "subscription" : "recalculation";
     displayModeByActivity[enrollment.activity_id] =
       (activity.balance_display_mode as any) || fallbackMode;
@@ -1788,12 +1787,8 @@ function calculateMonthlyBalanceFromData(
     const payments = paymentsByActivity[activityId] || 0;
     const income = incomeByActivity[activityId] || 0;
     const expense = expenseByActivity[activityId] || 0;
-    const hasFinanceTransactions = income !== 0 || expense !== 0;
     const monthlyCharges = monthlyChargesByActivity[activityId] || 0;
     const attendanceTotal = attendanceByActivity[activityId] || 0;
-    const recalculationCharges = hasFinanceTransactions
-      ? income
-      : attendanceTotal;
     const displayMode =
       displayModeByActivity[activityId] ||
       (monthlyCharges > 0 ? "subscription" : "recalculation");
@@ -1806,22 +1801,11 @@ function calculateMonthlyBalanceFromData(
         filteredEnrollments.find((e: any) => e.id === eId),
     );
 
-    let charges = recalculationCharges;
+    let charges = attendanceTotal;
     if (displayMode === "subscription") {
-      const hasActiveEnrollments = enrollmentsForActivity.some(
-        ([eId, _]) => enrollmentIsActiveMap.get(eId) ?? true,
-      );
-      if (income > 0) {
-        // Реальные начисления из транзакций
-        charges = income;
-      } else if (hasFinanceTransactions || hasActiveEnrollments) {
-        // Если транзакций нет, используем месячную абонплату как ожидаемое начисление
-        charges = monthlyCharges;
-      } else {
-        charges = 0;
-      }
+      charges = monthlyCharges;
     } else if (displayMode === "subscription_and_recalculation") {
-      charges = monthlyCharges + recalculationCharges;
+      charges = monthlyCharges + attendanceTotal;
     }
     const refunds = expense;
     const balance = payments - charges + refunds;
@@ -1993,6 +1977,9 @@ async function calculateMonthlyAccountBalances(
       custom_price: number | null;
       discount_percent: number | null;
       account_id: string | null;
+      is_active: boolean;
+      unenrolled_at: string | null;
+      enrolled_at: string | null;
     }
   >();
   const activityIds = new Set<string>();
@@ -2004,6 +1991,9 @@ async function calculateMonthlyAccountBalances(
       custom_price: enrollment.custom_price ?? null,
       discount_percent: enrollment.discount_percent ?? null,
       account_id: enrollment.account_id ?? null,
+      is_active: enrollment.is_active ?? true,
+      unenrolled_at: enrollment.unenrolled_at ?? null,
+      enrolled_at: enrollment.enrolled_at ?? null,
     });
     activityIds.add(enrollment.activity_id);
   });
@@ -2033,44 +2023,6 @@ async function calculateMonthlyAccountBalances(
     .lte("date", endDate);
 
   if (transactionsError) throw transactionsError;
-
-  const paymentsByActivity: Record<string, number> = {};
-  const incomeByActivity: Record<string, number> = {};
-  const expenseByActivity: Record<string, number> = {};
-  const paymentsByAccount: Map<string | null, number> = new Map();
-
-  (transactions || []).forEach((trans: any) => {
-    if (!trans.activity_id) {
-      if (trans.type === "payment") {
-        const accountId = trans.account_id || null;
-        const current = paymentsByAccount.get(accountId) || 0;
-        paymentsByAccount.set(accountId, current + (trans.amount || 0));
-      }
-      return;
-    }
-    if (!activityIds.has(trans.activity_id)) return;
-    if (trans.type === "payment") {
-      paymentsByActivity[trans.activity_id] =
-        (paymentsByActivity[trans.activity_id] || 0) + (trans.amount || 0);
-    } else if (trans.type === "income") {
-      if (!isAttendanceV1InfoIncome(trans, attendanceV1BaseTariffIdSet)) {
-        incomeByActivity[trans.activity_id] =
-          (incomeByActivity[trans.activity_id] || 0) + (trans.amount || 0);
-      }
-    } else if (trans.type === "expense") {
-      expenseByActivity[trans.activity_id] =
-        (expenseByActivity[trans.activity_id] || 0) + (trans.amount || 0);
-    }
-  });
-
-  const attendanceByActivity: Record<string, number> = {};
-  attendanceData.forEach((att) => {
-    const activityId = enrollmentActivityMap.get(att.enrollment_id);
-    if (!activityId) return;
-    attendanceByActivity[activityId] =
-      (attendanceByActivity[activityId] || 0) + (att.charged_amount || 0);
-  });
-
   const activityIdList = Array.from(activityIds);
   const activityAccountMap: Record<string, string | null> = {};
   const activityDataMap: Record<
@@ -2098,211 +2050,21 @@ async function calculateMonthlyAccountBalances(
       };
     });
   }
-
-  const foodTariffIdSet = new Set(foodTariffIds);
-  const monthlyChargesByActivity: Record<string, number> = {};
-  const subscriptionOnlyChargesByActivity: Record<string, number> = {};
-  const displayModeByActivity: Record<
-    string,
-    "subscription" | "recalculation" | "subscription_and_recalculation"
-  > = {};
-  const enrollmentIsActiveMap = new Map<string, boolean>();
-  filteredEnrollments.forEach((enrollment: any) => {
-    enrollmentIsActiveMap.set(enrollment.id, enrollment.is_active);
-  });
-
-  enrollmentDataMap.forEach((enrollment, enrollmentId) => {
-    const activity = activityDataMap[enrollment.activity_id];
-    if (!activity) return;
-    const presentRule = activity.billing_rules?.present;
-    const isMonthlyBilling =
-      presentRule?.type === "fixed" || presentRule?.type === "subscription";
-    const fallbackMode = isMonthlyBilling ? "subscription" : "recalculation";
-    displayModeByActivity[enrollment.activity_id] =
-      (activity.balance_display_mode as any) || fallbackMode;
-    if (foodTariffIdSet.has(enrollment.activity_id)) return;
-    const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
-    if (!isActive) return;
-
-    let baseMonthlyCharge = 0;
-
-    if (isMonthlyBilling) {
-      // Абонплата — тільки повна ставка, без перерахунків та знижок
-      const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-      const priceHistory = priceHistoryMap.get(enrollmentId);
-      const priceForDate = getEnrollmentPriceForDate(
-        enrollment,
-        priceHistory,
-        monthStartDateStr,
-      );
-      if (
-        priceForDate.custom_price !== null &&
-        priceForDate.custom_price !== undefined
-      ) {
-        baseMonthlyCharge = priceForDate.custom_price;
-      } else if (presentRule?.rate && presentRule.rate > 0) {
-        baseMonthlyCharge = presentRule.rate;
-      } else {
-        baseMonthlyCharge = activity.default_price || 0;
-      }
-      // «Нараховано на початок» — тільки present subscription, НЕ fixed (fixed = ставка за заняття)
-      if (presentRule?.type === "subscription" && baseMonthlyCharge > 0) {
-        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
-          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
-      }
-    } else {
-      const customStatuses = activity.billing_rules?.custom_statuses || [];
-      const subscriptionCustom = customStatuses.filter(
-        (cs: any) =>
-          cs.is_active !== false &&
-          (cs.type === "subscription" || cs.type === "subscription_with_logic") &&
-          cs.rate != null &&
-          cs.rate > 0,
-      );
-      if (subscriptionCustom.length > 0) {
-        const maxRate = Math.max(...subscriptionCustom.map((cs: any) => Number(cs.rate)));
-        displayModeByActivity[enrollment.activity_id] =
-          (activity.balance_display_mode as any) || "subscription";
-        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
-          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + maxRate;
-      }
-    }
-
-    if (baseMonthlyCharge > 0) {
-      monthlyChargesByActivity[enrollment.activity_id] =
-        (monthlyChargesByActivity[enrollment.activity_id] || 0) +
-        baseMonthlyCharge;
-    }
-  });
-
-  const balancesByAccount = new Map<string | null, StudentAccountBalance>();
-  const enrollmentToActivityMap = new Map<string, string>();
-  filteredEnrollments.forEach((enrollment: any) => {
-    enrollmentToActivityMap.set(enrollment.id, enrollment.activity_id);
-  });
-  const attendanceByEnrollment = new Map<string, number>();
-  attendanceData.forEach((att) => {
-    const current = attendanceByEnrollment.get(att.enrollment_id) || 0;
-    attendanceByEnrollment.set(
-      att.enrollment_id,
-      current + (att.charged_amount || 0),
-    );
-  });
-
-  activityIdList.forEach((activityId) => {
-    const payments = paymentsByActivity[activityId] || 0;
-    const income = incomeByActivity[activityId] || 0;
-    const expense = expenseByActivity[activityId] || 0;
-    const hasFinanceTransactions = income !== 0 || expense !== 0;
-    const monthlyCharges = monthlyChargesByActivity[activityId] || 0;
-    const attendanceTotal = attendanceByActivity[activityId] || 0;
-    const recalculationCharges = hasFinanceTransactions
-      ? income
-      : attendanceTotal;
-    const displayMode =
-      displayModeByActivity[activityId] ||
-      (monthlyCharges > 0 ? "subscription" : "recalculation");
-
-    const enrollmentsForActivity = Array.from(
-      enrollmentDataMap.entries(),
-    ).filter(([_, data]) => data.activity_id === activityId);
-
-    let charges = recalculationCharges;
-    if (displayMode === "subscription") {
-      const hasActiveEnrollments = enrollmentsForActivity.some(
-        ([eId, _]) => enrollmentIsActiveMap.get(eId) ?? true,
-      );
-      if (income > 0) {
-        // Реальные начисления из транзакций
-        charges = income;
-      } else if (hasFinanceTransactions || hasActiveEnrollments) {
-        // Если транзакций нет, используем месячную абонплату как ожидаемое начисление
-        charges = monthlyCharges;
-      } else {
-        charges = 0;
-      }
-    } else if (displayMode === "subscription_and_recalculation") {
-      charges = monthlyCharges + recalculationCharges;
-    }
-    const refunds = expense;
-    const balance = payments - charges + refunds;
-    // «Нараховано на початок» — ТІЛЬКИ custom_status subscription/subscription_with_logic.
-    // НЕ включає present fixed/subscription (наприклад Хореографія з present.rate дає 740/750).
-    const subscriptionCharges = subscriptionOnlyChargesByActivity[activityId] ?? 0;
-
-    if (enrollmentsForActivity.length === 0) {
-      const accountId = activityAccountMap[activityId] ?? null;
-      const existing = balancesByAccount.get(accountId) || {
-        account_id: accountId,
-        balance: 0,
-        payments: 0,
-        charges: 0,
-        refunds: 0,
-        subscription_charges: 0,
-      };
-      balancesByAccount.set(accountId, {
-        account_id: accountId,
-        balance: existing.balance + balance,
-        payments: existing.payments + payments,
-        charges: existing.charges + charges,
-        refunds: existing.refunds + refunds,
-        subscription_charges: (existing.subscription_charges ?? 0) + subscriptionCharges,
-      });
-    } else {
-      const perEnrollment = enrollmentsForActivity.length;
-      const perEnrollmentBalance = balance / perEnrollment;
-      const perEnrollmentPayments = payments / perEnrollment;
-      const perEnrollmentCharges = charges / perEnrollment;
-      const perEnrollmentRefunds = refunds / perEnrollment;
-      const perEnrollmentSubscriptionCharges = subscriptionCharges / perEnrollment;
-
-      enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
-        const accountId =
-          enrollmentData.account_id ??
-          activityAccountMap[enrollmentData.activity_id] ??
-          null;
-        const existing = balancesByAccount.get(accountId) || {
-          account_id: accountId,
-          balance: 0,
-          payments: 0,
-          charges: 0,
-          refunds: 0,
-          subscription_charges: 0,
-        };
-        balancesByAccount.set(accountId, {
-          account_id: accountId,
-          balance: existing.balance + perEnrollmentBalance,
-          payments: existing.payments + perEnrollmentPayments,
-          charges: existing.charges + perEnrollmentCharges,
-          refunds: existing.refunds + perEnrollmentRefunds,
-          subscription_charges: (existing.subscription_charges ?? 0) + perEnrollmentSubscriptionCharges,
-        });
-      });
-    }
-  });
-
-  paymentsByAccount.forEach((amount, accountId) => {
-    const existing = balancesByAccount.get(accountId) || {
-      account_id: accountId,
-      balance: 0,
-      payments: 0,
-      charges: 0,
-      refunds: 0,
-      subscription_charges: 0,
-    };
-    balancesByAccount.set(accountId, {
-      account_id: accountId,
-      balance: existing.balance + amount,
-      payments: existing.payments + amount,
-      charges: existing.charges,
-      refunds: existing.refunds,
-      subscription_charges: existing.subscription_charges,
-      unassigned_payments:
-        (existing.unassigned_payments || 0) + (accountId === null ? amount : 0),
-    });
-  });
-
-  return Array.from(balancesByAccount.values());
+  return calculateMonthlyBalanceFromData(
+    filteredEnrollments,
+    transactions || [],
+    attendanceData,
+    enrollmentActivityMap,
+    enrollmentAccountMap,
+    enrollmentDataMap,
+    activityAccountMap,
+    activityDataMap,
+    new Set(foodTariffIds),
+    attendanceV1BaseTariffIdSet,
+    month,
+    year,
+    priceHistoryMap,
+  );
 }
 
 /**
