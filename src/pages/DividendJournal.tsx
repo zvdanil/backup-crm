@@ -218,6 +218,7 @@ export default function DividendJournal() {
                 <TableRow>
                   <TableHead>Дата</TableHead>
                   <TableHead>Учасник</TableHead>
+                  <TableHead>Джерело</TableHead>
                   <TableHead>Тип</TableHead>
                   <TableHead className="text-right">Сума</TableHead>
                   <TableHead className="text-right">% очистки</TableHead>
@@ -231,6 +232,7 @@ export default function DividendJournal() {
                   <TableRow key={p.id}>
                     <TableCell>{p.payout_date}</TableCell>
                     <TableCell>{p.participant?.name ?? p.participant_id}</TableCell>
+                    <TableCell>{p.source_label || "—"}</TableCell>
                     <TableCell>
                       {PAYOUT_TYPES.find((t) => t.value === p.type)?.label ?? p.type}
                     </TableCell>

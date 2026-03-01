@@ -33,6 +33,7 @@ export type DividendPayout = {
   updated_at?: string;
   legs?: DividendPayoutLeg[];
   participant?: DividendParticipant;
+  source_label?: string | null;
 };
 
 // --- Participants ---
@@ -183,6 +184,47 @@ export function useDividendPayouts(filter: PayoutsFilter) {
         return (payouts || []).map(normalizePayout);
       }
 
+      const sourceByPayoutId = new Map<string, string>();
+      const appendSourceLabel = (payoutId: string, label: string) => {
+        const existing = sourceByPayoutId.get(payoutId);
+        if (!existing) {
+          sourceByPayoutId.set(payoutId, label);
+          return;
+        }
+        if (!existing.includes(label)) {
+          sourceByPayoutId.set(payoutId, `${existing}; ${label}`);
+        }
+      };
+
+      // Source from salary journal: linked staff payout
+      const { data: linkedStaffPayouts, error: linkedStaffPayoutsError } = await supabaseAny
+        .from("staff_payouts")
+        .select("id, dividend_payout_id")
+        .in("dividend_payout_id", payoutIds);
+      if (linkedStaffPayoutsError) throw linkedStaffPayoutsError;
+      (linkedStaffPayouts || []).forEach((row: any) => {
+        if (row.dividend_payout_id) {
+          appendSourceLabel(row.dividend_payout_id, "Журнал ЗП");
+        }
+      });
+
+      // Source from expense/salary transactions: linked finance transaction
+      const { data: linkedTransactions, error: linkedTransactionsError } = await supabaseAny
+        .from("finance_transactions")
+        .select("id, dividend_payout_id, type")
+        .in("dividend_payout_id", payoutIds);
+      if (linkedTransactionsError) throw linkedTransactionsError;
+      (linkedTransactions || []).forEach((row: any) => {
+        if (!row.dividend_payout_id) return;
+        if (row.type === "salary") {
+          appendSourceLabel(row.dividend_payout_id, "Журнал ЗП");
+          return;
+        }
+        if (row.type === "expense" || row.type === "household") {
+          appendSourceLabel(row.dividend_payout_id, "Журнал витрат");
+        }
+      });
+
       const { data: legs, error: legsError } = await supabaseAny
         .from("dividend_payout_legs")
         .select("*")
@@ -196,13 +238,21 @@ export function useDividendPayouts(filter: PayoutsFilter) {
       });
 
       return (payouts || []).map((p: any) =>
-        normalizePayout(p, legsByPayout.get(p.id) || [])
+        normalizePayout(
+          p,
+          legsByPayout.get(p.id) || [],
+          sourceByPayoutId.get(p.id) || null
+        )
       );
     },
   });
 }
 
-function normalizePayout(p: any, legs: any[] = []): DividendPayout {
+function normalizePayout(
+  p: any,
+  legs: any[] = [],
+  sourceLabel: string | null = null
+): DividendPayout {
   return {
     id: p.id,
     participant_id: p.participant_id,
@@ -228,6 +278,7 @@ function normalizePayout(p: any, legs: any[] = []): DividendPayout {
           sort_order: Number(p.participant.sort_order ?? 0),
         }
       : undefined,
+    source_label: sourceLabel,
   };
 }
 
