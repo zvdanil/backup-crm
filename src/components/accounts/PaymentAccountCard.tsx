@@ -18,7 +18,11 @@ interface PaymentAccountCardProps {
   onDelete: (id: string) => void;
 }
 
-export function PaymentAccountCard({ account, onEdit, onDelete }: PaymentAccountCardProps) {
+export function PaymentAccountCard({
+  account,
+  onEdit,
+  onDelete,
+}: PaymentAccountCardProps) {
   const { data: balance, isLoading: balanceLoading } = useAccountBalance(account.id);
 
   return (

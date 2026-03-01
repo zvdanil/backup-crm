@@ -39,6 +39,7 @@ import { Label } from '@/components/ui/label';
 import { useState, useMemo } from 'react';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AccountTransferDialog } from '@/components/accounts/AccountTransferDialog';
 
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   income: 'Начислення',
@@ -60,7 +61,9 @@ export default function AccountDetail() {
   const { id } = useParams<{ id: string }>();
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>('all');
+  const [transferMonthFilter, setTransferMonthFilter] = useState<string>('all');
   const [cancellingTransferId, setCancellingTransferId] = useState<string | null>(null);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [openingBalanceDialogOpen, setOpeningBalanceDialogOpen] = useState(false);
   const [openingBalanceDate, setOpeningBalanceDate] = useState('');
   const [openingBalanceAmount, setOpeningBalanceAmount] = useState('');
@@ -110,6 +113,26 @@ export default function AccountDetail() {
     return Array.from(months).sort().reverse();
   }, [transactions]);
 
+  // Список месяцев для фильтра переводів
+  const transferMonthOptions = useMemo(() => {
+    const months = new Set<string>();
+    transfers.forEach((t) => {
+      const date = new Date(t.transfer_date);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      months.add(key);
+    });
+    return Array.from(months).sort().reverse();
+  }, [transfers]);
+
+  const filteredTransfers = useMemo(() => {
+    if (transferMonthFilter === 'all') return transfers;
+    const [year, month] = transferMonthFilter.split('-').map(Number);
+    return transfers.filter((t) => {
+      const tDate = new Date(t.transfer_date);
+      return tDate.getFullYear() === year && tDate.getMonth() === month - 1;
+    });
+  }, [transfers, transferMonthFilter]);
+
   if (!account) {
     return (
       <div className="p-8">
@@ -140,6 +163,12 @@ export default function AccountDetail() {
               )}
             </div>
           </div>
+        }
+        actions={
+          <Button variant="outline" onClick={() => setTransferDialogOpen(true)}>
+            <ArrowRightLeft className="h-4 w-4 mr-2" />
+            Перекази
+          </Button>
         }
       />
 
@@ -264,78 +293,103 @@ export default function AccountDetail() {
         {transfers.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Перекази</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Перекази</CardTitle>
+                <Select value={transferMonthFilter} onValueChange={setTransferMonthFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Місяць" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Всі місяці</SelectItem>
+                    {transferMonthOptions.map((month) => {
+                      const [year, monthNum] = month.split('-').map(Number);
+                      const date = new Date(year, monthNum - 1, 1);
+                      return (
+                        <SelectItem key={month} value={month}>
+                          {date.toLocaleDateString('uk-UA', { month: 'long', year: 'numeric' })}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Дата</TableHead>
-                    <TableHead>З рахунку</TableHead>
-                    <TableHead>На рахунок</TableHead>
-                    <TableHead>Сума</TableHead>
-                    <TableHead>Комісія</TableHead>
-                    <TableHead>Зараховано</TableHead>
-                    <TableHead>Опис</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead className="text-right">Дії</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transfers.map((transfer) => (
-                    <TableRow key={transfer.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4 text-muted-foreground" />
-                          {formatDate(transfer.transfer_date)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {transfer.from_account?.name || 'Невідомий рахунок'}
-                      </TableCell>
-                      <TableCell>
-                        {transfer.to_account?.name || 'Невідомий рахунок'}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {formatCurrency(transfer.amount)}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {formatCurrency(transfer.commission_amount || 0)}
-                      </TableCell>
-                      <TableCell className="font-medium text-green-600">
-                        {formatCurrency(transfer.amount - (transfer.commission_amount || 0))}
-                      </TableCell>
-                      <TableCell>
-                        {transfer.description || (
-                          <span className="text-muted-foreground">Без опису</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {transfer.is_cancelled ? (
-                          <Badge variant="outline" className="bg-red-100 text-red-800">
-                            Скасовано
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-green-100 text-green-800">
-                            Виконано
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {!transfer.is_cancelled && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setCancellingTransferId(transfer.id)}
-                          >
-                            <X className="h-4 w-4 text-destructive" />
-                          </Button>
-                        )}
-                      </TableCell>
+              {filteredTransfers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
+                  <p>Немає переказів за обраний місяць</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Дата</TableHead>
+                      <TableHead>З рахунку</TableHead>
+                      <TableHead>На рахунок</TableHead>
+                      <TableHead>Сума</TableHead>
+                      <TableHead>Комісія</TableHead>
+                      <TableHead>Зараховано</TableHead>
+                      <TableHead>Опис</TableHead>
+                      <TableHead>Статус</TableHead>
+                      <TableHead className="text-right">Дії</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTransfers.map((transfer) => (
+                      <TableRow key={transfer.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-muted-foreground" />
+                            {formatDate(transfer.transfer_date)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {transfer.from_account?.name || 'Невідомий рахунок'}
+                        </TableCell>
+                        <TableCell>
+                          {transfer.to_account?.name || 'Невідомий рахунок'}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {formatCurrency(transfer.amount)}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {formatCurrency(transfer.commission_amount || 0)}
+                        </TableCell>
+                        <TableCell className="font-medium text-green-600">
+                          {formatCurrency(transfer.amount - (transfer.commission_amount || 0))}
+                        </TableCell>
+                        <TableCell>
+                          {transfer.description || (
+                            <span className="text-muted-foreground">Без опису</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {transfer.is_cancelled ? (
+                            <Badge variant="outline" className="bg-red-100 text-red-800">
+                              Скасовано
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-green-100 text-green-800">
+                              Виконано
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {!transfer.is_cancelled && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setCancellingTransferId(transfer.id)}
+                            >
+                              <X className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         )}
@@ -544,6 +598,12 @@ export default function AccountDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AccountTransferDialog
+        open={transferDialogOpen}
+        onOpenChange={setTransferDialogOpen}
+        defaultFromAccountId={id}
+      />
 
       <AlertDialog open={!!cancellingTransferId} onOpenChange={() => setCancellingTransferId(null)}>
         <AlertDialogContent>
