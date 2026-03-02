@@ -5,7 +5,7 @@ import {
   useDeleteIncomeTransaction,
   useCreateFinanceTransaction,
 } from "@/hooks/useFinanceTransactions";
-import { formatCurrency } from "@/lib/attendance";
+import { formatCurrency, getMonthEndDate } from "@/lib/attendance";
 import {
   type EnrollmentWithRelations,
   useEnrollmentPriceHistory,
@@ -71,8 +71,9 @@ export function StudentActivityBalanceRow({
     !isFoodActivity &&
     (presentRule?.type === "fixed" || presentRule?.type === "subscription");
 
-  // Локальная дата 1-го числа выбранного месяца (без UTC) для истории цен
-  const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  // Для помесячного отображения используем конец месяца как якорную дату
+  // (чтобы запись, начавшаяся внутри месяца, корректно применялась к этому месяцу).
+  const monthEndDateStr = getMonthEndDate(year, month);
   const { data: enrollmentPriceHistory } = useEnrollmentPriceHistory(enrollment.id);
 
   const accountLabel = useMemo(() => {
@@ -90,7 +91,7 @@ export function StudentActivityBalanceRow({
     const priceForDate = getEnrollmentPriceForDate(
       enrollment,
       enrollmentPriceHistory,
-      monthStartDateStr,
+      monthEndDateStr,
     );
     if (
       priceForDate.custom_price !== null &&
@@ -110,7 +111,7 @@ export function StudentActivityBalanceRow({
     isMonthlyBilling,
     enrollment,
     enrollmentPriceHistory,
-    monthStartDateStr,
+    monthEndDateStr,
     activities?.default_price,
     presentRule?.rate,
   ]);
@@ -157,7 +158,7 @@ export function StudentActivityBalanceRow({
   const monthlyData = monthlyBalanceQuery.data;
   const recalculationData = regularBalanceQuery.data;
 
-  // Extract monthlyCharges outside useMemo so it's available for logging
+  // Keep monthly charges as a standalone value for row-level checks
   const monthlyCharges = monthlyData?.charges ?? 0;
 
   const combinedData = useMemo(() => {

@@ -49,7 +49,7 @@ interface UseSummaryReportDataParams {
   categoryId?: string;
 }
 
-// Helper function to calculate income for all students using the same logic as calculateMonthlyAccountBalances
+// Helper: calculate income for all students using the same monthly balance rules as student cards
 async function calculateIncomeForPeriod(
   startDate: string | undefined,
   endDate: string,
@@ -91,6 +91,15 @@ async function calculateIncomeForPeriod(
     accountMap.set(account.id, account.name);
   });
 
+  const endDateObj = new Date(endDate);
+  const targetMonth = endDateObj.getMonth();
+  const targetYear = endDateObj.getFullYear();
+  const monthEndDateStr = getMonthEndDate(targetYear, targetMonth);
+  const now = new Date();
+  const isFutureMonth =
+    targetYear > now.getFullYear() ||
+    (targetYear === now.getFullYear() && targetMonth > now.getMonth());
+
   // Process each student
   for (const student of students) {
     // Get enrollments for this student
@@ -101,13 +110,6 @@ async function calculateIncomeForPeriod(
 
     if (enrollmentsError) throw enrollmentsError;
     if (!enrollments || enrollments.length === 0) continue;
-
-    const endDateObj = new Date(endDate);
-    const targetMonth = endDateObj.getMonth();
-    const targetYear = endDateObj.getFullYear();
-    const monthStartDateStr = getMonthStartDate(targetYear, targetMonth);
-    const isFutureMonth = endDateObj.getFullYear() > new Date().getFullYear() ||
-      (endDateObj.getFullYear() === new Date().getFullYear() && endDateObj.getMonth() > new Date().getMonth());
 
     const allEnrollmentIds = enrollments.map((e: any) => e.id);
     let priceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
@@ -241,7 +243,7 @@ async function calculateIncomeForPeriod(
       attendanceByActivity[activityId] = (attendanceByActivity[activityId] || 0) + (att.charged_amount || 0);
     });
 
-    // Calculate charges for each activity (same logic as calculateMonthlyAccountBalances)
+    // Calculate charges for each activity using the same monthly balance rules
     const monthlyChargesByActivity: Record<string, number> = {};
     const displayModeByActivity: Record<string, 'subscription' | 'recalculation' | 'subscription_and_recalculation'> = {};
     const enrollmentIsActiveMap = new Map<string, boolean>();
@@ -268,7 +270,7 @@ async function calculateIncomeForPeriod(
       const priceForDate = getEnrollmentPriceForDate(
         enrollmentSource,
         history,
-        monthStartDateStr,
+        monthEndDateStr,
       );
       if (priceForDate.custom_price !== null && priceForDate.custom_price !== undefined) {
         const discountMultiplier = 1 - ((priceForDate.discount_percent || 0) / 100);

@@ -967,7 +967,7 @@ export function useStudentSubscriptionChargesByAccount(
       // Get activity IDs
       const activityIds = subscriptionEnrollments.map((e) => e.activity_id);
       const enrollmentIds = subscriptionEnrollments.map((e) => e.id);
-      const monthStartDateStr = getMonthStartDate(year, month);
+      const monthEndDateStr = getMonthEndDate(year, month);
 
       const priceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
       if (enrollmentIds.length > 0) {
@@ -1018,7 +1018,7 @@ export function useStudentSubscriptionChargesByAccount(
           const priceForDate = getEnrollmentPriceForDate(
             enrollment,
             priceHistoryMap.get(enrollment.id),
-            monthStartDateStr,
+            monthEndDateStr,
           );
           if (
             priceForDate.custom_price !== null &&
@@ -1717,12 +1717,13 @@ function calculateMonthlyBalanceFromData(
 
   const activityIdList = Array.from(activityIds);
   const monthlyChargesByActivity: Record<string, number> = {};
-  /** Тільки абонплата з custom_status (subscription/subscription_with_logic). Не включає present fixed/subscription. */
+  /** Тільки абонплата для «До сплати на початок»: include present.subscription + custom_status (subscription/subscription_with_logic), exclude present.fixed. */
   const subscriptionOnlyChargesByActivity: Record<string, number> = {};
   const displayModeByActivity: Record<
     string,
     "subscription" | "recalculation" | "subscription_and_recalculation"
   > = {};
+  const monthEndDateStr = getMonthEndDate(year, month);
   const enrollmentIsActiveMap = new Map<string, boolean>();
   filteredEnrollments.forEach((enrollment: any) => {
     enrollmentIsActiveMap.set(enrollment.id, enrollment.is_active);
@@ -1745,12 +1746,11 @@ function calculateMonthlyBalanceFromData(
 
     if (isMonthlyBilling) {
       // Абонплата — тільки повна ставка, без перерахунків та знижок
-      const monthStartDateStr = `${year}-${String(month + 1).padStart(2, "0")}-01`;
       const priceHistory = enrollmentPriceHistoryMap.get(enrollmentId);
       const priceForDate = getEnrollmentPriceForDate(
         enrollment,
         priceHistory,
-        monthStartDateStr,
+        monthEndDateStr,
       );
       if (
         priceForDate.custom_price !== null &&
@@ -2323,16 +2323,6 @@ export function useDeletePaymentTransaction() {
       transactionId: string;
       reason: string;
     }) => {
-      console.log(
-        "[useDeletePaymentTransaction] Calling delete_payment_transaction",
-        {
-          transactionId,
-          transactionIdType: typeof transactionId,
-          transactionIdLength: transactionId?.length,
-          reason: reason.substring(0, 50) + "...",
-        },
-      );
-
       // Validate UUID format
       const uuidRegex =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -2360,27 +2350,21 @@ export function useDeletePaymentTransaction() {
         );
 
         if (error) {
-          console.error("[useDeletePaymentTransaction] RPC error:", {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code,
-            error,
-          });
+          console.error(
+            "[useDeletePaymentTransaction] RPC error:",
+            error.code,
+            error.message,
+          );
           throw error;
         }
 
-        console.log("[useDeletePaymentTransaction] Success:", data);
         return data;
       } catch (err: any) {
-        console.error("[useDeletePaymentTransaction] Exception:", {
-          message: err?.message,
-          details: err?.details,
-          hint: err?.hint,
-          code: err?.code,
-          stack: err?.stack,
-          err,
-        });
+        console.error(
+          "[useDeletePaymentTransaction] Exception:",
+          err?.code,
+          err?.message,
+        );
         throw err;
       }
     },
@@ -2751,18 +2735,6 @@ export function useActivityIncomeTransaction(
 
         const isPreskul = activityData?.name === "Прескул";
 
-        if (isPreskul) {
-          console.log(
-            "[useActivityIncomeTransaction] Прескул: Transaction not found for month, searching any transaction...",
-            {
-              studentId,
-              activityId,
-              startDate,
-              endDate,
-            },
-          );
-        }
-
         const { data: anyTransaction, error: anyError } = await supabaseAny
           .from("finance_transactions")
           .select("*")
@@ -2786,25 +2758,11 @@ export function useActivityIncomeTransaction(
           }
           // Don't throw, just return null
         } else if (anyTransaction) {
-          if (isPreskul) {
-            console.log(
-              "[useActivityIncomeTransaction] Прескул: Found transaction (any month):",
-              {
-                id: anyTransaction.id,
-                date: anyTransaction.date,
-                amount: anyTransaction.amount,
-              },
-            );
-          }
           // Use any found transaction - if it's shown in balance, we should be able to delete it
           // This is especially important for archived enrollments where transactions might be from different months
           data = anyTransaction;
         } else {
           if (isPreskul) {
-            console.log(
-              "[useActivityIncomeTransaction] Прескул: No transaction found at all for this activity",
-            );
-
             // Debug: Check if there are ANY transactions for this student and activity
             const { data: allTransactions, error: allError } = await supabaseAny
               .from("finance_transactions")
@@ -2818,19 +2776,10 @@ export function useActivityIncomeTransaction(
                 allError,
               );
             } else {
-              console.log(
-                "[useActivityIncomeTransaction] Прескул: All transactions for this activity:",
-                allTransactions,
-              );
-
               // If we found income transactions but not in the first query, use the first one
               const incomeTransactions =
                 allTransactions?.filter((t) => t.type === "income") || [];
               if (incomeTransactions.length > 0) {
-                console.log(
-                  "[useActivityIncomeTransaction] Прескул: Found income transactions in all transactions, using first:",
-                  incomeTransactions[0],
-                );
                 // Fetch full transaction data
                 const { data: fullTransaction } = await supabaseAny
                   .from("finance_transactions")
