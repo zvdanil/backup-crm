@@ -22,6 +22,11 @@ export function EnrollmentPriceHistoryDialog({
   activityName,
 }: EnrollmentPriceHistoryDialogProps) {
   const { data: history = [], isLoading } = useEnrollmentPriceHistory(enrollmentId);
+  const formatInclusiveEndDate = (exclusiveEndDate: string): string => {
+    const date = new Date(exclusiveEndDate);
+    date.setDate(date.getDate() - 1);
+    return formatDate(date);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -62,7 +67,9 @@ export function EnrollmentPriceHistoryDialog({
                     <TableRow key={item.id}>
                       <TableCell>{formatDate(item.effective_from)}</TableCell>
                       <TableCell>
-                        {item.effective_to ? formatDate(item.effective_to) : 'До тепер'}
+                        {item.effective_to
+                          ? formatInclusiveEndDate(item.effective_to)
+                          : 'До тепер'}
                       </TableCell>
                       <TableCell>
                         {item.custom_price !== null

@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import {
+  enrollmentInScopeForMonth,
+  getEnrollmentPriceForDate,
+  type EnrollmentPriceHistory,
+} from '@/hooks/useEnrollments';
 
 export interface SummaryReportData {
   incomeTotal: number;
@@ -98,24 +103,39 @@ async function calculateIncomeForPeriod(
     if (!enrollments || enrollments.length === 0) continue;
 
     const endDateObj = new Date(endDate);
+    const targetMonth = endDateObj.getMonth();
+    const targetYear = endDateObj.getFullYear();
+    const monthStartDateStr = getMonthStartDate(targetYear, targetMonth);
     const isFutureMonth = endDateObj.getFullYear() > new Date().getFullYear() ||
       (endDateObj.getFullYear() === new Date().getFullYear() && endDateObj.getMonth() > new Date().getMonth());
 
+    const allEnrollmentIds = enrollments.map((e: any) => e.id);
+    let priceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
+    if (allEnrollmentIds.length > 0) {
+      const { data: historyRows, error: historyError } = await supabase
+        .from('enrollment_price_history')
+        .select('*')
+        .in('enrollment_id', allEnrollmentIds)
+        .order('effective_from', { ascending: false });
+      if (historyError) throw historyError;
+      (historyRows || []).forEach((row: EnrollmentPriceHistory) => {
+        if (!priceHistoryMap.has(row.enrollment_id)) priceHistoryMap.set(row.enrollment_id, []);
+        priceHistoryMap.get(row.enrollment_id)!.push(row);
+      });
+    }
+
     let filteredEnrollments: any[];
     if (startDate) {
-      const monthStart = new Date(startDate);
-      const monthEnd = new Date(endDateObj.getFullYear(), endDateObj.getMonth() + 1, 0, 23, 59, 59, 999);
       filteredEnrollments = enrollments.filter((e: any) => {
-        const effectiveDate = (e.effective_from ?? e.enrolled_at) ? new Date(e.effective_from ?? e.enrolled_at) : null;
-        const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
-
-        if (effectiveDate && effectiveDate > monthEnd) return false;
-        if (unenrolledDate && unenrolledDate < monthStart) return false;
-        if (e.is_active === true) return true;
-        if (e.is_active === false && unenrolledDate) {
-          return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
-        }
-        return false;
+        const activity = activityMap.get(e.activity_id);
+        const history = priceHistoryMap.get(e.id);
+        return enrollmentInScopeForMonth(
+          e,
+          activity ?? null,
+          history,
+          targetYear,
+          targetMonth,
+        );
       });
     } else {
       filteredEnrollments = enrollments.filter((e: any) => {
@@ -143,12 +163,20 @@ async function calculateIncomeForPeriod(
     const enrollmentIds = filteredEnrollments.map((e: any) => e.id);
     const enrollmentActivityMap = new Map<string, string>();
     const enrollmentAccountMap = new Map<string, string | null>();
-    const enrollmentDataMap = new Map<string, { activity_id: string; custom_price: number | null; discount_percent: number | null; account_id: string | null; is_active: boolean }>();
+    const enrollmentDataMap = new Map<string, {
+      activity_id: string;
+      custom_price: number | null;
+      discount_percent: number | null;
+      account_id: string | null;
+      is_active: boolean;
+    }>();
+    const enrollmentById = new Map<string, any>();
     const activityIds = new Set<string>();
 
     filteredEnrollments.forEach((enrollment: any) => {
       enrollmentActivityMap.set(enrollment.id, enrollment.activity_id);
       enrollmentAccountMap.set(enrollment.id, enrollment.account_id);
+      enrollmentById.set(enrollment.id, enrollment);
       enrollmentDataMap.set(enrollment.id, {
         activity_id: enrollment.activity_id,
         custom_price: enrollment.custom_price ?? null,
@@ -235,9 +263,16 @@ async function calculateIncomeForPeriod(
       if (!isActive) return;
 
       let baseMonthlyCharge = 0;
-      if (enrollment.custom_price !== null && enrollment.custom_price !== undefined) {
-        const discountMultiplier = 1 - ((enrollment.discount_percent || 0) / 100);
-        baseMonthlyCharge = Math.round(enrollment.custom_price * discountMultiplier * 100) / 100;
+      const enrollmentSource = enrollmentById.get(enrollmentId) || enrollment;
+      const history = priceHistoryMap.get(enrollmentId);
+      const priceForDate = getEnrollmentPriceForDate(
+        enrollmentSource,
+        history,
+        monthStartDateStr,
+      );
+      if (priceForDate.custom_price !== null && priceForDate.custom_price !== undefined) {
+        const discountMultiplier = 1 - ((priceForDate.discount_percent || 0) / 100);
+        baseMonthlyCharge = Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
       } else if (presentRule?.rate && presentRule.rate > 0) {
         baseMonthlyCharge = presentRule.rate;
       } else {

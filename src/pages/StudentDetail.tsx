@@ -9,6 +9,7 @@ import {
   Mail,
   User,
   Pencil,
+  BadgeDollarSign,
   Wallet,
   History,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import { StudentActivityBalanceRow } from "@/components/students/StudentActivity
 import { StudentPaymentHistory } from "@/components/students/StudentPaymentHistory";
 import { StudentAccountBalance } from "@/components/students/StudentAccountBalance";
 import { EnrollmentPriceDisplay } from "@/components/enrollments/EnrollmentPriceDisplay";
+import { ChangeEnrollmentPriceDialog } from "@/components/enrollments/ChangeEnrollmentPriceDialog";
 import { cn } from "@/lib/utils";
 import { useActivities } from "@/hooks/useActivities";
 import {
@@ -107,6 +109,8 @@ export default function StudentDetail() {
     useState<EnrollmentWithRelations | null>(null);
   const [unenrollingId, setUnenrollingId] = useState<string | null>(null);
   const [priceHistoryEnrollmentId, setPriceHistoryEnrollmentId] = useState<string | null>(null);
+  const [changePriceEnrollment, setChangePriceEnrollment] =
+    useState<EnrollmentWithRelations | null>(null);
   const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
   const [balanceYear, setBalanceYear] = useState(now.getFullYear());
   const isMobile = useIsMobile();
@@ -222,6 +226,7 @@ export default function StudentDetail() {
         discount_percent: data.discount_percent,
         effective_from: data.effective_from,
         account_id: newAccountId,
+        refresh_student_id: id!,
       });
 
       // Если изменился account_id, пересчитываем finance_transactions
@@ -254,6 +259,31 @@ export default function StudentDetail() {
 
       setEditingEnrollment(null);
     }
+  };
+
+  const handleChangeEnrollmentPrice = async (data: {
+    custom_price: number | null;
+    discount_percent: number;
+    effective_from: string;
+    apply_mode: "future" | "recalc_range";
+    recalc_from?: string;
+    recalc_to?: string;
+  }) => {
+    if (!changePriceEnrollment) return;
+
+    await updateEnrollment.mutateAsync({
+      id: changePriceEnrollment.id,
+      custom_price: data.custom_price,
+      discount_percent: data.discount_percent,
+      effective_from: data.effective_from,
+      refresh_student_id: id!,
+      recalc_from:
+        data.apply_mode === "recalc_range" ? data.recalc_from : undefined,
+      recalc_to:
+        data.apply_mode === "recalc_range" ? data.recalc_to : undefined,
+    });
+
+    setChangePriceEnrollment(null);
   };
 
   const handleUpdateProfile = (data: any) => {
@@ -555,9 +585,17 @@ export default function StudentDetail() {
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => setEditingEnrollment(enrollment)}
-                                title="Редагувати"
+                                title="Параметри нарахувань"
                               >
                                 <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setChangePriceEnrollment(enrollment)}
+                                title="Змінити ціну"
+                              >
+                                <BadgeDollarSign className="h-4 w-4" />
                               </Button>
                               <Button
                                 variant="ghost"
@@ -638,9 +676,19 @@ export default function StudentDetail() {
                                     onClick={() =>
                                       setEditingEnrollment(enrollment)
                                     }
-                                    title="Редагувати"
+                                    title="Параметри нарахувань"
                                   >
                                     <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      setChangePriceEnrollment(enrollment)
+                                    }
+                                    title="Змінити ціну"
+                                  >
+                                    <BadgeDollarSign className="h-4 w-4" />
                                   </Button>
                                   <Button
                                     variant="ghost"
@@ -775,6 +823,19 @@ export default function StudentDetail() {
           initialEffectiveFrom={editingEnrollment.effective_from}
           initialAccountId={editingEnrollment.account_id}
           isLoading={updateEnrollment.isPending}
+        />
+      )}
+
+      {role !== "accountant" && changePriceEnrollment && (
+        <ChangeEnrollmentPriceDialog
+          open={!!changePriceEnrollment}
+          onOpenChange={(open) => !open && setChangePriceEnrollment(null)}
+          activityName={changePriceEnrollment.activities?.name || ""}
+          initialCustomPrice={changePriceEnrollment.custom_price}
+          initialDiscount={changePriceEnrollment.discount_percent}
+          initialEffectiveFrom={changePriceEnrollment.effective_from}
+          isLoading={updateEnrollment.isPending}
+          onSubmit={handleChangeEnrollmentPrice}
         />
       )}
 

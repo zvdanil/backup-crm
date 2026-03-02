@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { formatCurrency, formatLocalDate } from '@/lib/attendance';
-import { getActivityDisplayPrice } from '@/lib/activityPrice';
-import { useActivityPriceHistory } from '@/hooks/useActivities';
-import type { EnrollmentWithRelations } from '@/hooks/useEnrollments';
+import {
+  getEnrollmentPriceForDate,
+  useEnrollmentPriceHistory,
+  type EnrollmentWithRelations,
+} from '@/hooks/useEnrollments';
 
 interface EnrollmentPriceDisplayProps {
   enrollment: EnrollmentWithRelations;
@@ -10,36 +12,44 @@ interface EnrollmentPriceDisplayProps {
 }
 
 export function EnrollmentPriceDisplay({ enrollment, showLabel = false }: EnrollmentPriceDisplayProps) {
-  // Get price history for the activity
-  const { data: priceHistory } = useActivityPriceHistory(enrollment.activity_id);
-  
-  // Use current date for display (актуальна ціна на сьогодні)
-  // Примітка: для історичних записів можна використовувати enrollment.enrolled_at, 
-  // але для відображення поточної ціни використовуємо сьогоднішню дату
-  const currentDate = formatLocalDate(new Date());
-  
-  // Get display price using billing_rules for current date
-  const displayPrice = useMemo(() => {
-    return getActivityDisplayPrice(
-      enrollment.activities,
-      priceHistory,
-      enrollment.custom_price,
-      enrollment.discount_percent || 0,
-      currentDate
-    );
-  }, [enrollment.activities, priceHistory, enrollment.custom_price, enrollment.discount_percent, currentDate]);
+  const { data: enrollmentPriceHistory } = useEnrollmentPriceHistory(enrollment.id);
 
-  if (!displayPrice) {
-    return <span className="text-muted-foreground">—</span>;
-  }
+  // Поточна ціна: завжди з єдиного джерела enrollment_price_history (інтервали).
+  const currentDate = formatLocalDate(new Date());
+
+  const { custom_price, discount_percent } = useMemo(
+    () =>
+      getEnrollmentPriceForDate(
+        enrollment,
+        enrollmentPriceHistory,
+        currentDate,
+      ),
+    [enrollment, enrollmentPriceHistory, currentDate],
+  );
+
+  const displayPrice = useMemo(() => {
+    if (custom_price !== null && custom_price !== undefined) {
+      const discountMultiplier = 1 - (discount_percent || 0) / 100;
+      const finalPrice = Math.round(custom_price * discountMultiplier * 100) / 100;
+      return formatCurrency(finalPrice);
+    }
+    const presentRate = enrollment.activities?.billing_rules?.present?.rate;
+    if (presentRate && presentRate > 0) return formatCurrency(presentRate);
+    if (enrollment.activities?.default_price != null) {
+      return formatCurrency(enrollment.activities.default_price);
+    }
+    return null;
+  }, [custom_price, discount_percent, enrollment.activities]);
+
+  if (!displayPrice) return <span className="text-muted-foreground">—</span>;
 
   return (
     <span>
       {displayPrice}
-      {enrollment.custom_price && (
+      {custom_price !== null && custom_price !== undefined && (
         <span className="text-xs text-muted-foreground ml-1">(індив.)</span>
       )}
-      {showLabel && enrollment.custom_price && (
+      {showLabel && custom_price !== null && custom_price !== undefined && (
         <span className="block text-xs text-muted-foreground">Індивідуальна ціна</span>
       )}
     </span>

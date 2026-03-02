@@ -966,6 +966,24 @@ export function useStudentSubscriptionChargesByAccount(
 
       // Get activity IDs
       const activityIds = subscriptionEnrollments.map((e) => e.activity_id);
+      const enrollmentIds = subscriptionEnrollments.map((e) => e.id);
+      const monthStartDateStr = getMonthStartDate(year, month);
+
+      const priceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
+      if (enrollmentIds.length > 0) {
+        const { data: priceHistoryRows, error: priceHistoryError } = await supabaseAny
+          .from("enrollment_price_history")
+          .select("*")
+          .in("enrollment_id", enrollmentIds)
+          .order("effective_from", { ascending: false });
+        if (priceHistoryError) throw priceHistoryError;
+        (priceHistoryRows || []).forEach((row: EnrollmentPriceHistory) => {
+          if (!priceHistoryMap.has(row.enrollment_id)) {
+            priceHistoryMap.set(row.enrollment_id, []);
+          }
+          priceHistoryMap.get(row.enrollment_id)!.push(row);
+        });
+      }
 
       // Get income transactions for these activities
       const { data: transactions, error } = await supabaseAny
@@ -997,14 +1015,19 @@ export function useStudentSubscriptionChargesByAccount(
         let chargeToAdd = activityCharges;
         if (activityCharges === 0) {
           const presentRule = activity?.billing_rules?.present;
+          const priceForDate = getEnrollmentPriceForDate(
+            enrollment,
+            priceHistoryMap.get(enrollment.id),
+            monthStartDateStr,
+          );
           if (
-            enrollment.custom_price !== null &&
-            enrollment.custom_price !== undefined
+            priceForDate.custom_price !== null &&
+            priceForDate.custom_price !== undefined
           ) {
             const discountMultiplier =
-              1 - (enrollment.discount_percent || 0) / 100;
+              1 - (priceForDate.discount_percent || 0) / 100;
             chargeToAdd =
-              Math.round(enrollment.custom_price * discountMultiplier * 100) /
+              Math.round(priceForDate.custom_price * discountMultiplier * 100) /
               100;
           } else if (presentRule?.rate && presentRule.rate > 0) {
             chargeToAdd = presentRule.rate;
@@ -1809,8 +1832,8 @@ function calculateMonthlyBalanceFromData(
     }
     const refunds = expense;
     const balance = payments - charges + refunds;
-    // «Нараховано на початок» — ТІЛЬКИ custom_status subscription/subscription_with_logic.
-    // НЕ включає present fixed/subscription (наприклад Хореографія з present.rate дає 740/750).
+    // «Нараховано на початок» — тільки абонплатні джерела:
+    // present.subscription + custom_status (subscription/subscription_with_logic), без present.fixed.
     const subscriptionCharges = subscriptionOnlyChargesByActivity[activityId] ?? 0;
 
     if (enrollmentsForActivity.length === 0) {

@@ -30,6 +30,13 @@ export interface EnrollmentWithRelations extends Enrollment {
 export type EnrollmentInsert = Pick<Enrollment, 'student_id' | 'activity_id' | 'custom_price' | 'discount_percent' | 'account_id'>;
 export type EnrollmentUpdate = Partial<Omit<Enrollment, 'id' | 'student_id' | 'activity_id' | 'created_at' | 'updated_at'>>;
 
+type UpdateEnrollmentMutationInput = { id: string } &
+  EnrollmentUpdate & {
+    refresh_student_id?: string;
+    recalc_from?: string;
+    recalc_to?: string;
+  };
+
 export function useEnrollments(filters?: { studentId?: string; activityId?: string; activeOnly?: boolean }) {
   return useQuery({
     queryKey: ['enrollments', filters],
@@ -163,17 +170,142 @@ export function useCreateEnrollment() {
 
 export function useUpdateEnrollment() {
   const queryClient = useQueryClient();
+
+  const getMonthsInRange = (from: string, to: string): Array<{ month: number; year: number }> => {
+    const start = new Date(`${from}T00:00:00`);
+    const end = new Date(`${to}T00:00:00`);
+    const out: Array<{ month: number; year: number }> = [];
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return out;
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= endMonth) {
+      out.push({ month: cursor.getMonth(), year: cursor.getFullYear() });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return out;
+  };
+
+  const toMonthKey = (month: number, year: number) => `${year}-${month}`;
+
+  const buildTargetMonths = (variables: UpdateEnrollmentMutationInput) => {
+    if (variables.recalc_from && variables.recalc_to) {
+      return getMonthsInRange(variables.recalc_from, variables.recalc_to);
+    }
+    if (variables.effective_from) {
+      const d = new Date(`${variables.effective_from}T00:00:00`);
+      if (!Number.isNaN(d.getTime())) {
+        return [{ month: d.getMonth(), year: d.getFullYear() }];
+      }
+    }
+    return [];
+  };
+
+  const runTargetedRecalcRefresh = async (
+    studentId: string,
+    variables: UpdateEnrollmentMutationInput,
+  ) => {
+    const months = buildTargetMonths(variables);
+    const monthKeySet = new Set(months.map(({ month, year }) => toMonthKey(month, year)));
+    const hasMonthFilter = monthKeySet.size > 0;
+
+    const matchesMonthFilter = (month: unknown, year: unknown) => {
+      if (!hasMonthFilter) return true;
+      if (typeof month !== 'number' || typeof year !== 'number') return false;
+      return monthKeySet.has(toMonthKey(month, year));
+    };
+
+    const recalcPredicates = {
+      balances: (query: { queryKey: unknown[] }) => {
+        const key = query.queryKey;
+        return (
+          Array.isArray(key) &&
+          key[0] === 'student_account_balances' &&
+          key[1] === studentId &&
+          matchesMonthFilter(key[2], key[3])
+        );
+      },
+      total: (query: { queryKey: unknown[] }) => {
+        const key = query.queryKey;
+        return (
+          Array.isArray(key) &&
+          key[0] === 'student_total_balance' &&
+          key[1] === studentId &&
+          matchesMonthFilter(key[2], key[3])
+        );
+      },
+      allocation: (query: { queryKey: unknown[] }) => {
+        const key = query.queryKey;
+        return (
+          Array.isArray(key) &&
+          key[0] === 'payment_allocation' &&
+          key[1] === studentId &&
+          matchesMonthFilter(key[2], key[3])
+        );
+      },
+    };
+
+    const invalidationResults = await Promise.allSettled([
+      queryClient.invalidateQueries({ predicate: recalcPredicates.balances }),
+      queryClient.invalidateQueries({ predicate: recalcPredicates.total }),
+      queryClient.invalidateQueries({ predicate: recalcPredicates.allocation }),
+    ]);
+
+    const refetchResults = await Promise.allSettled([
+      queryClient.refetchQueries({
+        predicate: recalcPredicates.balances,
+        type: 'active',
+      }),
+      queryClient.refetchQueries({
+        predicate: recalcPredicates.total,
+        type: 'active',
+      }),
+      queryClient.refetchQueries({
+        predicate: recalcPredicates.allocation,
+        type: 'active',
+      }),
+    ]);
+
+    const rejected = [...invalidationResults, ...refetchResults].filter(
+      (result) => result.status === 'rejected',
+    );
+
+    if (rejected.length > 0) {
+      const rejectedReasons = rejected.map((result) =>
+        result.status === 'rejected'
+          ? result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason)
+          : '',
+      );
+      console.error('[useUpdateEnrollment] Targeted recalc refresh failed', {
+        studentId,
+        months,
+        failedOperations: rejected.length,
+        reasons: rejectedReasons,
+      });
+      toast({
+        title: 'Ціну збережено, але перерахунок частково не оновився',
+        description: 'Оновіть сторінку або перевірте баланс пізніше.',
+        variant: 'destructive',
+      });
+    }
+  };
   
   return useMutation({
-    mutationFn: async ({ id, ...enrollment }: { id: string } & EnrollmentUpdate) => {
+    mutationFn: async ({ id, refresh_student_id: _refreshStudentId, recalc_from: _recalcFrom, recalc_to: _recalcTo, ...enrollment }: UpdateEnrollmentMutationInput) => {
+      const { effective_from, ...enrollmentPatch } = enrollment;
+
       // Проверяем, изменилась ли цена или скидка
       const priceChanged = 
-        enrollment.custom_price !== undefined || 
-        enrollment.discount_percent !== undefined;
+        enrollmentPatch.custom_price !== undefined || 
+        enrollmentPatch.discount_percent !== undefined;
       
-      let oldEnrollment: Enrollment | null = null;
+      let oldEnrollment: {
+        custom_price: number | null;
+        discount_percent: number | null;
+      } | null = null;
       if (priceChanged) {
-        // Получаем старые значения для создания истории
+        // Получаем старые значения для определения факта изменения
         const { data: old, error: oldError } = await supabase
           .from('enrollments')
           .select('custom_price, discount_percent')
@@ -181,62 +313,107 @@ export function useUpdateEnrollment() {
           .single();
         
         if (oldError) throw oldError;
-        oldEnrollment = old as Enrollment;
+        oldEnrollment = old as {
+          custom_price: number | null;
+          discount_percent: number | null;
+        };
+      }
+
+      // Если изменилась цена или скидка, обновляем историю через единый server-side API.
+      if (priceChanged && oldEnrollment) {
+        const oldPrice = oldEnrollment.custom_price;
+        const oldDiscount = oldEnrollment.discount_percent ?? 0;
+        const newPrice = enrollmentPatch.custom_price ?? oldPrice;
+        const newDiscount = enrollmentPatch.discount_percent ?? oldDiscount;
+
+        const priceActuallyChanged = oldPrice !== newPrice || oldDiscount !== newDiscount;
+        if (priceActuallyChanged) {
+          const effectiveFrom = effective_from
+            ? formatLocalDate(new Date(effective_from))
+            : formatLocalDate(new Date());
+
+          const { error: rpcError } = await supabase.rpc('set_enrollment_price', {
+            p_enrollment_id: id,
+            p_custom_price: newPrice,
+            p_discount_percent: newDiscount,
+            p_effective_from: effectiveFrom,
+          });
+          if (rpcError) throw rpcError;
+        }
       }
 
       // Обновляем enrollment
       const { data, error } = await supabase
         .from('enrollments')
-        .update(enrollment)
+        .update(enrollmentPatch)
         .eq('id', id)
         .select()
         .single();
       
       if (error) throw error;
 
-      // Если изменилась цена или скидка, создаём запись в истории
-      if (priceChanged && oldEnrollment) {
-        const oldPrice = oldEnrollment.custom_price;
-        const oldDiscount = oldEnrollment.discount_percent ?? 0;
-        const newPrice = enrollment.custom_price ?? oldPrice;
-        const newDiscount = enrollment.discount_percent ?? oldDiscount;
-
-        // Создаём запись только если действительно изменилось значение
-        const priceActuallyChanged = 
-          oldPrice !== newPrice || oldDiscount !== newDiscount;
-
-        if (priceActuallyChanged) {
-          const effectiveFrom = enrollment.effective_from 
-            ? formatLocalDate(new Date(enrollment.effective_from))
-            : formatLocalDate(new Date()); // Текущая дата по умолчанию
-
-          // Закрываем предыдущую запись истории (устанавливаем effective_to)
-          await supabase
-            .from('enrollment_price_history')
-            .update({ effective_to: effectiveFrom })
-            .eq('enrollment_id', id)
-            .is('effective_to', null);
-
-          // Создаём новую запись в истории
-          await supabase
-            .from('enrollment_price_history')
-            .insert({
-              enrollment_id: id,
-              custom_price: newPrice,
-              discount_percent: newDiscount,
-              effective_from: effectiveFrom,
-              effective_to: null,
-            });
-        }
-      }
-
       return data;
     },
-    onSuccess: () => {
+    onSuccess: async (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
       queryClient.invalidateQueries({ queryKey: ['enrollment_price_history'] });
-      queryClient.invalidateQueries({ queryKey: ['student_account_balances'] });
-      queryClient.invalidateQueries({ queryKey: ['payment_allocation'] });
+      queryClient.invalidateQueries({ queryKey: ['enrollment_price_history_map'], exact: false });
+
+      const studentId = variables.refresh_student_id;
+      if (studentId) {
+        await runTargetedRecalcRefresh(studentId, variables);
+
+        // Deterministic refresh sequence after price update:
+        // 1) enrollments + price history, 2) balances, 3) payment allocation.
+        await Promise.all([
+          queryClient.refetchQueries({
+            queryKey: ['enrollments'],
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_price_history'],
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_price_history_map'],
+            exact: false,
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['student_account_balances', studentId],
+            exact: false,
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['student_total_balance', studentId],
+            exact: false,
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['payment_allocation', studentId],
+            exact: false,
+            type: 'active',
+          }),
+        ]);
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['student_account_balances'] });
+        queryClient.invalidateQueries({ queryKey: ['payment_allocation'] });
+        await Promise.all([
+          queryClient.refetchQueries({
+            queryKey: ['enrollments'],
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_price_history'],
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_price_history_map'],
+            exact: false,
+            type: 'active',
+          }),
+        ]);
+      }
       toast({ title: 'Запись обновлена' });
     },
     onError: (error) => {

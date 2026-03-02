@@ -96,43 +96,16 @@ export function EditEnrollmentForm({
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
           <div className="p-3 rounded-lg bg-muted/50 text-sm">
             <p className="text-muted-foreground">
-              Ціни встановлюються в правилах розрахунку активності (billing_rules) та відображаються в журналі.
+              Для стабільної історії тарифів зміну ціни виконуйте через дію
+              «Змінити ціну» в рядку активності.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="custom_price">Індивідуальна ціна (₴)</Label>
-            <Input
-              id="custom_price"
-              type="number"
-              {...register('custom_price')}
-              placeholder="Залиште порожнім для стандартної"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="discount_percent">Знижка (%)</Label>
-            <Input
-              id="discount_percent"
-              type="number"
-              min="0"
-              max="100"
-              {...register('discount_percent')}
-              placeholder="0"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="effective_from">Дата початку нової ціни</Label>
-            <Input
-              id="effective_from"
-              type="date"
-              {...register('effective_from')}
-            />
-            <p className="text-xs text-muted-foreground">
-              Нова ціна застосовується до занять з вказаної дати
-            </p>
-          </div>
+          {/* Keep legacy fields registered to preserve submit payload shape,
+              but do not expose price editing in this dialog. */}
+          <input type="hidden" {...register('custom_price')} />
+          <input type="hidden" {...register('discount_percent')} />
+          <input type="hidden" {...register('effective_from')} />
 
           <div className="space-y-2">
             <Label htmlFor="account_id">Рахунок для нарахувань</Label>
