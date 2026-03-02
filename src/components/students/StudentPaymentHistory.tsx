@@ -201,12 +201,15 @@ export function StudentPaymentHistory({
 
   const monthNum = month ?? new Date().getMonth();
   const yearNum = year ?? new Date().getFullYear();
+  const canViewAllocation = role !== "parent";
+  const canViewPaymentDescription = role !== "parent";
 
   const { data: allocationData } = usePaymentAllocation({
     studentId,
     month: monthNum,
     year: yearNum,
     excludeActivityIds,
+    enabled: canViewAllocation,
   });
 
   // Рахунки для блоків «Розподіл по послугах»: з балансів (пропс) + усі, по яких є оплати в цьому місяці
@@ -219,9 +222,9 @@ export function StudentPaymentHistory({
     return fromPayments.length > 0 ? fromPayments : undefined;
   }, [accountIds, payments]);
 
-  const usePerAccountAllocation = (displayAccountIds?.length ?? 0) > 0;
+  const usePerAccountAllocation = canViewAllocation && (displayAccountIds?.length ?? 0) > 0;
   const hasAnyAllocation =
-    (allocationData && allocationData.items.length > 0) ||
+    (canViewAllocation && allocationData && allocationData.items.length > 0) ||
     (usePerAccountAllocation && (displayAccountIds?.length ?? 0) > 0);
   const canEdit = role === "owner" || role === "admin" || role === "accountant";
   const canDelete = canEdit;
@@ -452,9 +455,11 @@ export function StudentPaymentHistory({
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground break-words">
-                      {payment.description || "—"}
-                    </div>
+                    {canViewPaymentDescription && (
+                      <div className="mt-1 text-xs text-muted-foreground break-words">
+                        {payment.description || "—"}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="text-right">
@@ -505,7 +510,7 @@ export function StudentPaymentHistory({
               <TableRow>
                 <TableHead>Дата</TableHead>
                 <TableHead>Рахунок</TableHead>
-                <TableHead>Опис</TableHead>
+                {canViewPaymentDescription && <TableHead>Опис</TableHead>}
                 <TableHead className="text-right">Сума</TableHead>
                 {canEdit && <TableHead className="w-[90px]"></TableHead>}
               </TableRow>
@@ -528,9 +533,11 @@ export function StudentPaymentHistory({
                         <span className="text-sm text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {payment.description || "—"}
-                    </TableCell>
+                    {canViewPaymentDescription && (
+                      <TableCell className="text-sm text-muted-foreground">
+                        {payment.description || "—"}
+                      </TableCell>
+                    )}
                     <TableCell className="text-right">
                       <span className={cn("font-semibold", "text-success")}>
                         +{formatCurrency(payment.amount || 0)}
@@ -590,91 +597,92 @@ export function StudentPaymentHistory({
               ))}
             </div>
           )}
-          {usePerAccountAllocation && displayAccountIds?.length
-            ? displayAccountIds.map((aid) => (
-                <AllocationBlockForAccount
-                  key={aid}
-                  studentId={studentId}
-                  month={monthNum}
-                  year={yearNum}
-                  accountId={aid}
-                  accountName={
-                    (accountLabelMap && (accountLabelMap instanceof Map ? accountLabelMap.get(aid) : accountLabelMap[aid]))
-                    ?? accounts.find((a) => a.id === aid)?.name
-                    ?? aid
-                  }
-                  excludeActivityIds={excludeActivityIds}
-                />
-              ))
-            : allocationData && allocationData.items.length > 0 && (() => {
-                const currentMonth = monthNum;
-                const currentYear = yearNum;
-                const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-                const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-                const byMonth = new Map<string, typeof allocationData.items>();
-                allocationData.items.forEach((item) => {
-                  const key = `${item.year}-${item.month}`;
-                  if (!byMonth.has(key)) byMonth.set(key, []);
-                  byMonth.get(key)!.push(item);
-                });
-                const order: { year: number; month: number }[] = [
-                  { year: currentYear, month: currentMonth },
-                  { year: prevYear, month: prevMonth },
-                ];
-                return (
-                  <div className="space-y-1.5">
-                    <div className="text-sm font-medium text-muted-foreground">
-                      Розподіл по послугах
-                    </div>
-                    <div className="text-xs space-y-3">
-                      {order.map(({ year: y, month: m }) => {
-                        const key = `${y}-${m}`;
-                        const items = byMonth.get(key);
-                        if (!items?.length) return null;
-                        const monthTitle = `${MONTHS_TITLE[m]} ${y}`;
-                        return (
-                          <div key={key} className="space-y-1">
-                            <div className="font-medium text-muted-foreground pb-0.5">
-                              {monthTitle}
+          {canViewAllocation &&
+            (usePerAccountAllocation && displayAccountIds?.length
+              ? displayAccountIds.map((aid) => (
+                  <AllocationBlockForAccount
+                    key={aid}
+                    studentId={studentId}
+                    month={monthNum}
+                    year={yearNum}
+                    accountId={aid}
+                    accountName={
+                      (accountLabelMap && (accountLabelMap instanceof Map ? accountLabelMap.get(aid) : accountLabelMap[aid]))
+                      ?? accounts.find((a) => a.id === aid)?.name
+                      ?? aid
+                    }
+                    excludeActivityIds={excludeActivityIds}
+                  />
+                ))
+              : allocationData && allocationData.items.length > 0 && (() => {
+                  const currentMonth = monthNum;
+                  const currentYear = yearNum;
+                  const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+                  const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+                  const byMonth = new Map<string, typeof allocationData.items>();
+                  allocationData.items.forEach((item) => {
+                    const key = `${item.year}-${item.month}`;
+                    if (!byMonth.has(key)) byMonth.set(key, []);
+                    byMonth.get(key)!.push(item);
+                  });
+                  const order: { year: number; month: number }[] = [
+                    { year: currentYear, month: currentMonth },
+                    { year: prevYear, month: prevMonth },
+                  ];
+                  return (
+                    <div className="space-y-1.5">
+                      <div className="text-sm font-medium text-muted-foreground">
+                        Розподіл по послугах
+                      </div>
+                      <div className="text-xs space-y-3">
+                        {order.map(({ year: y, month: m }) => {
+                          const key = `${y}-${m}`;
+                          const items = byMonth.get(key);
+                          if (!items?.length) return null;
+                          const monthTitle = `${MONTHS_TITLE[m]} ${y}`;
+                          return (
+                            <div key={key} className="space-y-1">
+                              <div className="font-medium text-muted-foreground pb-0.5">
+                                {monthTitle}
+                              </div>
+                              {items
+                                .sort((a, b) => (a.remainder > 0 ? 1 : 0) - (b.remainder > 0 ? 1 : 0))
+                                .map((item) => {
+                                  const isPaid = item.remainder <= 0;
+                                  const isPartial = item.paid > 0 && item.remainder > 0;
+                                  return (
+                                    <div
+                                      key={`${item.activityId}-${item.accountId ?? "none"}-${item.year}-${item.month}`}
+                                      className={cn(
+                                        "flex justify-between gap-2 py-0.5 pl-2",
+                                        isPaid && "text-success",
+                                        isPartial && "text-muted-foreground",
+                                        !isPaid && !isPartial && "text-destructive",
+                                      )}
+                                    >
+                                      <span>{item.activityName}</span>
+                                      <span>
+                                        {isPaid && `оплачено ${formatCurrency(item.paid)}`}
+                                        {isPartial &&
+                                          `оплачено ${formatCurrency(item.paid)}, борг ${formatCurrency(item.remainder)}`}
+                                        {!isPaid && !isPartial && `борг ${formatCurrency(item.remainder)}`}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
                             </div>
-                            {items
-                              .sort((a, b) => (a.remainder > 0 ? 1 : 0) - (b.remainder > 0 ? 1 : 0))
-                              .map((item) => {
-                                const isPaid = item.remainder <= 0;
-                                const isPartial = item.paid > 0 && item.remainder > 0;
-                                return (
-                                  <div
-                                    key={`${item.activityId}-${item.accountId ?? "none"}-${item.year}-${item.month}`}
-                                    className={cn(
-                                      "flex justify-between gap-2 py-0.5 pl-2",
-                                      isPaid && "text-success",
-                                      isPartial && "text-muted-foreground",
-                                      !isPaid && !isPartial && "text-destructive",
-                                    )}
-                                  >
-                                    <span>{item.activityName}</span>
-                                    <span>
-                                      {isPaid && `оплачено ${formatCurrency(item.paid)}`}
-                                      {isPartial &&
-                                        `оплачено ${formatCurrency(item.paid)}, борг ${formatCurrency(item.remainder)}`}
-                                      {!isPaid && !isPartial && `борг ${formatCurrency(item.remainder)}`}
-                                    </span>
-                                  </div>
-                                );
-                              })}
+                          );
+                        })}
+                        {allocationData.totalRemaining > 0 && (
+                          <div className="flex justify-between gap-2 py-0.5 pt-1 border-t border-border font-medium text-destructive">
+                            <span>Всього борг по послугах</span>
+                            <span>{formatCurrency(allocationData.totalRemaining)}</span>
                           </div>
-                        );
-                      })}
-                      {allocationData.totalRemaining > 0 && (
-                        <div className="flex justify-between gap-2 py-0.5 pt-1 border-t border-border font-medium text-destructive">
-                          <span>Всього борг по послугах</span>
-                          <span>{formatCurrency(allocationData.totalRemaining)}</span>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })())}
         </div>
       )}
 

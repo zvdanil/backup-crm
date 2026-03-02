@@ -398,7 +398,10 @@ export default function GardenAttendanceJournal() {
       return;
     }
 
-    const dateStrings = days.map((day) => formatDateString(day));
+    // Use full month for sync — not filtered days (week/day view would exclude 1st and skip fixed accruals)
+    const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`;
+    const dateStrings = allDays.map((day) => formatDateString(day));
 
     // Process each base tariff activity
     for (const baseTariffActivityId of baseTariffIds) {
@@ -486,10 +489,6 @@ export default function GardenAttendanceJournal() {
         // Get controller activity enrollment IDs to fetch attendance
         const controllerEnrollmentIds = enrollments.map((e) => e.id);
 
-        // Get all attendance records for the month for controller activity
-        const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-        const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`;
-        
         // Fetch attendance with enrollment and student data
         const { data: monthAttendanceData = [], error: attendanceError } = await supabase
           .from('attendance')
@@ -560,10 +559,7 @@ export default function GardenAttendanceJournal() {
           }
         });
 
-        if (attendanceRecords.length === 0) {
-          continue;
-        }
-
+        // Fixed rules accrue on 1st regardless of attendance — do not skip when attendanceRecords is empty
         // 5. Calculate accruals
         const fixedRules = billingRules.filter(
           (rule: any) =>
@@ -672,7 +668,7 @@ export default function GardenAttendanceJournal() {
     controllerActivity,
     controllerActivityId,
     allEnrollments,
-    days,
+    allDays,
     year,
     month,
     staffMap,
