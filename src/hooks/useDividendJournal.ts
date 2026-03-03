@@ -327,6 +327,7 @@ export function useCreateDividendPayout() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dividend_payouts"] });
+      qc.invalidateQueries({ queryKey: ["account_transactions"] });
     },
   });
 }
@@ -373,6 +374,7 @@ export function useUpdateDividendPayout() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dividend_payouts"] });
+      qc.invalidateQueries({ queryKey: ["account_transactions"] });
     },
   });
 }
@@ -386,6 +388,7 @@ export function useDeleteDividendPayout() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["dividend_payouts"] });
+      qc.invalidateQueries({ queryKey: ["account_transactions"] });
     },
   });
 }

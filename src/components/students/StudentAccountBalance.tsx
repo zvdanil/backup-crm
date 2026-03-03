@@ -176,6 +176,13 @@ export function StudentAccountBalance({
   const groupLabel = (key: ActivityGroup | "other") =>
     key === "other" ? "Інше" : ACTIVITY_GROUP_LABELS[key];
 
+  const GROUP_KEYS: (ActivityGroup | "other")[] = [
+    "kindergarten",
+    "additional_classes",
+    "one_time_payments",
+    "other",
+  ];
+
   const [chargesByGroup, setChargesByGroup] = useState<
     Record<string, Record<string, number>>
   >({});
@@ -210,6 +217,17 @@ export function StudentAccountBalance({
       return Object.values(chargesByGroup[k] || {}).reduce((a, b) => a + b, 0);
     },
     [chargesByGroup]
+  );
+
+  /** Сума нарахувань з рядків по рахунку — змінюється при видаленні корзиною */
+  const getAccountTotalFromRows = useCallback(
+    (accountId: string) => {
+      return GROUP_KEYS.reduce(
+        (sum, k) => sum + getGroupTotal(accountId, k),
+        0
+      );
+    },
+    [getGroupTotal]
   );
 
   return (
@@ -252,12 +270,13 @@ export function StudentAccountBalance({
               const accountBalance = accountBalanceMap.get(group.id);
               // previous_balance і balance з API вже враховують opening (тільки в місяці внесення)
               const prev = accountBalance?.previous_balance ?? 0;
-              const curr = accountBalance?.balance ?? 0;
+              const payments = accountBalance?.payments ?? 0;
               const displayPreviousBalance = prev;
-              const endBalance = prev + curr;
+              // Поточний баланс = Баланс на початок + Оплачено − Всього нараховано з рядків (вже включає повернення)
+              const totalFromRows = getAccountTotalFromRows(group.id);
+              const endBalance = prev + payments - totalFromRows;
               const subscriptionCharges = accountBalance?.subscription_charges ?? 0;
               const charges = accountBalance?.charges || 0;
-              const payments = accountBalance?.payments || 0;
               const refunds = accountBalance?.refunds || 0;
               const startLabel =
               displayPreviousBalance < 0

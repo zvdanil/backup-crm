@@ -223,7 +223,7 @@ export function TransactionForm({
                     <p className="text-sm text-destructive">{errors.account_id.message}</p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Оплата буде зарахована на авансовий рахунок. Можна вказати цільові послуги або залишити авторасподіл.
+                    Можна вказати цільові послуги або залишити авторасподіл по заборгованостях.
                   </p>
                   <div className="space-y-2 pt-1">
                     <Label className="text-sm">Привʼязка до послуг (необовʼязково)</Label>

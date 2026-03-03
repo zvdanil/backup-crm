@@ -1236,6 +1236,8 @@ export type StudentAccountBalancesInput = {
   foodTariffIds: string[];
   /** Внесені залишки (тільки для місяця внесення). Додається лише в previous_balance («баланс на початок»); при підсумовуванні попередніх місяців — для коректного переносу закриття. */
   openingBalances?: { balance_date: string; account_id: string; amount: number }[];
+  /** Виключені абонплатні нарахування (корзина): не включати в subscription_charges. Ключі: "enrollmentId-year-month". */
+  subscriptionChargeExclusions?: Set<string>;
 };
 
 /**
@@ -1259,6 +1261,7 @@ export function computeStudentAccountBalancesFromData(
     foodTariffIds,
     enrollmentPriceHistoryMap = new Map(),
     openingBalances = [],
+    subscriptionChargeExclusions = new Set<string>(),
   } = params;
 
   const excludedSet = new Set(excludeActivityIds);
@@ -1369,7 +1372,8 @@ export function computeStudentAccountBalancesFromData(
         if (isFutureMonth) return e.is_active === true;
         if (e.is_active === true) return true;
         if (e.is_active === false && unenrolledDate) {
-          return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+          // Архив: показувати в місяцях до та в місяці відписання (без нарахувань приховає рядок)
+          return unenrolledDate >= monthStart;
         }
         return false;
       }
@@ -1384,7 +1388,8 @@ export function computeStudentAccountBalancesFromData(
       }
       if (e.is_active === true) return true;
       if (e.is_active === false && unenrolledDate) {
-        return unenrolledDate >= monthStart && unenrolledDate <= monthEnd;
+        // Архив: показувати в місяцях до та в місяці відписання
+        return unenrolledDate >= monthStart;
       }
       return false;
     });
@@ -1407,6 +1412,7 @@ export function computeStudentAccountBalancesFromData(
       m,
       y,
       enrollmentPriceHistoryMap,
+      subscriptionChargeExclusions,
     );
     monthlyBalancesMap.set(monthKey, monthlyBalances);
   }
@@ -1548,6 +1554,7 @@ export async function fetchStudentAccountBalances({
     { data: attendance, error: attendanceError },
     { data: enrollmentPriceHistory, error: priceHistoryError },
     { data: openingBalances, error: openingError },
+    { data: chargeExclusions, error: exclusionsError },
   ] = await Promise.all([
     supabaseAny
       .from("finance_transactions")
@@ -1578,10 +1585,17 @@ export async function fetchStudentAccountBalances({
       .eq("student_id", studentId)
       .gte("balance_date", startDate)
       .lte("balance_date", endDate),
+    enrollmentIds.length > 0
+      ? supabaseAny
+          .from("subscription_charge_exclusions")
+          .select("enrollment_id, year, month")
+          .in("enrollment_id", enrollmentIds)
+      : { data: [] as { enrollment_id: string; year: number; month: number }[], error: null },
   ]);
 
   if (transactionsError) throw transactionsError;
   if (attendanceError) throw attendanceError;
+  if (exclusionsError) throw exclusionsError;
   if (priceHistoryError) throw priceHistoryError;
   if (openingError) throw openingError;
 
@@ -1618,6 +1632,11 @@ export async function fetchStudentAccountBalances({
     });
   }
 
+  const exclusionSet = new Set<string>();
+  (chargeExclusions || []).forEach((ex: { enrollment_id: string; year: number; month: number }) => {
+    exclusionSet.add(`${ex.enrollment_id}-${ex.year}-${ex.month}`);
+  });
+
   return computeStudentAccountBalancesFromData({
     enrollments: allFilteredEnrollments,
     transactions: transactions || [],
@@ -1636,6 +1655,7 @@ export async function fetchStudentAccountBalances({
       account_id: ob.account_id,
       amount: ob.amount ?? 0,
     })),
+    subscriptionChargeExclusions: exclusionSet,
   });
 }
 
@@ -1672,6 +1692,7 @@ function calculateMonthlyBalanceFromData(
   month: number,
   year: number,
   enrollmentPriceHistoryMap: Map<string, EnrollmentPriceHistory[]> = new Map(),
+  subscriptionChargeExclusions: Set<string> = new Set(),
 ): StudentAccountBalance[] {
   const enrollmentIds = filteredEnrollments.map((e: any) => e.id);
   const activityIds = new Set(
@@ -1724,11 +1745,6 @@ function calculateMonthlyBalanceFromData(
     "subscription" | "recalculation" | "subscription_and_recalculation"
   > = {};
   const monthEndDateStr = getMonthEndDate(year, month);
-  const enrollmentIsActiveMap = new Map<string, boolean>();
-  filteredEnrollments.forEach((enrollment: any) => {
-    enrollmentIsActiveMap.set(enrollment.id, enrollment.is_active);
-  });
-
   enrollmentDataMap.forEach((enrollment, enrollmentId) => {
     if (!filteredEnrollments.find((e: any) => e.id === enrollmentId)) return;
     const activity = activityDataMap[enrollment.activity_id];
@@ -1739,9 +1755,7 @@ function calculateMonthlyBalanceFromData(
     displayModeByActivity[enrollment.activity_id] =
       (activity.balance_display_mode as any) || fallbackMode;
     if (foodTariffIdSet.has(enrollment.activity_id)) return;
-    const isActive = enrollmentIsActiveMap.get(enrollmentId) ?? true;
-    if (!isActive) return;
-
+    // Не пропускати архівні — вони теж мають показувати історію в минулих місяцях
     let baseMonthlyCharge = 0;
 
     if (isMonthlyBilling) {
@@ -1762,10 +1776,14 @@ function calculateMonthlyBalanceFromData(
       } else {
         baseMonthlyCharge = activity.default_price || 0;
       }
-      // «Нараховано на початок» — тільки present subscription, НЕ fixed (fixed = ставка за заняття)
+      // «Нараховано на початок» — тільки present subscription, НЕ fixed. Значення з білінгових правил.
+      // Виключаємо, якщо користувач натиснув корзину (запис у subscription_charge_exclusions).
       if (presentRule?.type === "subscription" && baseMonthlyCharge > 0) {
-        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
-          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
+        const exclusionKey = `${enrollmentId}-${year}-${month}`;
+        if (!subscriptionChargeExclusions.has(exclusionKey)) {
+          subscriptionOnlyChargesByActivity[enrollment.activity_id] =
+            (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
+        }
       }
     } else {
       const customStatuses = activity.billing_rules?.custom_statuses || [];
@@ -1780,8 +1798,11 @@ function calculateMonthlyBalanceFromData(
         const maxRate = Math.max(...subscriptionCustom.map((cs: any) => Number(cs.rate)));
         displayModeByActivity[enrollment.activity_id] =
           (activity.balance_display_mode as any) || "subscription";
-        subscriptionOnlyChargesByActivity[enrollment.activity_id] =
-          (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + maxRate;
+        const exclusionKey = `${enrollmentId}-${year}-${month}`;
+        if (!subscriptionChargeExclusions.has(exclusionKey)) {
+          subscriptionOnlyChargesByActivity[enrollment.activity_id] =
+            (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + maxRate;
+        }
       }
     }
 
@@ -1832,8 +1853,7 @@ function calculateMonthlyBalanceFromData(
     }
     const refunds = expense;
     const balance = payments - charges + refunds;
-    // «Нараховано на початок» — тільки абонплатні джерела:
-    // present.subscription + custom_status (subscription/subscription_with_logic), без present.fixed.
+    // «Нараховано на початок» — з вартості абонплати (billing rules). На 1 число ще не може бути income-транзакцій.
     const subscriptionCharges = subscriptionOnlyChargesByActivity[activityId] ?? 0;
 
     if (enrollmentsForActivity.length === 0) {
@@ -2133,8 +2153,13 @@ export async function fetchAllStudentsAccountBalancesForMonth({
   }, null as string | null);
   const startDate = earliestGlobal || getMonthStartDate(year, month);
 
-  const [transactions, attendance, enrollmentPriceHistory, openingBalancesAll] =
-    await Promise.all([
+  const [
+    transactions,
+    attendance,
+    enrollmentPriceHistory,
+    openingBalancesAll,
+    chargeExclusionsAll,
+  ] = await Promise.all([
       fetchAllRows<any>((from, to) =>
         supabaseAny
           .from("finance_transactions")
@@ -2181,6 +2206,19 @@ export async function fetchAllStudentsAccountBalancesForMonth({
           student_id: string;
         }[];
       })(),
+      enrollmentIds.length > 0
+        ? (async () => {
+            const { data } = await supabaseAny
+              .from("subscription_charge_exclusions")
+              .select("enrollment_id, year, month")
+              .in("enrollment_id", enrollmentIds);
+            return (data || []) as {
+              enrollment_id: string;
+              year: number;
+              month: number;
+            }[];
+          })()
+        : Promise.resolve([]),
     ]);
 
   const activityIds = [...new Set(allEnrollments.map((e: any) => e.activity_id))];
@@ -2212,6 +2250,13 @@ export async function fetchAllStudentsAccountBalancesForMonth({
     }
     enrollmentPriceHistoryMap.get(ph.enrollment_id)!.push(ph);
   });
+
+  const exclusionSet = new Set<string>();
+  (chargeExclusionsAll || []).forEach(
+    (ex: { enrollment_id: string; year: number; month: number }) => {
+      exclusionSet.add(`${ex.enrollment_id}-${ex.year}-${ex.month}`);
+    },
+  );
 
   const result = new Map<string, StudentAccountBalance[]>();
 
@@ -2250,6 +2295,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
         foodTariffIds,
         enrollmentPriceHistoryMap,
         openingBalances: studentOpeningBalances,
+        subscriptionChargeExclusions: exclusionSet,
       }),
       computeStudentAccountBalancesFromData({
         enrollments: studentEnrollments,
@@ -2265,6 +2311,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
         foodTariffIds,
         enrollmentPriceHistoryMap,
         openingBalances: studentOpeningBalances,
+        subscriptionChargeExclusions: exclusionSet,
       }),
     ];
     const byAccountCumulative = new Map<string | null, number>();
@@ -2719,87 +2766,47 @@ export function useActivityIncomeTransaction(
         throw error;
       }
 
-      let data = initialData;
-
-      // If not found for the specific month, try to find ANY income transaction for this activity
-      // This handles cases where the transaction exists but might be in a different month
-      // or the activity/enrollment is archived but transaction still exists and is shown in balance
-      // We search without date restrictions to find archived transactions that are still in balance calculations
-      if (!data) {
-        // Debug: Check if this is for "Прескул" activity
-        const { data: activityData } = await supabaseAny
-          .from("activities")
-          .select("name")
-          .eq("id", activityId)
-          .maybeSingle();
-
-        const isPreskul = activityData?.name === "Прескул";
-
-        const { data: anyTransaction, error: anyError } = await supabaseAny
-          .from("finance_transactions")
-          .select("*")
-          .eq("student_id", studentId)
-          .eq("activity_id", activityId)
-          .eq("type", "income")
-          .order("date", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (anyError) {
-          console.error(
-            "[useActivityIncomeTransaction] Error searching any transaction:",
-            anyError,
-          );
-          if (isPreskul) {
-            console.error(
-              "[useActivityIncomeTransaction] Прескул: Error details:",
-              anyError,
-            );
-          }
-          // Don't throw, just return null
-        } else if (anyTransaction) {
-          // Use any found transaction - if it's shown in balance, we should be able to delete it
-          // This is especially important for archived enrollments where transactions might be from different months
-          data = anyTransaction;
-        } else {
-          if (isPreskul) {
-            // Debug: Check if there are ANY transactions for this student and activity
-            const { data: allTransactions, error: allError } = await supabaseAny
-              .from("finance_transactions")
-              .select("id, type, date, amount, student_id, activity_id")
-              .eq("student_id", studentId)
-              .eq("activity_id", activityId);
-
-            if (allError) {
-              console.error(
-                "[useActivityIncomeTransaction] Прескул: Error checking all transactions:",
-                allError,
-              );
-            } else {
-              // If we found income transactions but not in the first query, use the first one
-              const incomeTransactions =
-                allTransactions?.filter((t) => t.type === "income") || [];
-              if (incomeTransactions.length > 0) {
-                // Fetch full transaction data
-                const { data: fullTransaction } = await supabaseAny
-                  .from("finance_transactions")
-                  .select("*")
-                  .eq("id", incomeTransactions[0].id)
-                  .single();
-
-                if (fullTransaction) {
-                  data = fullTransaction;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      return data as FinanceTransaction | null;
+      // Повертаємо тільки транзакцію з обраного місяця. Якщо нарахування видалено (корзина),
+      // initialData = null, і рядок коректно покаже 0. Fallback на "будь-яку" транзакцію з іншого
+      // місяця ламав це — hasIncomeTransaction був true, рядок показував charge замість 0.
+      return initialData as FinanceTransaction | null;
     },
     enabled:
       !!studentId && !!activityId && month !== undefined && year !== undefined,
+  });
+}
+
+// Add subscription charge exclusion (when user clicks trash — exclude from «Нараховано на початок»)
+export function useAddSubscriptionChargeExclusion() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      enrollmentId,
+      year,
+      month,
+    }: {
+      enrollmentId: string;
+      year: number;
+      month: number;
+    }) => {
+      const { data, error } = await supabaseAny
+        .from("subscription_charge_exclusions")
+        .insert({ enrollment_id: enrollmentId, year, month })
+        .select("id")
+        .single();
+
+      if (error) {
+        if (error.code === "23505") return { id: null }; // unique violation = already excluded
+        throw error;
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["student_account_balances"] });
+      queryClient.invalidateQueries({ queryKey: ["student_total_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], exact: false });
+    },
   });
 }
 

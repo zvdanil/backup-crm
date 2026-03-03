@@ -148,19 +148,113 @@ export function useAccountBalance(accountId: string) {
   });
 }
 
+/** Transaction-like record for unified account history (finance_transactions + dividend legs) */
+export interface AccountTransactionItem {
+  id: string;
+  date: string;
+  type: string;
+  amount: number;
+  description: string | null;
+  transfer_id?: string | null;
+  _source: 'finance_transaction' | 'dividend_leg';
+}
+
 export function useAccountTransactions(accountId: string) {
   return useQuery({
     queryKey: ['account_transactions', accountId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('finance_transactions')
-        .select('*')
-        .eq('account_id', accountId)
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false });
+    queryFn: async (): Promise<AccountTransactionItem[]> => {
+      const [
+        { data: txData, error: txError },
+        { data: legsData, error: legsError },
+      ] = await Promise.all([
+        supabaseAny
+          .from('finance_transactions')
+          .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, activities(is_actual_expense)')
+          .eq('account_id', accountId)
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false }),
+        supabaseAny
+          .from('dividend_payout_legs')
+          .select(
+            `
+            id,
+            payout_id,
+            account_id,
+            amount,
+            dividend_payouts!inner(
+              id,
+              payout_date,
+              notes,
+              participant:dividend_participants(id, name)
+            )
+          `
+          )
+          .eq('account_id', accountId),
+      ]);
 
-      if (error) throw error;
-      return data || [];
+      if (txError) throw txError;
+      if (legsError) throw legsError;
+
+      // Тільки реальні операції: виключаємо прогнозні та застарілі (advance_payment)
+      const transactions = (txData || []).filter((t: any) => {
+        if (t.dividend_payout_id) return false;
+        if (t.type === 'income') return false; // нарахування — прогноз, не реальний дохід
+        if (t.type === 'advance_payment') return false; // застаріла система авансів, не відображаємо
+        if (t.type === 'payment' || t.type === 'salary') return true; // реальні дохід і витрата
+        if (t.type === 'expense' || t.type === 'household') {
+          if (t.transfer_id) return true; // переказ — завжди реальний
+          const isActual = t.activities?.is_actual_expense === true;
+          return isActual; // тільки факт реальних витрат
+        }
+        return true;
+      }) as any[];
+
+      const dividendItems: AccountTransactionItem[] = (legsData || []).map(
+        (leg: any) => {
+          const payout = leg.dividend_payouts;
+          const participantName =
+            payout?.participant?.name ?? 'Учасник';
+          const desc = payout?.notes?.trim()
+            ? `Дивіденд: ${participantName} — ${payout.notes}`
+            : `Дивіденд: ${participantName}`;
+          return {
+            id: `dividend-leg-${leg.id}`,
+            date: payout?.payout_date ?? leg.created_at?.slice(0, 10) ?? '',
+            type: 'dividend',
+            amount: -Math.abs(Number(leg.amount) || 0),
+            description: desc,
+            transfer_id: null,
+            _source: 'dividend_leg',
+          };
+        }
+      );
+
+      const txItems: AccountTransactionItem[] = transactions.map((t: any) => {
+        const isIncome = t.type === 'income' || t.type === 'payment';
+        const isTransfer = t.transfer_id != null && String(t.transfer_id).length > 0;
+        const displayType = isTransfer ? 'transfer' : t.type;
+        return {
+          id: t.id,
+          date: t.date,
+          type: displayType,
+          amount:
+            isIncome
+              ? Math.abs(Number(t.amount) || 0)
+              : -Math.abs(Number(t.amount) || 0),
+          description: t.description ?? null,
+          transfer_id: t.transfer_id ?? null,
+          _source: 'finance_transaction',
+        };
+      });
+
+      const merged = [...txItems, ...dividendItems].sort((a, b) => {
+        const da = a.date;
+        const db = b.date;
+        if (da !== db) return db.localeCompare(da);
+        return a._source === 'dividend_leg' ? 1 : -1;
+      });
+
+      return merged;
     },
     enabled: !!accountId,
   });

@@ -3,7 +3,7 @@ import {
   useStudentActivityMonthlyBalance,
   useActivityIncomeTransaction,
   useDeleteIncomeTransaction,
-  useCreateFinanceTransaction,
+  useAddSubscriptionChargeExclusion,
 } from "@/hooks/useFinanceTransactions";
 import { formatCurrency, getMonthEndDate } from "@/lib/attendance";
 import {
@@ -49,7 +49,7 @@ export function StudentActivityBalanceRow({
   const { role } = useAuth();
   const canDelete = role === "owner" || role === "admin";
   const deleteIncome = useDeleteIncomeTransaction();
-  const createTransaction = useCreateFinanceTransaction();
+  const addExclusion = useAddSubscriptionChargeExclusion();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // Check if this is a food activity
@@ -173,16 +173,17 @@ export function StudentActivityBalanceRow({
       const absentCount =
         monthlyData?.absentCount ?? recalculationData?.absentCount ?? 0;
       const monthlyChargesLocal = monthlyData?.charges ?? 0;
-      // Если есть incomeTransaction, используем monthlyChargesLocal (транзакция существует)
-      // Если нет incomeTransaction:
-      //   - Для архивных активностей: charges = 0 (транзакция была удалена)
-      //   - Для активных активностей: используем baseMonthlyCharge (для будущих месяцев)
+      // Якщо є incomeTransaction — використовуємо monthlyChargesLocal
+      // Якщо немає (користувач натиснув корзину): для поточного/минулого місяця — 0,
+      // для майбутнього — baseMonthlyCharge (очікуване нарахування)
       const hasIncomeTransaction = !!incomeTransaction;
+      const now = new Date();
+      const isFutureMonth = year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth());
       const charges = hasIncomeTransaction
         ? monthlyChargesLocal > 0
           ? monthlyChargesLocal
           : baseMonthlyCharge
-        : enrollment.is_active && baseMonthlyCharge > 0
+        : isFutureMonth && enrollment.is_active && baseMonthlyCharge > 0
           ? baseMonthlyCharge
           : 0;
       const balance = payments - charges + refunds;
@@ -273,10 +274,17 @@ export function StudentActivityBalanceRow({
   const attendanceCount = combinedData?.attendanceCount || 0;
   const absentCount = combinedData?.absentCount || 0;
 
-  // Для архивных активностей: скрываем если баланс = 0 и нет транзакций
-  // Это позволяет скрывать архивные активности после удаления транзакций
+  // Для архивних активностей: ховаємо якщо баланс = 0 і немає транзакцій.
+  // Виняток: у місяці відписання показуємо завжди — щоб була видна кнопка корзини,
+  // користувач сам вирішить чи видаляти нарахування.
+  const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
+  const isMonthOfUnenrollment =
+    unenrolledDate &&
+    unenrolledDate.getFullYear() === year &&
+    unenrolledDate.getMonth() === month;
   if (
     !enrollment.is_active &&
+    !isMonthOfUnenrollment &&
     balance === 0 &&
     payments === 0 &&
     charges === 0 &&
@@ -341,43 +349,21 @@ export function StudentActivityBalanceRow({
     if (!hasSubscriptionCharge) return;
 
     try {
-      let transactionId = incomeTransaction?.id;
-
-      // If transaction doesn't exist, create it first
-      if (!transactionId) {
-        // Get account_id from enrollment or activity
-        const accountId =
-          enrollment.account_id || activities.account_id || null;
-
-        // Create income transaction for subscription charge
-        const startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-        const monthName = new Date(year, month).toLocaleDateString("uk-UA", {
-          month: "long",
-          year: "numeric",
-        });
-        const createdTransaction = await createTransaction.mutateAsync({
-          type: "income",
-          student_id: studentId,
-          activity_id: enrollment.activity_id,
-          staff_id: null,
-          amount: baseMonthlyCharge,
-          date: startDate,
-          description: `Абонплата за ${monthName}`,
-          category: null,
-          account_id: accountId,
-        });
-
-        transactionId = createdTransaction.id;
-
-        // Wait a bit for the transaction to be fully created and queries to update
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      // Delete the transaction
-      await deleteIncome.mutateAsync({
-        transactionId: transactionId!,
-        reason,
+      // 1. Додати виключення — «Нараховано на початок» більше не включатиме цю активність
+      await addExclusion.mutateAsync({
+        enrollmentId: enrollment.id,
+        year,
+        month,
       });
+
+      // 2. Якщо є income-транзакція — видалити (рядок покаже 0)
+      const transactionId = incomeTransaction?.id;
+      if (transactionId) {
+        await deleteIncome.mutateAsync({
+          transactionId,
+          reason,
+        });
+      }
 
       toast({
         title: "Успішно",
@@ -387,7 +373,7 @@ export function StudentActivityBalanceRow({
     } catch (error: any) {
       toast({
         title: "Помилка",
-        description: error.message || "Не вдалося видалити нарахування",
+        description: (error as Error)?.message || "Не вдалося видалити нарахування",
         variant: "destructive",
       });
     }
@@ -442,7 +428,7 @@ export function StudentActivityBalanceRow({
               size="icon"
               className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
               onClick={handleDeleteClick}
-              disabled={deleteIncome.isPending || createTransaction.isPending}
+              disabled={addExclusion.isPending || deleteIncome.isPending}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -457,7 +443,7 @@ export function StudentActivityBalanceRow({
           onConfirm={handleDeleteConfirm}
           transactionType="income"
           amount={incomeTransaction?.amount || baseMonthlyCharge}
-          isLoading={deleteIncome.isPending || createTransaction.isPending}
+          isLoading={addExclusion.isPending || deleteIncome.isPending}
         />
       )}
     </>

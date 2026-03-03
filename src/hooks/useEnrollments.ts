@@ -574,11 +574,12 @@ export function enrollmentInScopeForMonth(
   const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
   const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
 
-  // Архивний запис (is_active не true): тільки якщо знятий саме в цьому місяці
+  // Архивний запис: показувати в місяцях до та в місяці відписання включно.
+  // У місяці відписання показуємо завжди — щоб була видна кнопка корзини.
   if (!isActive) {
     if (!enrollment.unenrolled_at) return false;
-    if (unenrolledDate! < monthStart) return false;
-    if (unenrolledDate! > monthEnd) return false;
+    if (unenrolledDate! < monthStart) return false; // місяць після відписання — не показувати
+    // unenrolledDate >= monthStart: місяць відписання або раніше — показувати
     return true;
   }
 
