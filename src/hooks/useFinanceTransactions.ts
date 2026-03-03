@@ -731,21 +731,26 @@ export function useStudentActivityBalance(
           .filter((cs: any) => cs.is_active !== false)
           .map((cs: any) => cs.id);
 
-        // Get all attendance records
+        // Get all attendance records (status + value for numeric marks)
         const { data: attendanceRecords } = await supabase
           .from("attendance")
-          .select("id, status")
+          .select("id, status, value")
           .eq("enrollment_id", enrollments.id)
           .gte("date", startDate)
           .lte("date", endDate);
 
-        // Count: 'present' OR custom status (status = UUID from custom_statuses)
-        attendanceCount =
+        // Count: 'present', custom status, або "Число" (status=null, value>0) — кожна ячейка з цифрою = 1 заняття
+        const statusCount =
           attendanceRecords?.filter(
-            (record) =>
+            (record: any) =>
               record.status === "present" ||
               activeCustomStatusIds.includes(record.status),
           ).length || 0;
+        const valueRecordCount =
+          attendanceRecords?.filter(
+            (record: any) => !record.status && (record.value ?? 0) > 0,
+          ).length || 0;
+        attendanceCount = statusCount + valueRecordCount;
       }
 
       // Count absent for food activities (from expense transactions)
@@ -890,21 +895,26 @@ export function useStudentActivityMonthlyBalance(
           .filter((cs: any) => cs.is_active !== false)
           .map((cs: any) => cs.id);
 
-        // Get all attendance records
+        // Get all attendance records (status + value for numeric marks)
         const { data: attendanceRecords } = await supabase
           .from("attendance")
-          .select("id, status")
+          .select("id, status, value")
           .eq("enrollment_id", enrollments.id)
           .gte("date", startDate)
           .lte("date", endDate);
 
-        // Count: 'present' OR custom status (status = UUID from custom_statuses)
-        attendanceCount =
+        // Count: 'present', custom status, або "Число" (status=null, value>0) — кожна ячейка з цифрою = 1 заняття
+        const statusCount =
           attendanceRecords?.filter(
-            (record) =>
+            (record: any) =>
               record.status === "present" ||
               activeCustomStatusIds.includes(record.status),
           ).length || 0;
+        const valueRecordCount =
+          attendanceRecords?.filter(
+            (record: any) => !record.status && (record.value ?? 0) > 0,
+          ).length || 0;
+        attendanceCount = statusCount + valueRecordCount;
       }
 
       // Count absent for food activities (from expense transactions)
