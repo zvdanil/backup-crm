@@ -62,6 +62,13 @@ const TRANSACTION_TYPE_COLORS: Record<string, string> = {
 
 type PeriodType = 'all' | 'month' | 'quarter' | 'halfYear' | 'year' | 'custom';
 
+function parseYearMonth(value: string): { year: number; month: number } | null {
+  if (!/^\d{4}-\d{2}$/.test(value)) return null;
+  const [year, month] = value.split('-').map(Number);
+  if (!year || !month || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
 function getPeriodBounds(
   periodType: PeriodType,
   periodValue: string,
@@ -247,6 +254,31 @@ export default function AccountDetail() {
       inPeriod(t.transfer_date, periodType, periodValue, customDateFrom, customDateTo)
     );
   }, [transfers, isPeriodSelected, periodType, periodValue, customDateFrom, customDateTo]);
+
+  const monthReference = useMemo(() => {
+    if (periodType === 'month') {
+      const parsed = parseYearMonth(periodValue);
+      if (parsed) return parsed;
+    }
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  }, [periodType, periodValue]);
+
+  const endOfPreviousMonth = useMemo(
+    () => new Date(monthReference.year, monthReference.month - 1, 0, 23, 59, 59, 999),
+    [monthReference]
+  );
+
+  const previousMonthBalance = useMemo(() => {
+    const ledgerBeforeMonth = transactions.reduce((sum, tx) => {
+      const txDate = new Date(tx.date);
+      return txDate <= endOfPreviousMonth ? sum + (Number(tx.amount) || 0) : sum;
+    }, 0);
+    return ledgerBeforeMonth;
+  }, [transactions, endOfPreviousMonth]);
+
+  const manualOpeningAmount = Number(account?.opening_balance_amount ?? 0) || 0;
+  const openingAtMonthStart = previousMonthBalance + manualOpeningAmount;
 
   // Значення за період для плиток (коли обрано період)
   const periodTileValues = useMemo(() => {
@@ -449,6 +481,23 @@ export default function AccountDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <p className="text-sm font-medium text-muted-foreground mb-1">
+                  Залишок на початок місяця
+                </p>
+                <div className={cn(
+                  "text-2xl font-bold",
+                  openingAtMonthStart >= 0 ? "text-green-600" : "text-red-600"
+                )}>
+                  {formatCurrency(openingAtMonthStart)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Баланс за минулий місяць: {formatCurrency(previousMonthBalance)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  + Введений залишок: {formatCurrency(manualOpeningAmount)}
+                  {account?.opening_balance_date ? ` (на дату ${account.opening_balance_date})` : ''}
+                </p>
+                <div className="hidden">
                 {account?.opening_balance_date && (account?.opening_balance_amount ?? 0) !== 0 ? (
                   <>
                     <div className="text-2xl font-bold">
@@ -461,6 +510,7 @@ export default function AccountDetail() {
                 ) : (
                   <p className="text-sm text-muted-foreground">Не вказано</p>
                 )}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -486,6 +536,9 @@ export default function AccountDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <p className="text-sm font-medium text-muted-foreground mb-1">
+                  Загальний баланс рахунку
+                </p>
                 <div className={cn(
                   "text-2xl font-bold",
                   balance.free_funds >= 0 ? "text-green-600" : "text-red-600"
