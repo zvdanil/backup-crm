@@ -28,6 +28,11 @@ const MONTHS = [
 const payoutSchema = z.object({
   amount: z.number().min(0.01, 'Сума має бути більше 0'),
   payout_date: z.string().min(1, 'Оберіть дату'),
+  payout_for_period: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Період має бути у форматі YYYY-MM')
+    .optional()
+    .or(z.literal('')),
   notes: z.string().optional(),
   account_id: z.string().min(1, 'Оберіть рахунок списання'),
   commission: z.number().min(0).optional(),
@@ -124,6 +129,7 @@ export default function StaffPayrollRegistry() {
     defaultValues: {
       amount: 0,
       payout_date: formatLocalDate(new Date()),
+      payout_for_period: '',
       notes: '',
       account_id: '',
       commission: 0,
@@ -183,6 +189,7 @@ export default function StaffPayrollRegistry() {
         staff_id: selectedStaffId,
         amount: data.amount,
         payout_date: data.payout_date,
+        payout_for_period: data.payout_for_period?.trim() ? data.payout_for_period : null,
         notes: data.notes || null,
         account_id: data.account_id || null,
       });
@@ -212,6 +219,7 @@ export default function StaffPayrollRegistry() {
     reset({
       amount: 0,
       payout_date: formatLocalDate(new Date()),
+      payout_for_period: '',
       notes: '',
       account_id: '',
       commission: 0,
@@ -427,6 +435,18 @@ export default function StaffPayrollRegistry() {
                               )}
                             </div>
                             
+                            <div>
+                              <Label htmlFor="payout_for_period">Виплата за період (необов'язково)</Label>
+                              <Input
+                                id="payout_for_period"
+                                type="month"
+                                {...register('payout_for_period')}
+                              />
+                              {errors.payout_for_period && (
+                                <p className="text-sm text-red-500 mt-1">{errors.payout_for_period.message}</p>
+                              )}
+                            </div>
+
                             <div>
                               <Label htmlFor="payout_commission">Комісія (₴)</Label>
                               <Input

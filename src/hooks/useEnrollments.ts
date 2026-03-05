@@ -6,6 +6,8 @@ import { isGardenAttendanceController } from '@/lib/gardenAttendance';
 import type { Student } from './useStudents';
 import type { Activity } from './useActivities';
 
+const supabaseAny = supabase as any;
+
 export interface Enrollment {
   id: string;
   student_id: string;
@@ -294,70 +296,123 @@ export function useUpdateEnrollment() {
   return useMutation({
     mutationFn: async ({ id, refresh_student_id: _refreshStudentId, recalc_from: _recalcFrom, recalc_to: _recalcTo, ...enrollment }: UpdateEnrollmentMutationInput) => {
       const { effective_from, ...enrollmentPatch } = enrollment;
+      const effectiveFromDate = effective_from
+        ? formatLocalDate(new Date(effective_from))
+        : formatLocalDate(new Date());
 
-      // Проверяем, изменилась ли цена или скидка
-      const priceChanged = 
-        enrollmentPatch.custom_price !== undefined || 
+      const { data: enrollmentMeta, error: enrollmentMetaError } = await supabaseAny
+        .from('enrollments')
+        .select(`
+          id,
+          student_id,
+          activity_id,
+          account_id,
+          custom_price,
+          discount_percent,
+          activities (
+            account_id
+          )
+        `)
+        .eq('id', id)
+        .single();
+      if (enrollmentMetaError) throw enrollmentMetaError;
+
+      const priceChanged =
+        enrollmentPatch.custom_price !== undefined ||
         enrollmentPatch.discount_percent !== undefined;
-      
-      let oldEnrollment: {
-        custom_price: number | null;
-        discount_percent: number | null;
-      } | null = null;
-      if (priceChanged) {
-        // Получаем старые значения для определения факта изменения
-        const { data: old, error: oldError } = await supabase
-          .from('enrollments')
-          .select('custom_price, discount_percent')
-          .eq('id', id)
-          .single();
-        
-        if (oldError) throw oldError;
-        oldEnrollment = old as {
-          custom_price: number | null;
-          discount_percent: number | null;
-        };
-      }
+      const accountChanged =
+        enrollmentPatch.account_id !== undefined &&
+        enrollmentPatch.account_id !== (enrollmentMeta.account_id ?? null);
 
-      // Если изменилась цена или скидка, обновляем историю через единый server-side API.
-      if (priceChanged && oldEnrollment) {
-        const oldPrice = oldEnrollment.custom_price;
-        const oldDiscount = oldEnrollment.discount_percent ?? 0;
+      if (priceChanged) {
+        const oldPrice = enrollmentMeta.custom_price;
+        const oldDiscount = enrollmentMeta.discount_percent ?? 0;
         const newPrice = enrollmentPatch.custom_price ?? oldPrice;
         const newDiscount = enrollmentPatch.discount_percent ?? oldDiscount;
-
         const priceActuallyChanged = oldPrice !== newPrice || oldDiscount !== newDiscount;
-        if (priceActuallyChanged) {
-          const effectiveFrom = effective_from
-            ? formatLocalDate(new Date(effective_from))
-            : formatLocalDate(new Date());
 
-          const { error: rpcError } = await supabase.rpc('set_enrollment_price', {
+        if (priceActuallyChanged) {
+          const { error: rpcError } = await supabaseAny.rpc('set_enrollment_price', {
             p_enrollment_id: id,
             p_custom_price: newPrice,
             p_discount_percent: newDiscount,
-            p_effective_from: effectiveFrom,
+            p_effective_from: effectiveFromDate,
           });
           if (rpcError) throw rpcError;
         }
       }
 
-      // Обновляем enrollment
+      if (accountChanged) {
+        const { error: accountRpcError } = await supabaseAny.rpc('set_enrollment_account', {
+          p_enrollment_id: id,
+          p_account_id: enrollmentPatch.account_id ?? null,
+          p_effective_from: effectiveFromDate,
+        });
+        if (accountRpcError) throw accountRpcError;
+
+        const { data: intervalRow, error: intervalError } = await supabaseAny
+          .from('enrollment_account_history')
+          .select('effective_to')
+          .eq('enrollment_id', id)
+          .eq('effective_from', effectiveFromDate)
+          .maybeSingle();
+        if (intervalError && intervalError.code !== 'PGRST116') throw intervalError;
+
+        const targetAccountId =
+          enrollmentPatch.account_id ??
+          enrollmentMeta.activities?.account_id ??
+          null;
+
+        let txUpdateQuery = supabaseAny
+          .from('finance_transactions')
+          .update({ account_id: targetAccountId })
+          .eq('student_id', enrollmentMeta.student_id)
+          .eq('activity_id', enrollmentMeta.activity_id)
+          .eq('type', 'income')
+          .gte('date', effectiveFromDate);
+
+        if (intervalRow?.effective_to) {
+          const toDate = new Date(`${intervalRow.effective_to}T00:00:00`);
+          toDate.setDate(toDate.getDate() - 1);
+          txUpdateQuery = txUpdateQuery.lte('date', formatLocalDate(toDate));
+        }
+
+        const { error: txUpdateError } = await txUpdateQuery;
+        if (txUpdateError) throw txUpdateError;
+
+        const today = formatLocalDate(new Date());
+        const { data: currentAccountRow, error: currentAccountError } = await supabaseAny
+          .from('enrollment_account_history')
+          .select('account_id')
+          .eq('enrollment_id', id)
+          .lte('effective_from', today)
+          .or(`effective_to.is.null,effective_to.gt.${today}`)
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (currentAccountError && currentAccountError.code !== 'PGRST116') {
+          throw currentAccountError;
+        }
+
+        enrollmentPatch.account_id = currentAccountRow?.account_id ?? enrollmentMeta.account_id ?? null;
+      }
+
       const { data, error } = await supabase
         .from('enrollments')
         .update(enrollmentPatch)
         .eq('id', id)
         .select()
         .single();
-      
-      if (error) throw error;
 
+      if (error) throw error;
       return data;
     },
     onSuccess: async (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['enrollments'] });
       queryClient.invalidateQueries({ queryKey: ['enrollment_price_history'] });
       queryClient.invalidateQueries({ queryKey: ['enrollment_price_history_map'], exact: false });
+      queryClient.invalidateQueries({ queryKey: ['enrollment_account_history'] });
+      queryClient.invalidateQueries({ queryKey: ['enrollment_account_history_map'], exact: false });
 
       const studentId = variables.refresh_student_id;
       if (studentId) {
@@ -376,6 +431,16 @@ export function useUpdateEnrollment() {
           }),
           queryClient.refetchQueries({
             queryKey: ['enrollment_price_history_map'],
+            exact: false,
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_account_history'],
+            exact: false,
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_account_history_map'],
             exact: false,
             type: 'active',
           }),
@@ -409,6 +474,16 @@ export function useUpdateEnrollment() {
           }),
           queryClient.refetchQueries({
             queryKey: ['enrollment_price_history_map'],
+            exact: false,
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_account_history'],
+            exact: false,
+            type: 'active',
+          }),
+          queryClient.refetchQueries({
+            queryKey: ['enrollment_account_history_map'],
             exact: false,
             type: 'active',
           }),
@@ -479,6 +554,16 @@ export interface EnrollmentPriceHistory {
   discount_percent: number | null;
   effective_from: string; // DATE
   effective_to: string | null; // DATE
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EnrollmentAccountHistory {
+  id: string;
+  enrollment_id: string;
+  account_id: string | null;
+  effective_from: string;
+  effective_to: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -636,6 +721,67 @@ export function useEnrollmentPriceHistoryMap(enrollmentIds: string[]) {
       if (error) throw error;
       const map = new Map<string, EnrollmentPriceHistory[]>();
       (data || []).forEach((row: EnrollmentPriceHistory) => {
+        const id = row.enrollment_id;
+        if (!map.has(id)) map.set(id, []);
+        map.get(id)!.push(row);
+      });
+      return map;
+    },
+    enabled: enrollmentIds.length > 0,
+  });
+}
+
+export function getEnrollmentAccountForDate(
+  enrollment: { account_id: string | null },
+  accountHistory: EnrollmentAccountHistory[] | undefined,
+  date: string,
+): string | null {
+  if (!accountHistory || accountHistory.length === 0) {
+    return enrollment.account_id ?? null;
+  }
+
+  const effectiveRecord = accountHistory.find((record) => {
+    const fromDate = record.effective_from;
+    const toDate = record.effective_to;
+    if (date < fromDate) return false;
+    if (toDate && date >= toDate) return false;
+    return true;
+  });
+
+  if (effectiveRecord) return effectiveRecord.account_id ?? null;
+  return enrollment.account_id ?? null;
+}
+
+export function useEnrollmentAccountHistory(enrollmentId: string) {
+  return useQuery({
+    queryKey: ['enrollment_account_history', enrollmentId],
+    queryFn: async () => {
+      const { data, error } = await supabaseAny
+        .from('enrollment_account_history')
+        .select('*')
+        .eq('enrollment_id', enrollmentId)
+        .order('effective_from', { ascending: false });
+      if (error) throw error;
+      return (data || []) as EnrollmentAccountHistory[];
+    },
+    enabled: !!enrollmentId,
+  });
+}
+
+export function useEnrollmentAccountHistoryMap(enrollmentIds: string[]) {
+  const key = enrollmentIds.slice().sort().join(',');
+  return useQuery({
+    queryKey: ['enrollment_account_history_map', key],
+    queryFn: async (): Promise<Map<string, EnrollmentAccountHistory[]>> => {
+      if (enrollmentIds.length === 0) return new Map();
+      const { data, error } = await supabaseAny
+        .from('enrollment_account_history')
+        .select('*')
+        .in('enrollment_id', enrollmentIds)
+        .order('effective_from', { ascending: false });
+      if (error) throw error;
+      const map = new Map<string, EnrollmentAccountHistory[]>();
+      (data || []).forEach((row: EnrollmentAccountHistory) => {
         const id = row.enrollment_id;
         if (!map.has(id)) map.set(id, []);
         map.get(id)!.push(row);

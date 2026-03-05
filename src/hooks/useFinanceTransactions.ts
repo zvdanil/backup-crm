@@ -18,9 +18,11 @@ import {
 } from "@/lib/paymentAllocation";
 import {
   getEnrollmentPriceForDate,
+  getEnrollmentAccountForDate,
   enrollmentHistoryCoversMonth,
   enrollmentInScopeForMonth,
   type EnrollmentPriceHistory,
+  type EnrollmentAccountHistory,
 } from "./useEnrollments";
 import {
   createPayrollPayoutWithDerivedTransaction,
@@ -963,6 +965,7 @@ export function useStudentSubscriptionChargesByAccount(
       const monthEndDateStr = getMonthEndDate(year, month);
 
       const priceHistoryMap = new Map<string, EnrollmentPriceHistory[]>();
+      const accountHistoryMap = new Map<string, EnrollmentAccountHistory[]>();
       if (enrollmentIds.length > 0) {
         const { data: priceHistoryRows, error: priceHistoryError } = await supabaseAny
           .from("enrollment_price_history")
@@ -975,6 +978,19 @@ export function useStudentSubscriptionChargesByAccount(
             priceHistoryMap.set(row.enrollment_id, []);
           }
           priceHistoryMap.get(row.enrollment_id)!.push(row);
+        });
+
+        const { data: accountHistoryRows, error: accountHistoryError } = await supabaseAny
+          .from("enrollment_account_history")
+          .select("*")
+          .in("enrollment_id", enrollmentIds)
+          .order("effective_from", { ascending: false });
+        if (accountHistoryError) throw accountHistoryError;
+        (accountHistoryRows || []).forEach((row: EnrollmentAccountHistory) => {
+          if (!accountHistoryMap.has(row.enrollment_id)) {
+            accountHistoryMap.set(row.enrollment_id, []);
+          }
+          accountHistoryMap.get(row.enrollment_id)!.push(row);
         });
       }
 
@@ -995,8 +1011,13 @@ export function useStudentSubscriptionChargesByAccount(
 
       subscriptionEnrollments.forEach((enrollment) => {
         const activity = enrollment.activities;
+        const enrollmentAccountId = getEnrollmentAccountForDate(
+          enrollment,
+          accountHistoryMap.get(enrollment.id),
+          monthEndDateStr,
+        );
         const accountId =
-          enrollment.account_id || activity?.account_id || "none";
+          enrollmentAccountId || activity?.account_id || "none";
 
         // Sum charges for this activity from transactions
         const activityCharges =
@@ -1227,6 +1248,7 @@ export type StudentAccountBalancesInput = {
   cumulative: boolean;
   excludeActivityIds: string[];
   foodTariffIds: string[];
+  enrollmentAccountHistoryMap?: Map<string, EnrollmentAccountHistory[]>;
   /** Внесені залишки (тільки для місяця внесення). Додається лише в previous_balance («баланс на початок»); при підсумовуванні попередніх місяців — для коректного переносу закриття. */
   openingBalances?: { balance_date: string; account_id: string; amount: number }[];
   /** Виключені абонплатні нарахування (корзина): не включати в subscription_charges. Ключі: "enrollmentId-year-month". */
@@ -1252,6 +1274,7 @@ export function computeStudentAccountBalancesFromData(
     cumulative,
     excludeActivityIds,
     foodTariffIds,
+    enrollmentAccountHistoryMap = new Map(),
     enrollmentPriceHistoryMap = new Map(),
     openingBalances = [],
     subscriptionChargeExclusions = new Set<string>(),
@@ -1404,6 +1427,7 @@ export function computeStudentAccountBalancesFromData(
       attendanceV1BaseTariffIdSet,
       m,
       y,
+      enrollmentAccountHistoryMap,
       enrollmentPriceHistoryMap,
       subscriptionChargeExclusions,
     );
@@ -1600,7 +1624,22 @@ export async function fetchStudentAccountBalances({
     }
     enrollmentPriceHistoryMap.get(ph.enrollment_id)!.push(ph);
   });
-
+  const enrollmentAccountHistoryMap = new Map<string, EnrollmentAccountHistory[]>();
+  if (enrollmentIds.length > 0) {
+    const { data: enrollmentAccountHistoryRows, error: enrollmentAccountHistoryError } =
+      await supabaseAny
+        .from("enrollment_account_history")
+        .select("*")
+        .in("enrollment_id", enrollmentIds)
+        .order("effective_from", { ascending: false });
+    if (enrollmentAccountHistoryError) throw enrollmentAccountHistoryError;
+    (enrollmentAccountHistoryRows || []).forEach((row: EnrollmentAccountHistory) => {
+      if (!enrollmentAccountHistoryMap.has(row.enrollment_id)) {
+        enrollmentAccountHistoryMap.set(row.enrollment_id, []);
+      }
+      enrollmentAccountHistoryMap.get(row.enrollment_id)!.push(row);
+    });
+  }
   const activityIds = [
     ...new Set(allFilteredEnrollments.map((e: any) => e.activity_id)),
   ];
@@ -1642,6 +1681,7 @@ export async function fetchStudentAccountBalances({
     cumulative,
     excludeActivityIds,
     foodTariffIds,
+    enrollmentAccountHistoryMap,
     enrollmentPriceHistoryMap,
     openingBalances: (openingBalances || []).map((ob: any) => ({
       balance_date: ob.balance_date,
@@ -1684,6 +1724,7 @@ function calculateMonthlyBalanceFromData(
   attendanceV1BaseTariffIdSet: Set<string>,
   month: number,
   year: number,
+  enrollmentAccountHistoryMap: Map<string, EnrollmentAccountHistory[]> = new Map(),
   enrollmentPriceHistoryMap: Map<string, EnrollmentPriceHistory[]> = new Map(),
   subscriptionChargeExclusions: Set<string> = new Set(),
 ): StudentAccountBalance[] {
@@ -1874,10 +1915,16 @@ function calculateMonthlyBalanceFromData(
       const perEnrollmentCharges = charges / perEnrollment;
       const perEnrollmentRefunds = refunds / perEnrollment;
       const perEnrollmentSubscriptionCharges = subscriptionCharges / perEnrollment;
+      const monthEndDateStr = getMonthEndDate(year, month);
 
       enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
+        const resolvedEnrollmentAccountId = getEnrollmentAccountForDate(
+          { account_id: enrollmentData.account_id ?? null },
+          enrollmentAccountHistoryMap.get(enrollmentId),
+          monthEndDateStr,
+        );
         const accountId =
-          enrollmentData.account_id ??
+          resolvedEnrollmentAccountId ??
           activityAccountMap[enrollmentData.activity_id] ??
           null;
         const existing = balancesByAccount.get(accountId) || {
@@ -2099,6 +2146,7 @@ async function calculateMonthlyAccountBalances(
     attendanceV1BaseTariffIdSet,
     month,
     year,
+    new Map(),
     priceHistoryMap,
   );
 }
@@ -2150,6 +2198,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
     transactions,
     attendance,
     enrollmentPriceHistory,
+    enrollmentAccountHistory,
     openingBalancesAll,
     chargeExclusionsAll,
   ] = await Promise.all([
@@ -2179,6 +2228,16 @@ export async function fetchAllStudentsAccountBalancesForMonth({
         ? fetchAllRows<any>((from, to) =>
             supabaseAny
               .from("enrollment_price_history")
+              .select("*")
+              .in("enrollment_id", enrollmentIds)
+              .order("effective_from", { ascending: false })
+              .range(from, to),
+          )
+        : Promise.resolve([]),
+      enrollmentIds.length > 0
+        ? fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from("enrollment_account_history")
               .select("*")
               .in("enrollment_id", enrollmentIds)
               .order("effective_from", { ascending: false })
@@ -2243,6 +2302,13 @@ export async function fetchAllStudentsAccountBalancesForMonth({
     }
     enrollmentPriceHistoryMap.get(ph.enrollment_id)!.push(ph);
   });
+  const enrollmentAccountHistoryMap = new Map<string, EnrollmentAccountHistory[]>();
+  (enrollmentAccountHistory || []).forEach((row: EnrollmentAccountHistory) => {
+    if (!enrollmentAccountHistoryMap.has(row.enrollment_id)) {
+      enrollmentAccountHistoryMap.set(row.enrollment_id, []);
+    }
+    enrollmentAccountHistoryMap.get(row.enrollment_id)!.push(row);
+  });
 
   const exclusionSet = new Set<string>();
   (chargeExclusionsAll || []).forEach(
@@ -2286,6 +2352,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
         cumulative: false,
         excludeActivityIds,
         foodTariffIds,
+        enrollmentAccountHistoryMap,
         enrollmentPriceHistoryMap,
         openingBalances: studentOpeningBalances,
         subscriptionChargeExclusions: exclusionSet,
@@ -2302,6 +2369,7 @@ export async function fetchAllStudentsAccountBalancesForMonth({
         cumulative: true,
         excludeActivityIds,
         foodTariffIds,
+        enrollmentAccountHistoryMap,
         enrollmentPriceHistoryMap,
         openingBalances: studentOpeningBalances,
         subscriptionChargeExclusions: exclusionSet,

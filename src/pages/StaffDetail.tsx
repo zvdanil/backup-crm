@@ -114,6 +114,33 @@ import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 
+const MONTH_NAMES_UA = [
+  "Січень",
+  "Лютий",
+  "Березень",
+  "Квітень",
+  "Травень",
+  "Червень",
+  "Липень",
+  "Серпень",
+  "Вересень",
+  "Жовтень",
+  "Листопад",
+  "Грудень",
+];
+
+const normalizePayoutPeriodValue = (value?: string | null) =>
+  value && value.trim().length > 0 ? value : null;
+
+const formatPeriodLabel = (periodKey?: string | null) => {
+  if (!periodKey || !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey)) return "—";
+  const [yearStr, monthStr] = periodKey.split("-");
+  const monthIndex = Number(monthStr) - 1;
+  const year = Number(yearStr);
+  if (monthIndex < 0 || monthIndex > 11 || Number.isNaN(year)) return periodKey;
+  return `${MONTH_NAMES_UA[monthIndex]} ${year}`;
+};
+
 export default function StaffDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: staff, isLoading: staffLoading } = useStaffMember(id!);
@@ -254,6 +281,11 @@ export default function StaffDetail() {
     staff_id: z.string().min(1, "Оберіть співробітника"),
     amount: z.number().min(0.01, "Сума має бути більше 0"),
     payout_date: z.string().min(1, "Оберіть дату"),
+    payout_for_period: z
+      .string()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Період має бути у форматі YYYY-MM")
+      .optional()
+      .or(z.literal("")),
     notes: z.string().optional(),
     account_id: z.string().min(1, "Оберіть рахунок"),
     commission: z.preprocess(
@@ -282,6 +314,7 @@ export default function StaffDetail() {
       staff_id: id || "",
       amount: 0,
       payout_date: formatLocalDate(new Date()),
+      payout_for_period: "",
       notes: "",
       account_id: "",
       commission: 0,
@@ -531,6 +564,101 @@ export default function StaffDetail() {
     return { accrued, paid, balance: accrued - paid + openingCumulative };
   }, [allJournalEntries, payouts, staffBalancesCumulative]);
 
+  const payoutPeriodSummary = useMemo(() => {
+    const selectedMonthKey = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}`;
+    const selectedMonthEnd = getMonthEndDate(calendarYear, calendarMonth);
+    const monthDue = new Map<string, number>();
+
+    allJournalEntries.forEach((entry) => {
+      if (entry.date <= selectedMonthEnd) {
+        const monthKey = entry.date.slice(0, 7);
+        monthDue.set(monthKey, (monthDue.get(monthKey) || 0) + (Number(entry.amount) || 0));
+      }
+    });
+
+    staffBalancesCumulative.forEach((balance) => {
+      const balanceDate = (balance.balance_date || "").slice(0, 10);
+      if (!balanceDate || balanceDate > selectedMonthEnd) return;
+      const monthKey = balanceDate.slice(0, 7);
+      monthDue.set(monthKey, (monthDue.get(monthKey) || 0) + (Number(balance.amount) || 0));
+    });
+
+    const monthKeys = Array.from(monthDue.keys()).sort((a, b) => a.localeCompare(b));
+    const monthDebt = new Map<string, number>();
+    let creditCarry = 0;
+    monthKeys.forEach((monthKey) => {
+      const rawDue = monthDue.get(monthKey) || 0;
+      const netDue = rawDue - creditCarry;
+      if (netDue <= 0) {
+        monthDebt.set(monthKey, 0);
+        creditCarry = -netDue;
+        return;
+      }
+      monthDebt.set(monthKey, netDue);
+      creditCarry = 0;
+    });
+
+    const payoutsUpToSelected = [...payouts]
+      .filter((payout) => payout.payout_date <= selectedMonthEnd)
+      .sort((a, b) => {
+        const dateCmp = a.payout_date.localeCompare(b.payout_date);
+        if (dateCmp !== 0) return dateCmp;
+        return (a.created_at || "").localeCompare(b.created_at || "");
+      });
+
+    let unallocatedAdvance = 0;
+    let paidOldDebtInSelectedMonth = 0;
+    payoutsUpToSelected.forEach((payout) => {
+      let remaining = Number(payout.amount) || 0;
+      for (const monthKey of monthKeys) {
+        if (remaining <= 0) break;
+        const debt = monthDebt.get(monthKey) || 0;
+        if (debt <= 0) continue;
+        const allocated = Math.min(debt, remaining);
+        monthDebt.set(monthKey, debt - allocated);
+        remaining -= allocated;
+        if (payout.payout_date.slice(0, 7) === selectedMonthKey && monthKey < selectedMonthKey) {
+          paidOldDebtInSelectedMonth += allocated;
+        }
+      }
+      if (remaining > 0) {
+        unallocatedAdvance += remaining;
+      }
+    });
+
+    let debtBeforeSelected = 0;
+    let debtForSelected = 0;
+    let oldestDebtMonthKey: string | null = null;
+    monthKeys.forEach((monthKey) => {
+      const debt = monthDebt.get(monthKey) || 0;
+      if (debt <= 0) return;
+      if (!oldestDebtMonthKey) oldestDebtMonthKey = monthKey;
+      if (monthKey < selectedMonthKey) debtBeforeSelected += debt;
+      if (monthKey === selectedMonthKey) debtForSelected += debt;
+    });
+
+    const selectedMonthTaggedPayouts = payouts.filter(
+      (payout) =>
+        payout.payout_date.slice(0, 7) === selectedMonthKey &&
+        Boolean(normalizePayoutPeriodValue(payout.payout_for_period)),
+    ).length;
+
+    return {
+      debtBeforeSelected,
+      debtForSelected,
+      paidOldDebtInSelectedMonth,
+      unallocatedAdvance,
+      oldestDebtMonthKey,
+      selectedMonthTaggedPayouts,
+    };
+  }, [
+    allJournalEntries,
+    calendarMonth,
+    calendarYear,
+    payouts,
+    staffBalancesCumulative,
+  ]);
+
   const handleBalanceSubmit = async (data: { amount: number }) => {
     if (!id) return;
     const balanceDate = getMonthStartDate(calendarYear, calendarMonth);
@@ -561,6 +689,7 @@ export default function StaffDetail() {
       staff_id: prefill.staffId || "",
       amount: 0,
       payout_date: prefill.payoutDate || date,
+      payout_for_period: "",
       notes: "",
       account_id: prefill.accountId || "",
       expense_category_id: prefill.subcategoryId || "none",
@@ -582,6 +711,7 @@ export default function StaffDetail() {
           staff_id: data.staff_id,
           amount: data.amount,
           payout_date: data.payout_date,
+          payout_for_period: normalizePayoutPeriodValue(data.payout_for_period),
           notes: data.notes || null,
           account_id: data.account_id,
           expense_category_id: selectedCategoryId,
@@ -592,6 +722,7 @@ export default function StaffDetail() {
           staff_id: data.staff_id,
           amount: data.amount,
           payout_date: data.payout_date,
+          payout_for_period: normalizePayoutPeriodValue(data.payout_for_period),
           notes: data.notes || null,
           account_id: data.account_id,
           expense_category_id: selectedCategoryId,
@@ -1335,6 +1466,49 @@ export default function StaffDetail() {
                           </CardContent>
                         </Card>
                       </div>
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-base">
+                            Стан виплат за періодами (FIFO)
+                          </CardTitle>
+                          <CardDescription>
+                            Виплата спочатку гасить найстаріший борг
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Борг минулих періодів</div>
+                            <div className={cn("text-lg font-semibold", payoutPeriodSummary.debtBeforeSelected > 0 ? "text-destructive" : "text-success")}>
+                              {formatCurrency(payoutPeriodSummary.debtBeforeSelected)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Погашено в цьому місяці за старі періоди</div>
+                            <div className="text-lg font-semibold">
+                              {formatCurrency(payoutPeriodSummary.paidOldDebtInSelectedMonth)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Залишок боргу поточного місяця</div>
+                            <div className={cn("text-lg font-semibold", payoutPeriodSummary.debtForSelected > 0 ? "text-destructive" : "text-success")}>
+                              {formatCurrency(payoutPeriodSummary.debtForSelected)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-muted-foreground">Переплата наперед</div>
+                            <div className={cn("text-lg font-semibold", payoutPeriodSummary.unallocatedAdvance > 0 ? "text-primary" : "text-muted-foreground")}>
+                              {formatCurrency(payoutPeriodSummary.unallocatedAdvance)}
+                            </div>
+                          </div>
+                          <div className="sm:col-span-2 lg:col-span-4 text-xs text-muted-foreground mt-1">
+                            Найстаріший непогашений період:{" "}
+                            {formatPeriodLabel(payoutPeriodSummary.oldestDebtMonthKey)}
+                            {" · "}
+                            Виплат з позначкою періоду у поточному місяці:{" "}
+                            {payoutPeriodSummary.selectedMonthTaggedPayouts}
+                          </div>
+                        </CardContent>
+                      </Card>
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="text-lg font-semibold">
@@ -1645,6 +1819,7 @@ export default function StaffDetail() {
             staff_id: payout.staff_id || id || "",
             amount: payout.amount,
             payout_date: payout.payout_date,
+            payout_for_period: payout.payout_for_period || "",
             notes: payout.notes || "",
             account_id: payout.account_id || "",
             commission: commissionAmount,
@@ -1846,8 +2021,8 @@ function FinancialCalendarTable({
     const amountMap = new Map<string, number>();
     const notesMap = new Map<
       string,
-      Array<{ note: string; date: string; amount: number }>
-    >(); // date -> array of { note, date, amount }
+      Array<{ note: string; date: string; amount: number; payoutForPeriod: string | null }>
+    >(); // date -> array of { note, date, amount, payoutForPeriod }
 
     const startDate = getMonthStartDate(year, month);
     const endDate = getMonthEndDate(year, month);
@@ -1865,6 +2040,7 @@ function FinancialCalendarTable({
             note: payout.notes ? payout.notes.trim() : "",
             date: payout.payout_date,
             amount: payout.amount,
+            payoutForPeriod: normalizePayoutPeriodValue(payout.payout_for_period),
           },
         ]);
       }
@@ -3036,6 +3212,11 @@ function FinancialCalendarTable({
                                       {item.note}
                                     </div>
                                   )}
+                                  {item.payoutForPeriod && (
+                                    <div className="text-muted-foreground">
+                                      За період: {item.payoutForPeriod}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -3079,6 +3260,11 @@ function FinancialCalendarTable({
                                 </div>
                                 {item.note && (
                                   <p className="text-sm">{item.note}</p>
+                                )}
+                                {item.payoutForPeriod && (
+                                  <p className="text-xs text-muted-foreground">
+                                    За період: {item.payoutForPeriod}
+                                  </p>
                                 )}
                               </div>
                             ))}

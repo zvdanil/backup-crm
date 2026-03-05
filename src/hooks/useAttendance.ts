@@ -175,8 +175,20 @@ export function useSetAttendance() {
           if (enrollmentError) {
             console.error('[Dashboard Debug] Error fetching enrollment:', enrollmentError);
           } else if (enrollment) {
-            // Определяем account_id: enrollment.account_id ?? activity.account_id
-            const accountId = enrollment.account_id ?? (enrollment.activities as any)?.account_id ?? null;
+            const { data: accountHistoryRow, error: accountHistoryError } = await supabaseAny
+              .from('enrollment_account_history')
+              .select('account_id')
+              .eq('enrollment_id', data.enrollment_id)
+              .lte('effective_from', data.date)
+              .or(`effective_to.is.null,effective_to.gt.${data.date}`)
+              .order('effective_from', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (accountHistoryError && accountHistoryError.code !== 'PGRST116') {
+              console.error('[Dashboard Debug] Error fetching enrollment_account_history:', accountHistoryError);
+            }
+            const resolvedEnrollmentAccountId = accountHistoryRow?.account_id ?? enrollment.account_id ?? null;
+            const accountId = resolvedEnrollmentAccountId ?? (enrollment.activities as any)?.account_id ?? null;
             const studentId = enrollment.student_id;
             const activityId = enrollment.activity_id;
             

@@ -13,6 +13,8 @@ import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
 import type { EnrollmentWithRelations } from "@/hooks/useEnrollments";
 import {
   useEnrollmentPriceHistoryMap,
+  useEnrollmentAccountHistoryMap,
+  getEnrollmentAccountForDate,
   enrollmentInScopeForMonth,
 } from "@/hooks/useEnrollments";
 import { ACTIVITY_GROUP_LABELS } from "@/lib/activityGroups";
@@ -106,6 +108,12 @@ export function StudentAccountBalance({
     [enrollments],
   );
   const { data: priceHistoryMap = new Map() } = useEnrollmentPriceHistoryMap(enrollmentIds);
+  const { data: accountHistoryMap = new Map() } =
+    useEnrollmentAccountHistoryMap(enrollmentIds);
+  const monthEndDate = useMemo(
+    () => new Date(year, month + 1, 0).toISOString().slice(0, 10),
+    [year, month],
+  );
 
   const balanceEnrollments = useMemo(() => {
     return enrollments.filter((enrollment) => {
@@ -143,9 +151,13 @@ export function StudentAccountBalance({
       { id: string; label: string; enrollments: EnrollmentWithRelations[] }
     >();
     balanceEnrollments.forEach((enrollment) => {
-      // Приоритет: enrollment.account_id ?? activity.account_id
+      const enrollmentAccountId = getEnrollmentAccountForDate(
+        enrollment,
+        accountHistoryMap.get(enrollment.id),
+        monthEndDate,
+      );
       const accountId =
-        enrollment.account_id || enrollment.activities.account_id || "none";
+        enrollmentAccountId || enrollment.activities.account_id || "none";
       const label =
         accountId === "none"
           ? "Без рахунку"
@@ -171,7 +183,7 @@ export function StudentAccountBalance({
       if (aIsNone !== bIsNone) return aIsNone ? 1 : -1;
       return a.label.localeCompare(b.label, "uk-UA");
     });
-  }, [balanceEnrollments, accountLabelMap, accountBalances]);
+  }, [balanceEnrollments, accountLabelMap, accountBalances, accountHistoryMap, monthEndDate]);
 
   const groupLabel = (key: ActivityGroup | "other") =>
     key === "other" ? "Інше" : ACTIVITY_GROUP_LABELS[key];

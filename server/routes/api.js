@@ -15,7 +15,7 @@ const ALLOWED_TABLES = new Set([
   "staff_billing_rules", "staff_manual_rate_activities", "holidays", "user_profiles",
   "parent_student_links", "enrollments", "attendance", "account_transfers",
   "finance_transactions", "staff_journal_entries", "staff_payouts", "expense_journal_entries",
-  "expense_articles", "account_opening_balances", "enrollment_price_history",
+  "expense_articles", "account_opening_balances", "enrollment_price_history", "enrollment_account_history",
   "dividend_participants", "dividend_payouts", "dividend_payout_legs",
   "lesson_activities", "group_lessons", "group_lesson_sessions", "group_lesson_staff",
   "activity_teacher_history", "staff_manual_rate_history",

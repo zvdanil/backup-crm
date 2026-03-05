@@ -63,6 +63,9 @@ const formatCurrency = (amount: number, includeSymbol = true): string => {
   return includeSymbol ? `${formatted} ₴` : formatted;
 };
 
+const normalizePayoutPeriodValue = (value?: string | null) =>
+  value && value.trim().length > 0 ? value : null;
+
 export default function StaffExpenseJournal() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -87,6 +90,7 @@ export default function StaffExpenseJournal() {
   const [editingPayoutId, setEditingPayoutId] = useState<string | null>(null);
   const [payoutAmount, setPayoutAmount] = useState('');
   const [payoutDate, setPayoutDate] = useState(formatDateString(now));
+  const [payoutForPeriod, setPayoutForPeriod] = useState('');
   const [payoutNotes, setPayoutNotes] = useState('');
   const [payoutAccountId, setPayoutAccountId] = useState('');
   const [payoutCommission, setPayoutCommission] = useState('');
@@ -139,7 +143,7 @@ export default function StaffExpenseJournal() {
       const endDate = getMonthEndDate(year, month);
       const { data, error } = await supabase
         .from('staff_payouts' as any)
-        .select('id, staff_id, payout_date, amount, notes, account_id')
+        .select('id, staff_id, payout_date, payout_for_period, amount, notes, account_id')
         .or('is_deleted.is.null,is_deleted.eq.false')
         .gte('payout_date', startDate)
         .lte('payout_date', endDate);
@@ -221,6 +225,7 @@ export default function StaffExpenseJournal() {
     setEditingPayoutId(null);
     setPayoutAmount('');
     setPayoutDate(nextDate || formatDateString(new Date()));
+    setPayoutForPeriod('');
     setPayoutNotes('');
     setPayoutAccountId('');
     setPayoutCommission('');
@@ -266,6 +271,7 @@ export default function StaffExpenseJournal() {
         staff_id: selectedPayoutStaffId,
         amount: amountNum,
         payout_date: payoutDate,
+        payout_for_period: normalizePayoutPeriodValue(payoutForPeriod),
         notes: payoutNotes || null,
         account_id: payoutAccountId || null,
         expense_category_id: selectedCategoryId,
@@ -276,6 +282,7 @@ export default function StaffExpenseJournal() {
         staff_id: selectedPayoutStaffId,
         amount: amountNum,
         payout_date: payoutDate,
+        payout_for_period: normalizePayoutPeriodValue(payoutForPeriod),
         notes: payoutNotes || null,
         account_id: payoutAccountId || null,
         expense_category_id: selectedCategoryId,
@@ -1437,6 +1444,7 @@ export default function StaffExpenseJournal() {
         register={(field: string) => {
           if (field === 'amount') return { value: payoutAmount, onChange: (e: any) => setPayoutAmount(e.target.value) };
           if (field === 'payout_date') return { value: payoutDate, onChange: (e: any) => setPayoutDate(e.target.value) };
+          if (field === 'payout_for_period') return { value: payoutForPeriod, onChange: (e: any) => setPayoutForPeriod(e.target.value) };
           if (field === 'notes') return { value: payoutNotes, onChange: (e: any) => setPayoutNotes(e.target.value) };
           if (field === 'commission') return { value: payoutCommission, onChange: (e: any) => setPayoutCommission(e.target.value) };
           return {};
@@ -1460,6 +1468,7 @@ export default function StaffExpenseJournal() {
           setEditingPayoutId(payout.id);
           setPayoutAmount((payout.amount || 0).toString());
           setPayoutDate(payout.payout_date);
+          setPayoutForPeriod(payout.payout_for_period || '');
           setPayoutNotes(payout.notes || '');
           setPayoutAccountId(payout.account_id || '');
           setPayoutCommission((commissionAmount || 0).toString());

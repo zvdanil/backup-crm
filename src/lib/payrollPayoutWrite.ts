@@ -6,6 +6,7 @@ export interface CreatePayrollPayoutInput {
   staffId: string;
   amount: number;
   payoutDate: string;
+  payoutForPeriod?: string | null;
   notes?: string | null;
   accountId?: string | null;
   financeTransaction?: {
@@ -29,6 +30,7 @@ export interface UpdatePayrollPayoutInput {
     staffId?: string;
     amount?: number;
     payoutDate?: string;
+    payoutForPeriod?: string | null;
     notes?: string | null;
     accountId?: string | null;
     dividendPayoutId?: string | null;
@@ -62,6 +64,7 @@ export async function createPayrollPayoutWithDerivedTransaction(
       staff_id: input.staffId,
       amount: input.amount,
       payout_date: input.payoutDate,
+      payout_for_period: input.payoutForPeriod || null,
       notes: input.notes || null,
       account_id: input.accountId || null,
       dividend_payout_id: input.financeTransaction?.dividendPayoutId || null,
@@ -125,6 +128,10 @@ export async function updatePayrollPayoutWithDerivedTransaction(
     staff_id: input.payout.staffId ?? currentPayout.staff_id,
     amount: input.payout.amount ?? currentPayout.amount,
     payout_date: input.payout.payoutDate ?? currentPayout.payout_date,
+    payout_for_period:
+      input.payout.payoutForPeriod !== undefined
+        ? input.payout.payoutForPeriod
+        : (currentPayout.payout_for_period ?? null),
     notes:
       input.payout.notes !== undefined
         ? input.payout.notes
@@ -159,6 +166,7 @@ export async function updatePayrollPayoutWithDerivedTransaction(
         staff_id: currentPayout.staff_id,
         amount: currentPayout.amount,
         payout_date: currentPayout.payout_date,
+        payout_for_period: currentPayout.payout_for_period ?? null,
         notes: currentPayout.notes ?? null,
         account_id: currentPayout.account_id ?? null,
         dividend_payout_id: currentPayout.dividend_payout_id ?? null,
@@ -210,6 +218,7 @@ export async function updatePayrollPayoutWithDerivedTransaction(
           staff_id: currentPayout.staff_id,
           amount: currentPayout.amount,
           payout_date: currentPayout.payout_date,
+          payout_for_period: currentPayout.payout_for_period ?? null,
           notes: currentPayout.notes ?? null,
           account_id: currentPayout.account_id ?? null,
           dividend_payout_id: currentPayout.dividend_payout_id ?? null,
@@ -234,6 +243,7 @@ export async function updatePayrollPayoutWithDerivedTransaction(
         staff_id: currentPayout.staff_id,
         amount: currentPayout.amount,
         payout_date: currentPayout.payout_date,
+        payout_for_period: currentPayout.payout_for_period ?? null,
         notes: currentPayout.notes ?? null,
         account_id: currentPayout.account_id ?? null,
         dividend_payout_id: currentPayout.dividend_payout_id ?? null,

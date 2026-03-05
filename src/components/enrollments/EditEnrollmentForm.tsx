@@ -33,7 +33,7 @@ type EditEnrollmentFormData = z.infer<typeof editEnrollmentSchema>;
 interface EditEnrollmentFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { custom_price: number | null; discount_percent: number; effective_from: string | null; account_id: string | null }) => void;
+  onSubmit: (data: { custom_price: number | null; discount_percent: number; effective_from: string | null; account_id: string | null }) => void | Promise<boolean | void> | boolean;
   activityName: string;
   initialCustomPrice: number | null;
   initialDiscount: number | null;
@@ -75,14 +75,16 @@ export function EditEnrollmentForm({
     }
   }, [open, initialCustomPrice, initialDiscount, initialEffectiveFrom, initialAccountId, reset]);
 
-  const handleFormSubmit = (data: EditEnrollmentFormData) => {
-    onSubmit({
+  const handleFormSubmit = async (data: EditEnrollmentFormData) => {
+    const result = await onSubmit({
       custom_price: data.custom_price ? parseFloat(data.custom_price) : null,
       discount_percent: data.discount_percent ? parseFloat(data.discount_percent) : 0,
       effective_from: data.effective_from || null,
       account_id: data.account_id === 'none' ? null : data.account_id,
     });
-    onOpenChange(false);
+    if (result !== false) {
+      onOpenChange(false);
+    }
   };
 
   return (
@@ -105,7 +107,19 @@ export function EditEnrollmentForm({
               but do not expose price editing in this dialog. */}
           <input type="hidden" {...register('custom_price')} />
           <input type="hidden" {...register('discount_percent')} />
-          <input type="hidden" {...register('effective_from')} />
+
+          <div className="space-y-2">
+            <Label htmlFor="effective_from">Діє з дати</Label>
+            <Input
+              id="effective_from"
+              type="date"
+              {...register('effective_from')}
+              max="2999-12-31"
+            />
+            <p className="text-xs text-muted-foreground">
+              Зміна прив'язки до рахунку застосовується з обраної дати.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="account_id">Рахунок для нарахувань</Label>

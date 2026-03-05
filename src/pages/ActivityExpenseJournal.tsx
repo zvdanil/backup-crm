@@ -59,6 +59,9 @@ const formatCurrency = (amount: number, includeSymbol = true): string => {
   return includeSymbol ? `${formatted} ₴` : formatted;
 };
 
+const normalizePayoutPeriodValue = (value?: string | null) =>
+  value && value.trim().length > 0 ? value : null;
+
 export default function ActivityExpenseJournal() {
   const { id } = useParams<{ id: string }>();
   const now = new Date();
@@ -88,6 +91,7 @@ export default function ActivityExpenseJournal() {
   const [cellAccountIds, setCellAccountIds] = useState<Record<string, string | null>>({});
   const [selectedAccountId, setSelectedAccountId] = useState<string>('none');
   const [commission, setCommission] = useState('');
+  const [payoutForPeriod, setPayoutForPeriod] = useState('');
   const [salaryFormErrors, setSalaryFormErrors] = useState<Record<string, { message: string }>>({});
   const [salaryPrefill, setSalaryPrefill] = useState<ResolvedPayrollPayoutPrefill>({
     source: 'activity-expense-journal',
@@ -157,7 +161,7 @@ export default function ActivityExpenseJournal() {
       const endDate = getMonthEndDate(year, month);
       const { data: payouts, error } = await supabase
         .from('staff_payouts' as any)
-        .select('id, staff_id, payout_date, amount, notes, account_id, dividend_payout_id')
+        .select('id, staff_id, payout_date, payout_for_period, amount, notes, account_id, dividend_payout_id')
         .or('is_deleted.is.null,is_deleted.eq.false')
         .gte('payout_date', startDate)
         .lte('payout_date', endDate);
@@ -185,6 +189,7 @@ export default function ActivityExpenseJournal() {
           staff_id: payout.staff_id,
           amount: payout.amount,
           date: payout.payout_date,
+          payout_for_period: payout.payout_for_period || null,
           description: payout.notes || 'Виплата зарплати',
           account_id: payout.account_id || null,
           dividend_payout_id: payout.dividend_payout_id ?? tx?.dividend_payout_id ?? null,
@@ -348,6 +353,7 @@ export default function ActivityExpenseJournal() {
   const resetForm = () => {
     setAmount('');
     setCommission('');
+    setPayoutForPeriod('');
     setDate(formatDateString(new Date()));
     setDescription('');
     setStaffId('');
@@ -405,6 +411,7 @@ export default function ActivityExpenseJournal() {
           staff_id: staffId || null,
           amount: parseFloat(amount),
           payout_date: date,
+          payout_for_period: normalizePayoutPeriodValue(payoutForPeriod),
           notes: description || null,
           account_id: accountId,
           expense_category_id: finalCategoryId,
@@ -416,6 +423,7 @@ export default function ActivityExpenseJournal() {
           staff_id: staffId || '',
           amount: parseFloat(amount),
           payout_date: date,
+          payout_for_period: normalizePayoutPeriodValue(payoutForPeriod),
           notes: description || null,
           account_id: accountId,
           expense_category_id: finalCategoryId,
@@ -830,6 +838,7 @@ export default function ActivityExpenseJournal() {
               resetForm();
               setStaffId(prefill.staffId || '');
               setDate(prefill.payoutDate || formatDateString(new Date()));
+              setPayoutForPeriod('');
               setSelectedAccountId(prefill.accountId || activity?.account_id || 'none');
               setCategoryId(prefill.subcategoryId || 'none');
             }
@@ -1140,6 +1149,7 @@ export default function ActivityExpenseJournal() {
                                         const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
                                         setCommission(commissionsMap.get(salTxId || '')?.amount?.toString() ?? '');
                                         setDate(t.date);
+                                        setPayoutForPeriod(('payout_for_period' in t ? (t as any).payout_for_period : '') || '');
                                         setDescription(t.description || '');
                                         setStaffId(t.staff_id || '');
                                         setCategoryId(t.expense_category_id || 'none');
@@ -1219,6 +1229,9 @@ export default function ActivityExpenseJournal() {
             if (field === 'payout_date') {
               return { value: date, onChange: (e: any) => setDate(e.target.value) };
             }
+            if (field === 'payout_for_period') {
+              return { value: payoutForPeriod, onChange: (e: any) => setPayoutForPeriod(e.target.value) };
+            }
             if (field === 'notes') {
               return { value: description, onChange: (e: any) => setDescription(e.target.value) };
             }
@@ -1249,6 +1262,7 @@ export default function ActivityExpenseJournal() {
             setAmount((payout.amount || 0).toString());
             setCommission((commissionAmount || 0).toString());
             setDate(payout.date);
+            setPayoutForPeriod(payout.payout_for_period || '');
             setDescription(payout.description || '');
             setStaffId(payout.staff_id || '');
             setCategoryId(payout.expense_category_id || 'none');

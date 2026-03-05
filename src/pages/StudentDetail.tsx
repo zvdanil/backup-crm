@@ -25,6 +25,7 @@ import {
   useCreateEnrollment,
   useUnenrollStudent,
   useUpdateEnrollment,
+  useEnrollmentAccountHistory,
   type EnrollmentWithRelations,
 } from "@/hooks/useEnrollments";
 import { EnrollmentPriceHistoryDialog } from "@/components/enrollments/EnrollmentPriceHistoryDialog";
@@ -56,7 +57,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/integrations/supabase/client";
 import {
   useParentLinks,
   useAddParentLink,
@@ -79,7 +79,6 @@ const MONTHS = [
   "Грудень",
 ];
 
-const supabaseAny = supabase as any;
 import {
   AlertDialog,
   AlertDialogAction,
@@ -118,6 +117,8 @@ export default function StudentDetail() {
   const [selectedParentId, setSelectedParentId] = useState<string>("none");
 
   const { data: student, isLoading: studentLoading } = useStudent(id!);
+  const { data: editingEnrollmentAccountHistory = [] } =
+    useEnrollmentAccountHistory(editingEnrollment?.id || "");
   const { data: enrollments = [], isLoading: enrollmentsLoading } =
     useEnrollments({
       studentId: id,
@@ -214,51 +215,41 @@ export default function StudentDetail() {
     discount_percent: number;
     effective_from: string | null;
     account_id: string | null;
-  }) => {
+  }): Promise<boolean> => {
     if (editingEnrollment) {
-      const oldAccountId = editingEnrollment.account_id;
       const newAccountId = data.account_id;
+      const effectiveFrom = data.effective_from || new Date().toISOString().slice(0, 10);
 
-      // Обновляем enrollment
+      if (newAccountId !== editingEnrollment.account_id) {
+        const covering = editingEnrollmentAccountHistory.find((row: any) => {
+          const fromDate = row.effective_from;
+          const toDate = row.effective_to;
+          if (effectiveFrom < fromDate) return false;
+          if (toDate && effectiveFrom >= toDate) return false;
+          return true;
+        });
+
+        if (covering && (covering.account_id ?? null) !== (newAccountId ?? null)) {
+          const confirmed = window.confirm(
+            "На вибрану дату вже є інша прив’язка рахунку. Якщо продовжити, усі нарахування в цьому періоді будуть перенесені на новий рахунок. Продовжити?",
+          );
+          if (!confirmed) return false;
+        }
+      }
+
       await updateEnrollment.mutateAsync({
         id: editingEnrollment.id,
         custom_price: data.custom_price,
         discount_percent: data.discount_percent,
-        effective_from: data.effective_from,
+        effective_from: effectiveFrom,
         account_id: newAccountId,
         refresh_student_id: id!,
       });
 
-      // Если изменился account_id, пересчитываем finance_transactions
-      if (oldAccountId !== newAccountId) {
-        // Находим все finance_transactions, связанные с этим enrollment
-        const { data: transactions, error: transactionsError } =
-          await supabaseAny
-            .from("finance_transactions")
-            .select("id, account_id")
-            .eq("student_id", editingEnrollment.student_id)
-            .eq("activity_id", editingEnrollment.activity_id)
-            .eq("type", "income"); // Только начисления (income)
-
-        if (!transactionsError && transactions) {
-          // Определяем правильный account_id для обновления
-          // Используем приоритет: enrollment.account_id ?? activity.account_id
-          const targetAccountId =
-            newAccountId || editingEnrollment.activities.account_id;
-
-          // Обновляем account_id во всех связанных транзакциях
-          if (transactions.length > 0) {
-            const transactionIds = transactions.map((t) => t.id);
-            await supabaseAny
-              .from("finance_transactions")
-              .update({ account_id: targetAccountId })
-              .in("id", transactionIds);
-          }
-        }
-      }
-
       setEditingEnrollment(null);
+      return true;
     }
+    return false;
   };
 
   const handleChangeEnrollmentPrice = async (data: {

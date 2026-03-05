@@ -1044,6 +1044,7 @@ export interface StaffPayout {
   staff_id: string;
   amount: number;
   payout_date: string;
+  payout_for_period?: string | null;
   notes: string | null;
   account_id: string | null;
   dividend_payout_id?: string | null;
@@ -1160,6 +1161,7 @@ export function useCreateStaffPayout() {
           staffId: payout.staff_id,
           amount: payout.amount,
           payoutDate: payout.payout_date,
+          payoutForPeriod: payout.payout_for_period ?? null,
           notes: payout.notes || null,
           accountId: payout.account_id || null,
           financeTransaction: {
@@ -1205,6 +1207,7 @@ export function useUpdateStaffPayout() {
           staffId: updates.staff_id,
           amount: updates.amount,
           payoutDate: updates.payout_date,
+          payoutForPeriod: updates.payout_for_period,
           notes: updates.notes,
           accountId: updates.account_id,
           dividendPayoutId: updates.dividend_payout_id,

@@ -467,6 +467,53 @@ export function EnhancedAttendanceGrid({
     [attendanceMap, days, filteredEnrollments, isStatusForSalary],
   );
 
+  const buildMonthAttendanceRecordsFromMap = useCallback(
+    (
+      mapOverride?: Map<
+        string,
+        {
+          status: AttendanceStatus | null;
+          amount: number;
+          value: number | null;
+          notes: string | null;
+          manual_value_edit: boolean;
+        }
+      >,
+    ) => {
+      const map = mapOverride ?? attendanceMap;
+      const records: AttendanceRecord[] = [];
+
+      visibleEnrollments.forEach((enrollment) => {
+        const studentId = enrollment.students?.id || enrollment.student_id;
+        const studentName = enrollment.students?.full_name || "";
+
+        allDays.forEach((day) => {
+          const dateStr = formatDateString(day);
+          const key = `${enrollment.id}-${dateStr}`;
+          const attendance = map.get(key);
+          const hasValueForSalary =
+            (attendance?.status && isStatusForSalary(attendance.status)) ||
+            (!attendance?.status &&
+              ((attendance?.value ?? 0) > 0 || (attendance?.amount ?? 0) > 0));
+
+          if (hasValueForSalary && studentId) {
+            records.push({
+              date: dateStr,
+              enrollment_id: enrollment.id,
+              student_id: studentId,
+              student_name: studentName,
+              status: attendance.status,
+              value: attendance.value ?? attendance.amount ?? 0,
+            });
+          }
+        });
+      });
+
+      return records;
+    },
+    [attendanceMap, allDays, visibleEnrollments, isStatusForSalary],
+  );
+
   const getTeacherIdForActivity = useCallback(
     (actId: string, date: string): string | null =>
       getTeacherIdForActivityAndDate(
@@ -489,8 +536,19 @@ export function EnhancedAttendanceGrid({
   );
 
   const syncStaffJournalEntriesForMonth = useCallback(
-    async (recordsOverride?: AttendanceRecord[]) => {
-      const records = recordsOverride ?? buildAttendanceRecordsFromMap();
+    async (
+      mapOverride?: Map<
+        string,
+        {
+          status: AttendanceStatus | null;
+          amount: number;
+          value: number | null;
+          notes: string | null;
+          manual_value_edit: boolean;
+        }
+      >,
+    ) => {
+      const records = buildMonthAttendanceRecordsFromMap(mapOverride);
       const monthStartDate = getMonthStartDate(year, month);
       const monthEndDate = getMonthEndDate(year, month);
       const fixedRules = allStaffBillingRules.filter(
@@ -509,7 +567,7 @@ export function EnhancedAttendanceGrid({
         customStatuses: activity?.billing_rules?.custom_statuses,
       });
 
-      const dateStrings = days.map((day) => formatDateString(day));
+      const dateStrings = allDays.map((day) => formatDateString(day));
       const staffIds = new Set<string>();
 
       allStaffBillingRules.forEach((rule) => {
@@ -613,9 +671,9 @@ export function EnhancedAttendanceGrid({
     },
     [
       activityId,
+      allDays,
       allStaffBillingRules,
-      buildAttendanceRecordsFromMap,
-      days,
+      buildMonthAttendanceRecordsFromMap,
       deleteStaffJournalEntry,
       getBillingRuleForDate,
       staffMap,
@@ -858,8 +916,7 @@ export function EnhancedAttendanceGrid({
             manual_value_edit: a.manual_value_edit || false,
           });
         });
-        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
-        syncStaffJournalEntriesForMonth(optimisticRecords).catch((error) => {
+        syncStaffJournalEntriesForMonth(freshMap).catch((error) => {
           console.error(
             "[Auto-journal] Failed to sync staff journal entries:",
             error,
@@ -880,7 +937,6 @@ export function EnhancedAttendanceGrid({
     activity,
     getActivityBillingRulesForDate,
     activityId,
-    buildAttendanceRecordsFromMap,
     syncStaffJournalEntriesForMonth,
     queryClient,
     attendanceFilters,
@@ -1227,8 +1283,7 @@ export function EnhancedAttendanceGrid({
             manual_value_edit: a.manual_value_edit || false,
           });
         });
-        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
-        await syncStaffJournalEntriesForMonth(optimisticRecords);
+        await syncStaffJournalEntriesForMonth(freshMap);
       } catch (error) {
         console.error("Failed to delete attendance:", error);
         toast({
@@ -1305,10 +1360,16 @@ export function EnhancedAttendanceGrid({
             manual_value_edit: a.manual_value_edit || false,
           });
         });
-        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
-        await syncStaffJournalEntriesForMonth(optimisticRecords);
+        await syncStaffJournalEntriesForMonth(freshMap);
       } catch (error) {
-        // Помилка вже обробляється в useSetAttendance
+        toast({
+          title: "Помилка синхронізації",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Не вдалося оновити фінансові дані після зміни відмітки",
+          variant: "destructive",
+        });
       }
       return;
     }
@@ -1477,10 +1538,16 @@ export function EnhancedAttendanceGrid({
             manual_value_edit: a.manual_value_edit || false,
           });
         });
-        const optimisticRecords = buildAttendanceRecordsFromMap(freshMap);
-        await syncStaffJournalEntriesForMonth(optimisticRecords);
+        await syncStaffJournalEntriesForMonth(freshMap);
       } catch (error) {
-        // Помилка вже обробляється в useSetAttendance
+        toast({
+          title: "Помилка синхронізації",
+          description:
+            error instanceof Error
+              ? error.message
+              : "Не вдалося оновити фінансові дані після зміни відмітки",
+          variant: "destructive",
+        });
       }
     }
   };
@@ -1560,7 +1627,7 @@ export function EnhancedAttendanceGrid({
       // Для кожного enrollment
       for (const [enrollmentId, records] of attendanceByEnrollment) {
         // Знаходимо enrollment для отримання custom_price та discount
-        const enrollment = filteredEnrollments.find(
+        const enrollment = visibleEnrollments.find(
           (e) => e.id === enrollmentId,
         );
         if (!enrollment) continue;
@@ -1631,6 +1698,35 @@ export function EnhancedAttendanceGrid({
 
       if (updatePromises.length > 0) {
         await Promise.allSettled(updatePromises);
+        await queryClient.refetchQueries({
+          queryKey: ["attendance", attendanceFilters],
+        });
+        const freshData =
+          (queryClient.getQueryData([
+            "attendance",
+            attendanceFilters,
+          ]) as any[]) || [];
+        const freshMap = new Map<
+          string,
+          {
+            status: AttendanceStatus | null;
+            amount: number;
+            value: number | null;
+            notes: string | null;
+            manual_value_edit: boolean;
+          }
+        >();
+        freshData.forEach((a: any) => {
+          const key = `${a.enrollment_id}-${a.date}`;
+          freshMap.set(key, {
+            status: a.status,
+            amount: a.charged_amount || 0,
+            value: a.value ?? null,
+            notes: a.notes ?? null,
+            manual_value_edit: a.manual_value_edit || false,
+          });
+        });
+        await syncStaffJournalEntriesForMonth(freshMap);
         toast({
           title: "Перерахунок завершено",
           description: `Оновлено ${updatePromises.length} записів`,
@@ -1645,7 +1741,8 @@ export function EnhancedAttendanceGrid({
       console.error("Error recalculating:", error);
       toast({
         title: "Помилка перерахунку",
-        description: "Спробуйте ще раз",
+        description:
+          error instanceof Error ? error.message : "Спробуйте ще раз",
         variant: "destructive",
       });
     } finally {

@@ -9,7 +9,9 @@ import { formatCurrency, getMonthEndDate } from "@/lib/attendance";
 import {
   type EnrollmentWithRelations,
   useEnrollmentPriceHistory,
+  useEnrollmentAccountHistory,
   getEnrollmentPriceForDate,
+  getEnrollmentAccountForDate,
 } from "@/hooks/useEnrollments";
 import { cn } from "@/lib/utils";
 import { useActivities } from "@/hooks/useActivities";
@@ -75,16 +77,23 @@ export function StudentActivityBalanceRow({
   // (чтобы запись, начавшаяся внутри месяца, корректно применялась к этому месяцу).
   const monthEndDateStr = getMonthEndDate(year, month);
   const { data: enrollmentPriceHistory } = useEnrollmentPriceHistory(enrollment.id);
+  const { data: enrollmentAccountHistory } = useEnrollmentAccountHistory(
+    enrollment.id,
+  );
 
   const accountLabel = useMemo(() => {
-    // Приоритет: enrollment.account_id ?? activity.account_id
-    const accountId = enrollment.account_id || activities?.account_id;
+    const accountId =
+      getEnrollmentAccountForDate(
+        enrollment,
+        enrollmentAccountHistory,
+        monthEndDateStr,
+      ) || activities?.account_id;
     if (!accountId) return "Без рахунку";
     return (
       accounts.find((account) => account.id === accountId)?.name ||
       "Без рахунку"
     );
-  }, [accounts, enrollment.account_id, activities?.account_id]);
+  }, [accounts, enrollment, enrollmentAccountHistory, monthEndDateStr, activities?.account_id]);
 
   const baseMonthlyCharge = useMemo(() => {
     if (!isMonthlyBilling) return 0;

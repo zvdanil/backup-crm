@@ -144,6 +144,20 @@ export function PayrollPayoutDialog({
           </div>
 
           <div>
+            <Label htmlFor="payout_for_period">Виплата за період (необов'язково)</Label>
+            <Input
+              id="payout_for_period"
+              type="month"
+              {...register("payout_for_period")}
+            />
+            {errors.payout_for_period && (
+              <p className="text-sm text-red-500 mt-1">
+                {errors.payout_for_period.message}
+              </p>
+            )}
+          </div>
+
+          <div>
             <Label htmlFor="payout_commission">Комісія (₴)</Label>
             <Input
               id="payout_commission"
@@ -218,6 +232,11 @@ export function PayrollPayoutDialog({
                       {payout.notes && (
                         <div className="text-xs text-muted-foreground break-words">
                           {payout.notes}
+                        </div>
+                      )}
+                      {payout.payout_for_period && (
+                        <div className="text-xs text-muted-foreground break-words">
+                          За період: {payout.payout_for_period}
                         </div>
                       )}
                     </div>
