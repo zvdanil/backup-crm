@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllRows } from '@/lib/supabasePagination';
 
 const supabaseAny = supabase as any;
 
@@ -27,12 +28,12 @@ export function useAccountBalance(accountId: string) {
 
       const [
         { data: accountData },
-        { data: paymentData, error: paymentError },
-        { data: incomeData, error: incomeError },
+        paymentData,
+        incomeData,
         { data: staffPayoutsData },
         { data: expenseEntriesData },
-        { data: directExpenseData },
-        { data: transferExpenseData },
+        directExpenseData,
+        transferExpenseData,
         { data: dividendPayoutsData },
       ] = await Promise.all([
         supabaseAny
@@ -40,16 +41,22 @@ export function useAccountBalance(accountId: string) {
           .select('opening_balance_amount')
           .eq('id', accountId)
           .single(),
-        supabaseAny
-          .from('finance_transactions')
-          .select('amount')
-          .eq('account_id', accountId)
-          .eq('type', 'payment'),
-        supabaseAny
-          .from('finance_transactions')
-          .select('amount')
-          .eq('account_id', accountId)
-          .eq('type', 'income'),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount')
+            .eq('account_id', accountId)
+            .eq('type', 'payment')
+            .range(from, to)
+        ),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount')
+            .eq('account_id', accountId)
+            .eq('type', 'income')
+            .range(from, to)
+        ),
         supabaseAny
           .from('staff_payouts')
           .select('amount, account_id, dividend_payout_id')
@@ -58,26 +65,29 @@ export function useAccountBalance(accountId: string) {
         supabaseAny
           .from('expense_journal_entries')
           .select('amount, account_id, activity_id, dividend_payout_id, activities(is_actual_expense, account_id)'),
-        supabaseAny
-          .from('finance_transactions')
-          .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
-          .in('type', ['expense', 'household'])
-          .is('expense_entry_id', null)
-          .is('transfer_id', null),
-        supabaseAny
-          .from('finance_transactions')
-          .select('amount, account_id, transfer_id, dividend_payout_id')
-          .eq('account_id', accountId)
-          .eq('type', 'expense')
-          .not('transfer_id', 'is', null),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
+            .in('type', ['expense', 'household'])
+            .is('expense_entry_id', null)
+            .is('transfer_id', null)
+            .range(from, to)
+        ),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount, account_id, transfer_id, dividend_payout_id')
+            .eq('account_id', accountId)
+            .eq('type', 'expense')
+            .not('transfer_id', 'is', null)
+            .range(from, to)
+        ),
         supabaseAny
           .from('dividend_payout_legs')
           .select('payout_id, account_id, amount')
           .eq('account_id', accountId),
       ]);
-
-      if (paymentError) throw paymentError;
-      if (incomeError) throw incomeError;
 
       const openingFromAccount = Number(accountData?.opening_balance_amount ?? 0) || 0;
       // account_opening_balances (student balances) only correct student balance display, not account state
@@ -163,16 +173,16 @@ export function useAccountTransactions(accountId: string) {
   return useQuery({
     queryKey: ['account_transactions', accountId],
     queryFn: async (): Promise<AccountTransactionItem[]> => {
-      const [
-        { data: txData, error: txError },
-        { data: legsData, error: legsError },
-      ] = await Promise.all([
-        supabaseAny
-          .from('finance_transactions')
-          .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, activities(is_actual_expense)')
-          .eq('account_id', accountId)
-          .order('date', { ascending: false })
-          .order('created_at', { ascending: false }),
+      const [txData, { data: legsData, error: legsError }] = await Promise.all([
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, activities(is_actual_expense)')
+            .eq('account_id', accountId)
+            .order('date', { ascending: false })
+            .order('created_at', { ascending: false })
+            .range(from, to)
+        ),
         supabaseAny
           .from('dividend_payout_legs')
           .select(
@@ -192,7 +202,6 @@ export function useAccountTransactions(accountId: string) {
           .eq('account_id', accountId),
       ]);
 
-      if (txError) throw txError;
       if (legsError) throw legsError;
 
       // Тільки реальні операції: виключаємо прогнозні та застарілі (advance_payment)

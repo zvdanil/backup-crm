@@ -28,27 +28,9 @@ import {
   updatePayrollPayoutWithDerivedTransaction,
 } from "@/lib/payrollPayoutWrite";
 
+import { fetchAllRows } from '@/lib/supabasePagination';
+
 const supabaseAny = supabase as any;
-
-const BATCH_PAGE_SIZE = 1000;
-
-/** Загружает все строки постранично (обход лимита 1000 строк Supabase) */
-async function fetchAllRows<T = any>(
-  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: any }>,
-): Promise<T[]> {
-  const all: T[] = [];
-  let from = 0;
-  while (true) {
-    const to = from + BATCH_PAGE_SIZE - 1;
-    const { data, error } = await fetchPage(from, to);
-    if (error) throw error;
-    const chunk = (data || []) as T[];
-    all.push(...chunk);
-    if (chunk.length < BATCH_PAGE_SIZE) break;
-    from = to + 1;
-  }
-  return all;
-}
 
 export type TransactionType =
   | "income"
@@ -145,19 +127,19 @@ export function useFinanceTransactions(filters?: {
   return useQuery({
     queryKey: ["finance_transactions", queryFilters],
     queryFn: async () => {
-      let query = supabaseAny
+      let baseQuery = supabaseAny
         .from("finance_transactions")
         .select("*")
         .order("date", { ascending: false });
 
       if (queryFilters.studentId) {
-        query = query.eq("student_id", queryFilters.studentId);
+        baseQuery = baseQuery.eq("student_id", queryFilters.studentId);
       }
       if (queryFilters.activityId) {
-        query = query.eq("activity_id", queryFilters.activityId);
+        baseQuery = baseQuery.eq("activity_id", queryFilters.activityId);
       }
       if (queryFilters.type) {
-        query = query.eq("type", queryFilters.type);
+        baseQuery = baseQuery.eq("type", queryFilters.type);
       }
       if (
         queryFilters.month !== undefined &&
@@ -165,12 +147,13 @@ export function useFinanceTransactions(filters?: {
       ) {
         const startDate = getMonthStartDate(queryFilters.year, queryFilters.month);
         const endDate = getMonthEndDate(queryFilters.year, queryFilters.month);
-        query = query.gte("date", startDate).lte("date", endDate);
+        baseQuery = baseQuery.gte("date", startDate).lte("date", endDate);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as FinanceTransaction[];
+      const data = await fetchAllRows<FinanceTransaction>((from, to) =>
+        baseQuery.range(from, to)
+      );
+      return data;
     },
     enabled,
   });

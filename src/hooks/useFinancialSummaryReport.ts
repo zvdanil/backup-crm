@@ -6,6 +6,7 @@ import {
   isGardenAttendanceController,
 } from '@/lib/gardenAttendance';
 import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import { fetchAllRows } from '@/lib/supabasePagination';
 
 const supabaseAny = supabase as any;
 
@@ -146,13 +147,16 @@ export function useFinancialSummaryReport({
         const monthStartDate = getMonthStartDate(year, month);
         
         // Реальный доход до начала месяца
-        const { data: preMonthPayments } = await supabaseAny
-          .from('finance_transactions')
-          .select('amount, account_id')
-          .eq('type', 'payment')
-          .lt('date', monthStartDate);
+        const preMonthPayments = await fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount, account_id')
+            .eq('type', 'payment')
+            .lt('date', monthStartDate)
+            .range(from, to)
+        );
 
-        const preMonthIncome = (preMonthPayments || []).reduce((sum: number, tx: any) => {
+        const preMonthIncome = preMonthPayments.reduce((sum: number, tx: any) => {
           if (matchesAccount(tx.account_id)) {
             return sum + (tx.amount || 0);
           }
@@ -194,15 +198,18 @@ export function useFinancialSummaryReport({
         }, 0);
 
         // 3. Реальные расходы из finance_transactions (исключаем выведенные как дивиденд)
-        const { data: preMonthDirectExpenseTransactions } = await supabaseAny
-          .from('finance_transactions')
-          .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
-          .in('type', ['expense', 'household'])
-          .lt('date', monthStartDate)
-          .is('expense_entry_id', null)
-          .is('transfer_id', null);
+        const preMonthDirectExpenseTransactions = await fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
+            .in('type', ['expense', 'household'])
+            .lt('date', monthStartDate)
+            .is('expense_entry_id', null)
+            .is('transfer_id', null)
+            .range(from, to)
+        );
 
-        const preMonthDirectExpenseTotal = (preMonthDirectExpenseTransactions || []).reduce((sum: number, tx: any) => {
+        const preMonthDirectExpenseTotal = preMonthDirectExpenseTransactions.reduce((sum: number, tx: any) => {
           if (tx.dividend_payout_id) return sum;
           const isActual = tx.activities?.is_actual_expense || false;
           if (isActual) {
@@ -215,14 +222,17 @@ export function useFinancialSummaryReport({
         }, 0);
 
         // 3.4. Реальные расходы из переводов (исключаем выведенные как дивиденд)
-        const { data: preMonthTransferExpenseTransactions } = await supabaseAny
-          .from('finance_transactions')
-          .select('amount, account_id, transfer_id, dividend_payout_id')
-          .eq('type', 'expense')
-          .not('transfer_id', 'is', null)
-          .lt('date', monthStartDate);
+        const preMonthTransferExpenseTransactions = await fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount, account_id, transfer_id, dividend_payout_id')
+            .eq('type', 'expense')
+            .not('transfer_id', 'is', null)
+            .lt('date', monthStartDate)
+            .range(from, to)
+        );
 
-        const preMonthTransferExpenseTotal = (preMonthTransferExpenseTransactions || []).reduce((sum: number, tx: any) => {
+        const preMonthTransferExpenseTotal = preMonthTransferExpenseTransactions.reduce((sum: number, tx: any) => {
           if (tx.dividend_payout_id) return sum;
           if (matchesAccount(tx.account_id)) {
             return sum + (tx.amount || 0);
@@ -271,11 +281,11 @@ export function useFinancialSummaryReport({
           projectedIncomeBalances,
           { data: salaryProjections },
           { data: expenseProjections },
-          { data: actualPayments },
+          actualPayments,
           { data: salaryPayouts },
           { data: actualExpenses },
-          { data: directExpenseTransactions },
-          { data: transferExpenseTransactions }
+          directExpenseTransactions,
+          transferExpenseTransactions
         ] = await Promise.all([
           projectedIncomePromise,
           // 2. Прогнозируемый расход (метод начисления)
@@ -292,12 +302,15 @@ export function useFinancialSummaryReport({
             .gte('entry_date', startDate)
             .lte('entry_date', endDate),
           // 3. Реальный доход (кассовый метод) - с учетом счетов
-          supabaseAny
-            .from('finance_transactions')
-            .select('amount, account_id')
-            .eq('type', 'payment')
-            .gte('date', startDate)
-            .lte('date', endDate),
+          fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from('finance_transactions')
+              .select('amount, account_id')
+              .eq('type', 'payment')
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .range(from, to)
+          ),
           // 4. Реальный расход (кассовый метод) - с учетом счетов
           // 4.1. Выплаты зарплаты (исключаем выведенные как дивиденд)
           supabaseAny
@@ -313,22 +326,28 @@ export function useFinancialSummaryReport({
             .gte('entry_date', startDate)
             .lte('entry_date', endDate),
           // 4.3. Реальные расходы из finance_transactions (исключаем выведенные как дивиденд)
-          supabaseAny
-            .from('finance_transactions')
-            .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
-            .in('type', ['expense', 'household'])
-            .gte('date', startDate)
-            .lte('date', endDate)
-            .is('expense_entry_id', null)
-            .is('transfer_id', null),
+          fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from('finance_transactions')
+              .select('amount, account_id, activity_id, expense_entry_id, transfer_id, dividend_payout_id, activities(is_actual_expense, account_id)')
+              .in('type', ['expense', 'household'])
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .is('expense_entry_id', null)
+              .is('transfer_id', null)
+              .range(from, to)
+          ),
           // 4.4. Реальные расходы из переводов (исключаем выведенные как дивиденд)
-          supabaseAny
-            .from('finance_transactions')
-            .select('amount, account_id, transfer_id, dividend_payout_id')
-            .eq('type', 'expense')
-            .not('transfer_id', 'is', null)
-            .gte('date', startDate)
-            .lte('date', endDate)
+          fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from('finance_transactions')
+              .select('amount, account_id, transfer_id, dividend_payout_id')
+              .eq('type', 'expense')
+              .not('transfer_id', 'is', null)
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .range(from, to)
+          )
         ]);
 
         let projectedIncome = 0;

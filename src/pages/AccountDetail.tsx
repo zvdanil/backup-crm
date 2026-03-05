@@ -199,7 +199,7 @@ export default function AccountDetail() {
   const filteredTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, t) => {
       const amt = Number(t.amount) || 0;
-      return sum + (t.type === 'income' || t.type === 'payment' ? amt : -Math.abs(amt));
+      return sum + amt;
     }, 0);
   }, [filteredTransactions]);
 
@@ -259,9 +259,9 @@ export default function AccountDetail() {
     let expense = 0;
     for (const t of periodTxs) {
       const amt = Number(t.amount) || 0;
-      if (t.type === 'payment' || t.type === 'income') {
-        income += Math.abs(amt);
-      } else {
+      if (amt > 0) {
+        income += amt;
+      } else if (amt < 0) {
         expense += Math.abs(amt);
       }
     }
@@ -752,12 +752,12 @@ export default function AccountDetail() {
                           <span
                             className={cn(
                               'font-medium',
-                              transaction.type === 'income' || transaction.type === 'payment'
+                              (Number(transaction.amount) || 0) >= 0
                                 ? 'text-green-600'
                                 : 'text-red-600'
                             )}
                           >
-                            {transaction.type === 'income' || transaction.type === 'payment' ? '+' : '-'}
+                            {(Number(transaction.amount) || 0) >= 0 ? '+' : '-'}
                             {formatCurrency(Math.abs(transaction.amount))}
                           </span>
                         </TableCell>

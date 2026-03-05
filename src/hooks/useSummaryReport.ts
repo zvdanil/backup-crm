@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import { fetchAllRows } from '@/lib/supabasePagination';
 import {
   enrollmentInScopeForMonth,
   getEnrollmentPriceForDate,
@@ -478,8 +479,8 @@ export function useSummaryReportData({
         };
       });
 
-      // Get expenses data (unchanged)
-      const expensesQuery = supabase
+      // Get expenses data
+      let expensesBaseQuery = supabase
         .from('finance_transactions' as any)
         .select(`
           amount,
@@ -503,24 +504,25 @@ export function useSummaryReportData({
         .in('type', ['expense', 'household']);
 
       if (startDate) {
-        expensesQuery.gte('date', startDate);
+        expensesBaseQuery = expensesBaseQuery.gte('date', startDate);
       }
-      expensesQuery.lte('date', endDate);
+      expensesBaseQuery = expensesBaseQuery.lte('date', endDate);
 
       if (accountId) {
-        expensesQuery.eq('account_id', accountId);
+        expensesBaseQuery = expensesBaseQuery.eq('account_id', accountId);
       }
 
       if (activityId) {
-        expensesQuery.eq('activity_id', activityId);
+        expensesBaseQuery = expensesBaseQuery.eq('activity_id', activityId);
       }
 
       if (categoryId) {
-        expensesQuery.eq('expense_category_id', categoryId);
+        expensesBaseQuery = expensesBaseQuery.eq('expense_category_id', categoryId);
       }
 
-      const { data: expensesResult, error: expensesError } = await expensesQuery.range(0, 99999);
-      if (expensesError) throw expensesError;
+      const expensesResult = await fetchAllRows<any>((from, to) =>
+        expensesBaseQuery.range(from, to)
+      );
 
       // Process expenses data
       const expensesMap = new Map<string, { 
@@ -532,7 +534,7 @@ export function useSummaryReportData({
       }>();
       let expensesTotal = 0;
 
-      (expensesResult.data || []).forEach((item: any) => {
+      (expensesResult || []).forEach((item: any) => {
         const categoryKey = item.expense_category_id || 'none';
         const key = `${categoryKey}-${item.activity_id || 'none'}-${item.account_id || 'null'}`;
         const existing = expensesMap.get(key) || { 

@@ -791,18 +791,21 @@ export default function StaffDetail() {
         existingAutoEntry &&
         existingAutoEntry.amount !== 0
       ) {
-        upsertJournalEntry.mutate({
-          id: existingAutoEntry.id,
-          staff_id: id,
-          activity_id: realActivityId,
-          date: editingCell.date,
-          amount: 0,
-          base_amount: existingAutoEntry.base_amount,
-          hours_worked: 0,
-          deductions_applied: existingAutoEntry.deductions_applied || [],
-          is_manual_override: false, // Keep as auto entry
-          notes: "Обнулено (є ручне коригування)",
-        });
+        upsertJournalEntry.mutate(
+          {
+            id: existingAutoEntry.id,
+            staff_id: id,
+            activity_id: realActivityId,
+            date: editingCell.date,
+            amount: 0,
+            base_amount: existingAutoEntry.base_amount,
+            hours_worked: 0,
+            deductions_applied: existingAutoEntry.deductions_applied || [],
+            is_manual_override: false, // Keep as auto entry
+            notes: "Обнулено (є ручне коригування)",
+          },
+          {}
+        );
       }
     };
 
