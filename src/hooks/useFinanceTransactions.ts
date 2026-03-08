@@ -1460,39 +1460,46 @@ export function computeStudentAccountBalancesFromData(
         previousBalancesMap.set(balance.account_id, cur + balance.balance + opening);
       });
     }
-    // Внесений залишок — лише в «баланс на початок» обраного місяця (не в balance)
+    const monthlyByAccount = new Map<string | null, StudentAccountBalance>();
+    monthlyBalances.forEach((balance) => {
+      monthlyByAccount.set(balance.account_id ?? null, balance);
+    });
+
     const currentMonthStart = getMonthStartDate(year, month);
     const openingByAccount = new Map<string | null, number>();
     openingBalances
       .filter(
-        (ob) => (ob.balance_date?.split?.("T")[0] ?? ob.balance_date) === currentMonthStart
+        (ob) =>
+          (ob.balance_date?.split?.("T")[0] ?? ob.balance_date) === currentMonthStart,
       )
       .forEach((ob) => {
         const aid = ob.account_id || null;
         openingByAccount.set(aid, (openingByAccount.get(aid) || 0) + (ob.amount ?? 0));
       });
-    const result = monthlyBalances.map((balance) => {
-      const basePrev = previousBalancesMap.get(balance.account_id) || 0;
-      const opening = openingByAccount.get(balance.account_id ?? null) ?? 0;
-      return {
-        ...balance,
-        previous_balance: basePrev + opening,
-      };
+
+    const result: StudentAccountBalance[] = [];
+    const accountIds = new Set<string | null>([
+      ...Array.from(monthlyByAccount.keys()),
+      ...Array.from(previousBalancesMap.keys()),
+      ...Array.from(openingByAccount.keys()),
+    ]);
+
+    accountIds.forEach((accountId) => {
+      const balance = monthlyByAccount.get(accountId);
+      const opening = openingByAccount.get(accountId) || 0;
+      result.push({
+        account_id: accountId,
+        balance: balance?.balance ?? 0,
+        payments: balance?.payments ?? 0,
+        charges: balance?.charges ?? 0,
+        refunds: balance?.refunds ?? 0,
+        subscription_charges: balance?.subscription_charges ?? 0,
+        unassigned_payments: balance?.unassigned_payments ?? 0,
+        // «На початок» = сальдо попереднього місяця + внесений залишок поточного місяця.
+        previous_balance: (previousBalancesMap.get(accountId) || 0) + opening,
+      });
     });
-    // Акаунти з opening, але без активностей у цьому місяці
-    openingByAccount.forEach((opening, accountId) => {
-      if (!result.some((b) => (b.account_id || null) === accountId)) {
-        result.push({
-          account_id: accountId,
-          balance: 0,
-          payments: 0,
-          charges: 0,
-          refunds: 0,
-          previous_balance: opening,
-          subscription_charges: 0,
-        });
-      }
-    });
+
     return result;
   }
 
@@ -1788,6 +1795,9 @@ function calculateMonthlyBalanceFromData(
     if (!activity) return;
     const presentRule = activity.billing_rules?.present;
     const isMonthlyBilling = presentRule?.type === "subscription";
+    const isArchivedInViewedMonth =
+      enrollment.is_active === false &&
+      (!enrollment.unenrolled_at || enrollment.unenrolled_at <= monthEndDateStr);
     const fallbackMode = isMonthlyBilling ? "subscription" : "recalculation";
     displayModeByActivity[enrollment.activity_id] =
       (activity.balance_display_mode as any) || fallbackMode;
@@ -1815,7 +1825,11 @@ function calculateMonthlyBalanceFromData(
       }
       // «Нараховано на початок» — тільки present subscription, НЕ fixed. Значення з білінгових правил.
       // Виключаємо, якщо користувач натиснув корзину (запис у subscription_charge_exclusions).
-      if (presentRule?.type === "subscription" && baseMonthlyCharge > 0) {
+      if (
+        presentRule?.type === "subscription" &&
+        baseMonthlyCharge > 0 &&
+        !isArchivedInViewedMonth
+      ) {
         const exclusionKey = `${enrollmentId}-${year}-${month}`;
         if (!subscriptionChargeExclusions.has(exclusionKey)) {
           subscriptionOnlyChargesByActivity[enrollment.activity_id] =
@@ -1831,7 +1845,7 @@ function calculateMonthlyBalanceFromData(
           cs.rate != null &&
           cs.rate > 0,
       );
-      if (subscriptionCustom.length > 0) {
+      if (subscriptionCustom.length > 0 && !isArchivedInViewedMonth) {
         const maxRate = Math.max(...subscriptionCustom.map((cs: any) => Number(cs.rate)));
         displayModeByActivity[enrollment.activity_id] =
           (activity.balance_display_mode as any) || "subscription";
@@ -1843,7 +1857,7 @@ function calculateMonthlyBalanceFromData(
       }
     }
 
-    if (baseMonthlyCharge > 0) {
+    if (baseMonthlyCharge > 0 && !isArchivedInViewedMonth) {
       monthlyChargesByActivity[enrollment.activity_id] =
         (monthlyChargesByActivity[enrollment.activity_id] || 0) +
         baseMonthlyCharge;
