@@ -52,6 +52,9 @@ export interface FinanceTransaction {
   expense_category_id?: string | null;
   account_id: string | null; // Payment account for this transaction
   amount: number;
+  expense_advance_type?: "issue" | "spend" | null;
+  real_amount?: number | null;
+  advance_consumed_amount?: number | null;
   date: string;
   description: string | null;
   category: string | null;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Banknote, Unlink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Banknote, Unlink, ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,7 @@ import { formatDate, formatDateString, getDaysInMonth, getMonthStartDate, getMon
 import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { resolvePayrollPayoutPrefill, type ResolvedPayrollPayoutPrefill } from '@/lib/payrollPayoutContract';
+import { toast } from '@/hooks/use-toast';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -62,6 +63,8 @@ const formatCurrency = (amount: number, includeSymbol = true): string => {
 const normalizePayoutPeriodValue = (value?: string | null) =>
   value && value.trim().length > 0 ? value : null;
 
+type AdvanceOperationMode = 'expense' | 'advance_issue';
+
 export default function ActivityExpenseJournal() {
   const { id } = useParams<{ id: string }>();
   const now = new Date();
@@ -70,6 +73,8 @@ export default function ActivityExpenseJournal() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
+  const [advanceMode, setAdvanceMode] = useState<AdvanceOperationMode>('expense');
+  const [useAdvanceForExpense, setUseAdvanceForExpense] = useState(true);
   const [date, setDate] = useState(formatDateString(now));
   const [description, setDescription] = useState('');
   const [staffId, setStaffId] = useState('');
@@ -154,6 +159,30 @@ export default function ActivityExpenseJournal() {
     enabled: !isSalary,
   });
 
+  const { data: advanceTransactionsAll = [] } = useQuery({
+    queryKey: ['finance_transactions', 'expense-advance-transactions-all', id, transactionType],
+    queryFn: async () => {
+      if (!id || isSalary) return [];
+      const { data, error } = await supabase
+        .from('finance_transactions' as any)
+        .select('id, date, expense_category_id, expense_advance_type, amount, real_amount, advance_consumed_amount')
+        .eq('activity_id', id)
+        .eq('type', transactionType)
+        .not('expense_advance_type', 'is', null);
+      if (error) throw error;
+      return (data || []) as Array<{
+        id: string;
+        date: string;
+        expense_category_id: string | null;
+        expense_advance_type: 'issue' | 'spend' | null;
+        amount: number | null;
+        real_amount: number | null;
+        advance_consumed_amount: number | null;
+      }>;
+    },
+    enabled: !!id && !isSalary,
+  });
+
   const { data: salaryPayoutRows = [], isLoading: isSalaryPayoutsLoading } = useQuery({
     queryKey: [ACTIVITY_EXPENSE_QUERY_KEYS.salaryPayoutRows, month, year],
     queryFn: async () => {
@@ -206,6 +235,40 @@ export default function ActivityExpenseJournal() {
     categories.forEach((c) => map.set(c.id, c.name));
     return map;
   }, [categories]);
+
+  const advanceBalanceByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    advanceTransactionsAll.forEach((tx) => {
+      const key = tx.expense_category_id || 'none';
+      const current = map.get(key) || 0;
+      if (tx.expense_advance_type === 'issue') {
+        map.set(key, current + (tx.amount || 0));
+      } else if (tx.expense_advance_type === 'spend') {
+        map.set(key, current - (tx.advance_consumed_amount || 0));
+      }
+    });
+    return map;
+  }, [advanceTransactionsAll]);
+
+  const selectedAdvanceBalance = useMemo(() => {
+    if (isSalary || categoryId === 'new') return 0;
+    const key = categoryId === 'none' ? 'none' : categoryId;
+    return advanceBalanceByCategory.get(key) || 0;
+  }, [isSalary, categoryId, advanceBalanceByCategory]);
+
+  const selectedAdvanceBalanceForDate = useMemo(() => {
+    if (isSalary || categoryId === 'new') return 0;
+    const key = categoryId === 'none' ? null : categoryId;
+    const sorted = [...advanceTransactionsAll]
+      .filter((tx) => (tx.expense_category_id || null) === key)
+      .filter((tx) => tx.date <= date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    return sorted.reduce((acc, tx) => {
+      if (tx.expense_advance_type === 'issue') return acc + (tx.amount || 0);
+      if (tx.expense_advance_type === 'spend') return acc - (tx.advance_consumed_amount || 0);
+      return acc;
+    }, 0);
+  }, [isSalary, categoryId, advanceTransactionsAll, date]);
 
   const combinedTransactions = useMemo(() => {
     if (!isSalary) return transactions;
@@ -352,6 +415,8 @@ export default function ActivityExpenseJournal() {
 
   const resetForm = () => {
     setAmount('');
+    setAdvanceMode('expense');
+    setUseAdvanceForExpense(true);
     setCommission('');
     setPayoutForPeriod('');
     setDate(formatDateString(new Date()));
@@ -366,10 +431,18 @@ export default function ActivityExpenseJournal() {
 
   const handleSubmit = async () => {
     if (!id || !amount) return;
+    const parsedAmount = parseFloat(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      toast({
+        title: 'Некоректна сума',
+        description: 'Сума має бути більше 0',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (isSalary) {
       const nextErrors: Record<string, { message: string }> = {};
-      const parsedAmount = parseFloat(amount);
       if (!staffId) nextErrors.staff_id = { message: 'Оберіть співробітника' };
       if (!date) nextErrors.payout_date = { message: 'Оберіть дату' };
       if (!amount || Number.isNaN(parsedAmount) || parsedAmount <= 0) {
@@ -409,7 +482,7 @@ export default function ActivityExpenseJournal() {
         await updatePayout.mutateAsync({
           id: payoutId,
           staff_id: staffId || null,
-          amount: parseFloat(amount),
+          amount: parsedAmount,
           payout_date: date,
           payout_for_period: normalizePayoutPeriodValue(payoutForPeriod),
           notes: description || null,
@@ -421,7 +494,7 @@ export default function ActivityExpenseJournal() {
       } else {
         const created = await createPayout.mutateAsync({
           staff_id: staffId || '',
-          amount: parseFloat(amount),
+          amount: parsedAmount,
           payout_date: date,
           payout_for_period: normalizePayoutPeriodValue(payoutForPeriod),
           notes: description || null,
@@ -429,6 +502,30 @@ export default function ActivityExpenseJournal() {
           expense_category_id: finalCategoryId,
         });
         salaryTransactionId = (created as any).salaryTransactionId || '';
+      }
+    } else if (advanceMode === 'advance_issue') {
+      const payload = {
+        type: transactionType,
+        activity_id: id,
+        staff_id: null,
+        student_id: null,
+        expense_category_id: finalCategoryId,
+        amount: parsedAmount,
+        date,
+        description: description || 'Видача авансу',
+        category: null,
+        account_id: accountId,
+        expense_advance_type: 'issue' as const,
+        real_amount: null,
+        advance_consumed_amount: null,
+      };
+      if (editingId) {
+        await updateTransaction.mutateAsync({
+          id: editingId,
+          ...payload,
+        } as any);
+      } else {
+        await createTransaction.mutateAsync(payload as any);
       }
     } else if (editingId) {
       await updateTransaction.mutateAsync({
@@ -438,27 +535,69 @@ export default function ActivityExpenseJournal() {
         staff_id: null,
         student_id: null,
         expense_category_id: finalCategoryId,
-        amount: parseFloat(amount),
+        amount: parsedAmount,
         date,
         description: description || null,
         category: null,
         account_id: accountId,
-      });
+        expense_advance_type: null,
+        real_amount: null,
+        advance_consumed_amount: null,
+      } as any);
       salaryTransactionId = editingId;
     } else {
-      const created = await createTransaction.mutateAsync({
-        type: transactionType,
-        activity_id: id,
-        staff_id: null,
-        student_id: null,
-        expense_category_id: finalCategoryId,
-        amount: parseFloat(amount),
-        date,
-        description: description || null,
-        category: null,
-        account_id: accountId,
-      });
-      salaryTransactionId = created.id;
+      const canUseAdvance = useAdvanceForExpense && categoryId !== 'new' && categoryId !== '';
+      if (canUseAdvance) {
+        const available = Math.max(0, selectedAdvanceBalanceForDate);
+        const consumedFromAdvance = Math.min(available, parsedAmount);
+        const accountCharge = Math.max(0, parsedAmount - consumedFromAdvance);
+
+        if (consumedFromAdvance > 0 && accountCharge > 0) {
+          toast({
+            title: 'Недостатньо авансу',
+            description: `З авансу списано ${formatCurrency(consumedFromAdvance)}, доплата з рахунку ${formatCurrency(accountCharge)}.`,
+          });
+        } else if (consumedFromAdvance > 0 && accountCharge === 0) {
+          toast({
+            title: 'Покупка покрита авансом',
+            description: `З авансу списано ${formatCurrency(consumedFromAdvance)}.`,
+          });
+        }
+
+        const created = await createTransaction.mutateAsync({
+          type: transactionType,
+          activity_id: id,
+          staff_id: null,
+          student_id: null,
+          expense_category_id: finalCategoryId,
+          amount: accountCharge,
+          date,
+          description: description || 'Покупка з авансу',
+          category: null,
+          account_id: accountId,
+          expense_advance_type: 'spend',
+          real_amount: parsedAmount,
+          advance_consumed_amount: consumedFromAdvance,
+        } as any);
+        salaryTransactionId = created.id;
+      } else {
+        const created = await createTransaction.mutateAsync({
+          type: transactionType,
+          activity_id: id,
+          staff_id: null,
+          student_id: null,
+          expense_category_id: finalCategoryId,
+          amount: parsedAmount,
+          date,
+          description: description || null,
+          category: null,
+          account_id: accountId,
+          expense_advance_type: null,
+          real_amount: null,
+          advance_consumed_amount: null,
+        } as any);
+        salaryTransactionId = created.id;
+      }
     }
 
     const commissionAmount = parseFloat(commission || '0');
@@ -841,6 +980,10 @@ export default function ActivityExpenseJournal() {
               setPayoutForPeriod('');
               setSelectedAccountId(prefill.accountId || activity?.account_id || 'none');
               setCategoryId(prefill.subcategoryId || 'none');
+            } else {
+              resetForm();
+              setAdvanceMode('expense');
+              setUseAdvanceForExpense(true);
             }
             setDialogOpen(true);
           }}>
@@ -1080,8 +1223,18 @@ export default function ActivityExpenseJournal() {
                               )}
                               <TableCell className="text-right">
                                 <div className={cn("text-sm font-semibold", "text-destructive")}>
-                                  {formatCurrency(t.amount || 0)}
+                                  {formatCurrency((t.real_amount ?? t.amount) || 0)}
                                 </div>
+                                {t.expense_advance_type === 'spend' && (
+                                  <div className="text-[10px] text-muted-foreground">
+                                    З рахунку: {formatCurrency(t.amount || 0)} · З авансу: {formatCurrency(t.advance_consumed_amount || 0)}
+                                  </div>
+                                )}
+                                {t.expense_advance_type === 'issue' && (
+                                  <div className="text-[10px] text-muted-foreground">
+                                    Видача авансу
+                                  </div>
+                                )}
                               </TableCell>
                               {isSalary && (
                                 <TableCell className="text-right text-sm text-muted-foreground">
@@ -1139,37 +1292,41 @@ export default function ActivityExpenseJournal() {
                                     </Button>
                                   )}
                                   <>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        setEditingId(t.id);
-                                        setAmount((t.amount || 0).toString());
-                                        const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
-                                        setCommission(commissionsMap.get(salTxId || '')?.amount?.toString() ?? '');
-                                        setDate(t.date);
-                                        setPayoutForPeriod(('payout_for_period' in t ? (t as any).payout_for_period : '') || '');
-                                        setDescription(t.description || '');
-                                        setStaffId(t.staff_id || '');
-                                        setCategoryId(t.expense_category_id || 'none');
-                                        setNewCategoryName('');
-                                        setSelectedAccountId(t.account_id || activity?.account_id || 'none');
-                                        if (isSalary) {
-                                          const prefill = resolvePayrollPayoutPrefill({
-                                            source: 'activity-expense-journal',
-                                            staffId: t.staff_id || undefined,
-                                            payoutDate: t.date,
-                                            accountId: t.account_id || activity?.account_id || undefined,
-                                            subcategoryId: t.expense_category_id || null,
-                                          });
-                                          setSalaryPrefill(prefill);
-                                        }
-                                        setDialogOpen(true);
-                                      }}
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
+                                    {!t.expense_advance_type && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => {
+                                          setEditingId(t.id);
+                                          setAmount(((t.real_amount ?? t.amount) || 0).toString());
+                                          setAdvanceMode('expense');
+                                          setUseAdvanceForExpense(false);
+                                          const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
+                                          setCommission(commissionsMap.get(salTxId || '')?.amount?.toString() ?? '');
+                                          setDate(t.date);
+                                          setPayoutForPeriod(('payout_for_period' in t ? (t as any).payout_for_period : '') || '');
+                                          setDescription(t.description || '');
+                                          setStaffId(t.staff_id || '');
+                                          setCategoryId(t.expense_category_id || 'none');
+                                          setNewCategoryName('');
+                                          setSelectedAccountId(t.account_id || activity?.account_id || 'none');
+                                          if (isSalary) {
+                                            const prefill = resolvePayrollPayoutPrefill({
+                                              source: 'activity-expense-journal',
+                                              staffId: t.staff_id || undefined,
+                                              payoutDate: t.date,
+                                              accountId: t.account_id || activity?.account_id || undefined,
+                                              subcategoryId: t.expense_category_id || null,
+                                            });
+                                            setSalaryPrefill(prefill);
+                                          }
+                                          setDialogOpen(true);
+                                        }}
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -1306,6 +1463,21 @@ export default function ActivityExpenseJournal() {
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto min-h-0 flex-1 pr-1 -mr-1">
             <div className="space-y-2">
+              <Label>Тип операції</Label>
+              <Select
+                value={advanceMode}
+                onValueChange={(value) => setAdvanceMode(value as AdvanceOperationMode)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="expense">Звичайна покупка</SelectItem>
+                  <SelectItem value="advance_issue">Видача авансу</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Сума (₴)</Label>
               <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
@@ -1335,6 +1507,36 @@ export default function ActivityExpenseJournal() {
                 />
               )}
             </div>
+            {categoryId !== 'new' && (
+              <div className="rounded-md border p-3 text-sm">
+                <div className="font-medium">Доступний аванс по підкатегорії</div>
+                <div className="mt-1 text-base font-semibold">{formatCurrency(selectedAdvanceBalance)}</div>
+                {advanceMode === 'expense' && (
+                  <div className="mt-3 flex items-start gap-2">
+                    <input
+                      id="use-advance-expense"
+                      type="checkbox"
+                      checked={useAdvanceForExpense}
+                      onChange={(e) => setUseAdvanceForExpense(e.target.checked)}
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <label htmlFor="use-advance-expense" className="text-sm leading-5">
+                      Списувати покупку з авансу цієї підкатегорії
+                    </label>
+                  </div>
+                )}
+                {advanceMode === 'expense' &&
+                  useAdvanceForExpense &&
+                  Math.max(0, Number(amount) || 0) > selectedAdvanceBalance && (
+                    <div className="mt-2 flex items-center gap-1 text-amber-600">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span className="text-xs">
+                        Авансу недостатньо. Доплата: {formatCurrency(Math.max(0, (Number(amount) || 0) - selectedAdvanceBalance))}
+                      </span>
+                    </div>
+                  )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Опис</Label>
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
