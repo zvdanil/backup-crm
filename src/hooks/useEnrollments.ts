@@ -306,6 +306,8 @@ export function useUpdateEnrollment() {
           id,
           student_id,
           activity_id,
+          enrolled_at,
+          effective_from,
           account_id,
           custom_price,
           discount_percent,
@@ -320,9 +322,17 @@ export function useUpdateEnrollment() {
       const priceChanged =
         enrollmentPatch.custom_price !== undefined ||
         enrollmentPatch.discount_percent !== undefined;
+      const currentEffectiveFrom =
+        enrollmentMeta.effective_from ??
+        enrollmentMeta.enrolled_at ??
+        formatLocalDate(new Date());
+      const effectiveFromChanged = Boolean(effective_from) && effectiveFromDate !== currentEffectiveFrom;
       const accountChanged =
         enrollmentPatch.account_id !== undefined &&
         enrollmentPatch.account_id !== (enrollmentMeta.account_id ?? null);
+      const accountRebindRequested =
+        enrollmentPatch.account_id !== undefined &&
+        (accountChanged || effectiveFromChanged);
 
       if (priceChanged) {
         const oldPrice = enrollmentMeta.custom_price;
@@ -342,7 +352,7 @@ export function useUpdateEnrollment() {
         }
       }
 
-      if (accountChanged) {
+      if (accountRebindRequested) {
         const { error: accountRpcError } = await supabaseAny.rpc('set_enrollment_account', {
           p_enrollment_id: id,
           p_account_id: enrollmentPatch.account_id ?? null,
