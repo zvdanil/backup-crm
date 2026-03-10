@@ -13,6 +13,7 @@ type DebtorRow = {
   student_name: string;
   account_id: string | null;
   account_name: string;
+  due_at_month_start: number;
   month_charges: number;
   month_payments: number;
   month_refunds: number;
@@ -98,6 +99,8 @@ export function useDebtorsRegistry(
             student_name: studentName,
             account_id: balance.account_id,
             account_name: accountName,
+            due_at_month_start:
+              (balance.subscription_charges || 0) - previousBalance,
             month_charges: balance.charges,
             month_payments: balance.payments,
             month_refunds: balance.refunds,

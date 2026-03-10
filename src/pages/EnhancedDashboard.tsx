@@ -403,12 +403,11 @@ export default function EnhancedDashboard() {
       return {};
     }
     
-    const map: Record<string, Record<string, number>> = {};
+    const map: Record<string, Record<string, { amount: number; status: string | null }>> = {};
     data.attendance.forEach((att) => {
       if (!map[att.enrollment_id]) map[att.enrollment_id] = {};
-      // Для фінансових сум використовуємо тільки charged_amount
       const amount = att.charged_amount || 0;
-      map[att.enrollment_id][att.date] = amount;
+      map[att.enrollment_id][att.date] = { amount, status: att.status ?? null };
     });
     
     // Проверяем конкретную запись от 29.01.2026
@@ -643,7 +642,8 @@ export default function EnhancedDashboard() {
         const amountsByDate: Record<string, number> = {};
         days.forEach((day) => {
           const dateStr = formatDateString(day);
-          const amount = activityData[dateStr];
+          const cell = activityData[dateStr];
+          const amount = typeof cell === 'number' ? cell : (cell && typeof cell === 'object' && 'amount' in cell ? (cell as { amount: number }).amount : undefined);
           if (amount !== undefined && amount !== 0) {
             amountsByDate[dateStr] = amount;
           }
@@ -1048,7 +1048,10 @@ export default function EnhancedDashboard() {
                           activityData = attendanceMap[enrollment.id] || {};
                         }
                         
-                        rowTotal = Object.values(activityData).reduce((sum, val) => sum + val, 0);
+                        rowTotal = Object.values(activityData).reduce((sum, val) => {
+                          const amt = typeof val === 'object' && val !== null && 'amount' in val ? (val as { amount: number }).amount : (typeof val === 'number' ? val : 0);
+                          return sum + (amt || 0);
+                        }, 0);
                         const isIncome = category === 'income' || category === 'additional_income';
                         // Проверяем, является ли это активностью питания (расход для организации)
                         const isFoodActivity = foodTariffIds.has(activity.activityId);
@@ -1097,14 +1100,20 @@ export default function EnhancedDashboard() {
                             </td>
                             {days.map((day) => {
                               const dateStr = formatDateString(day);
-                              const amount = activityData[dateStr];
-                              // For food activity, amount is already negative (expense)
+                              const cellOrAmount = activityData[dateStr];
+                              const amount = typeof cellOrAmount === 'object' && cellOrAmount !== null && 'amount' in cellOrAmount
+                                ? (cellOrAmount as { amount: number; status: string | null }).amount
+                                : (typeof cellOrAmount === 'number' ? cellOrAmount : undefined);
+                              const status = typeof cellOrAmount === 'object' && cellOrAmount !== null && 'status' in cellOrAmount
+                                ? (cellOrAmount as { amount: number; status: string | null }).status
+                                : null;
+                              const shouldShow = amount !== undefined && (amount !== 0 || status === 'sick');
                               return (
                                 <td
                                   key={formatDateString(day)}
                                   className={cn("py-1.5 px-0.5 text-center", rowBgClass, isWeekend(day) && WEEKEND_BG_COLOR)}
                                 >
-                                  {amount !== undefined && amount !== 0 && (
+                                  {shouldShow && (
                                     <span className={cn("text-xs font-medium leading-tight", amount > 0 ? "text-success" : "text-destructive")}>
                                       {formatCurrency(amount)}
                                     </span>

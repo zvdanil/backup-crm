@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { getMonthStartDate, getMonthEndDate, formatLocalDate } from '@/lib/attendance';
+import { getMonthStartDate, getMonthEndDate, formatLocalDate, calculateValueFromBillingRules } from '@/lib/attendance';
 import { isGardenAttendanceController } from '@/lib/gardenAttendance';
 import type { Student } from './useStudents';
-import type { Activity } from './useActivities';
+import type { Activity, ActivityPriceHistory } from './useActivities';
+import { getBillingRulesForDate } from './useActivities';
+import type { AttendanceStatus } from '@/lib/attendance';
 
 const supabaseAny = supabase as any;
 
@@ -188,6 +190,223 @@ export function useUpdateEnrollment() {
   };
 
   const toMonthKey = (month: number, year: number) => `${year}-${month}`;
+
+  const recalcAttendanceInRange = async (options: {
+    enrollment: {
+      id: string;
+      student_id: string;
+      activity_id: string;
+      account_id: string | null;
+      custom_price: number | null;
+      discount_percent: number | null;
+    };
+    activity: { account_id: string | null; billing_rules: any | null };
+    activityPriceHistory: ActivityPriceHistory[];
+    enrollmentPriceHistory: EnrollmentPriceHistory[];
+    accountHistory: Array<{
+      account_id: string | null;
+      effective_from: string;
+      effective_to: string | null;
+    }>;
+    rangeFrom: string;
+    rangeTo: string;
+  }) => {
+    const {
+      enrollment,
+      activity,
+      activityPriceHistory,
+      enrollmentPriceHistory,
+      accountHistory,
+      rangeFrom,
+      rangeTo,
+    } = options;
+
+    const months = getMonthsInRange(rangeFrom, rangeTo);
+    if (months.length === 0) return;
+
+    const rangeStart = getMonthStartDate(months[0].year, months[0].month);
+    const rangeEnd = getMonthEndDate(
+      months[months.length - 1].year,
+      months[months.length - 1].month,
+    );
+
+    const { data: attendanceRows, error: attendanceError } = await supabaseAny
+      .from('attendance')
+      .select('enrollment_id, date, status, charged_amount, value, notes, manual_value_edit')
+      .eq('enrollment_id', enrollment.id)
+      .gte('date', rangeStart)
+      .lte('date', rangeEnd)
+      .order('date', { ascending: true });
+    if (attendanceError) throw attendanceError;
+
+    if (!attendanceRows || attendanceRows.length === 0) return;
+
+    const { data: existingTransactions, error: txError } = await supabaseAny
+      .from('finance_transactions')
+      .select('id, date')
+      .eq('student_id', enrollment.student_id)
+      .eq('activity_id', enrollment.activity_id)
+      .eq('type', 'income')
+      .gte('date', rangeStart)
+      .lte('date', rangeEnd);
+    if (txError) throw txError;
+
+    const txByDate = new Map<string, string>();
+    (existingTransactions || []).forEach((tx: { id: string; date: string }) => {
+      txByDate.set(tx.date, tx.id);
+    });
+
+    const resolveAccountIdForDate = (date: string) => {
+      const row = accountHistory.find((h) => {
+        if (date < h.effective_from) return false;
+        if (h.effective_to && date >= h.effective_to) return false;
+        return true;
+      });
+      return row?.account_id ?? enrollment.account_id ?? activity.account_id ?? null;
+    };
+
+    const attendanceByMonth = new Map<string, typeof attendanceRows>();
+    attendanceRows.forEach((row: any) => {
+      const dateObj = new Date(`${row.date}T00:00:00`);
+      const key = toMonthKey(dateObj.getMonth(), dateObj.getFullYear());
+      const list = attendanceByMonth.get(key);
+      if (list) list.push(row);
+      else attendanceByMonth.set(key, [row]);
+    });
+
+    const updates: Array<{
+      date: string;
+      status: AttendanceStatus | null;
+      charged_amount: number;
+      value: number | null;
+      notes: string | null;
+    }> = [];
+
+    attendanceByMonth.forEach((rows) => {
+      const sortedRows = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+      const visitCountByStatus = new Map<string, number>();
+
+      for (const record of sortedRows) {
+        const billingRulesForDate = activityPriceHistory
+          ? getBillingRulesForDate(activity as any, activityPriceHistory, record.date)
+          : activity.billing_rules;
+
+        const customStatus = billingRulesForDate?.custom_statuses?.find(
+          (cs: any) =>
+            cs.id === record.status &&
+            cs.is_active !== false &&
+            cs.type === 'subscription_with_logic',
+        );
+
+        let visitCountBefore = 0;
+        if (customStatus) {
+          visitCountBefore = visitCountByStatus.get(record.status) || 0;
+          visitCountByStatus.set(record.status, visitCountBefore + 1);
+        }
+
+        if (record.date < rangeFrom || record.date > rangeTo) {
+          continue;
+        }
+
+        const priceForDate = getEnrollmentPriceForDate(
+          {
+            custom_price: enrollment.custom_price,
+            discount_percent: enrollment.discount_percent,
+          },
+          enrollmentPriceHistory,
+          record.date,
+        );
+
+        const newValue = calculateValueFromBillingRules(
+          record.date,
+          record.status as AttendanceStatus | null,
+          null,
+          priceForDate.custom_price,
+          priceForDate.discount_percent ?? 0,
+          billingRulesForDate || null,
+          visitCountBefore,
+        );
+
+        const chargedAmount = newValue !== null ? newValue : 0;
+        const currentAmount = record.charged_amount ?? 0;
+
+        if (currentAmount !== chargedAmount || record.value !== newValue) {
+          updates.push({
+            date: record.date,
+            status: record.status,
+            charged_amount: chargedAmount,
+            value: newValue,
+            notes: record.notes ?? null,
+          });
+        }
+      }
+    });
+
+    if (updates.length === 0) return;
+
+    const updateAttendancePromises = updates.map((u) =>
+      supabaseAny
+        .from('attendance')
+        .update({
+          charged_amount: u.charged_amount,
+          value: u.value,
+          manual_value_edit: false,
+        })
+        .eq('enrollment_id', enrollment.id)
+        .eq('date', u.date),
+    );
+
+    const updateAttendanceResults = await Promise.allSettled(updateAttendancePromises);
+    const attendanceErrors = updateAttendanceResults.filter((r) => r.status === 'rejected');
+    if (attendanceErrors.length > 0) {
+      throw new Error('Failed to update attendance during recalculation');
+    }
+
+    const txPromises: Promise<any>[] = [];
+    updates.forEach((u) => {
+      const txId = txByDate.get(u.date);
+      const accountId = resolveAccountIdForDate(u.date);
+
+      if (u.charged_amount > 0) {
+        if (txId) {
+          txPromises.push(
+            supabaseAny
+              .from('finance_transactions')
+              .update({
+                amount: u.charged_amount,
+                account_id: accountId,
+                description: 'Нарахування за відвідування',
+              })
+              .eq('id', txId),
+          );
+        } else {
+          txPromises.push(
+            supabaseAny.from('finance_transactions').insert({
+              type: 'income',
+              student_id: enrollment.student_id,
+              activity_id: enrollment.activity_id,
+              account_id: accountId,
+              amount: u.charged_amount,
+              date: u.date,
+              description: 'Нарахування за відвідування',
+            }),
+          );
+        }
+      } else if (txId) {
+        txPromises.push(
+          supabaseAny.from('finance_transactions').delete().eq('id', txId),
+        );
+      }
+    });
+
+    if (txPromises.length > 0) {
+      const txResults = await Promise.allSettled(txPromises);
+      const txErrors = txResults.filter((r) => r.status === 'rejected');
+      if (txErrors.length > 0) {
+        throw new Error('Failed to update finance transactions during recalculation');
+      }
+    }
+  };
 
   const buildTargetMonths = (variables: UpdateEnrollmentMutationInput) => {
     if (variables.recalc_from && variables.recalc_to) {
@@ -405,6 +624,59 @@ export function useUpdateEnrollment() {
         }
 
         enrollmentPatch.account_id = currentAccountRow?.account_id ?? enrollmentMeta.account_id ?? null;
+      }
+
+      if (_recalcFrom && _recalcTo) {
+        const { data: activityRow, error: activityError } = await supabaseAny
+          .from('activities')
+          .select('id, billing_rules, account_id')
+          .eq('id', enrollmentMeta.activity_id)
+          .single();
+        if (activityError) throw activityError;
+
+        const { data: activityPriceHistory, error: activityHistoryError } = await supabaseAny
+          .from('activity_price_history')
+          .select('id, activity_id, billing_rules, effective_from, effective_to, created_at')
+          .eq('activity_id', enrollmentMeta.activity_id)
+          .order('effective_from', { ascending: false });
+        if (activityHistoryError) throw activityHistoryError;
+
+        const { data: enrollmentPriceHistory, error: enrollmentHistoryError } = await supabaseAny
+          .from('enrollment_price_history')
+          .select('id, enrollment_id, custom_price, discount_percent, effective_from, effective_to, created_at, updated_at')
+          .eq('enrollment_id', id)
+          .order('effective_from', { ascending: false });
+        if (enrollmentHistoryError) throw enrollmentHistoryError;
+
+        const { data: accountHistory, error: accountHistoryError } = await supabaseAny
+          .from('enrollment_account_history')
+          .select('account_id, effective_from, effective_to')
+          .eq('enrollment_id', id)
+          .lte('effective_from', _recalcTo)
+          .or(`effective_to.is.null,effective_to.gt.${_recalcFrom}`)
+          .order('effective_from', { ascending: false });
+        if (accountHistoryError) throw accountHistoryError;
+
+        await recalcAttendanceInRange({
+          enrollment: {
+            id,
+            student_id: enrollmentMeta.student_id,
+            activity_id: enrollmentMeta.activity_id,
+            account_id: enrollmentMeta.account_id ?? null,
+            custom_price: enrollmentPatch.custom_price ?? enrollmentMeta.custom_price ?? null,
+            discount_percent: enrollmentPatch.discount_percent ?? enrollmentMeta.discount_percent ?? null,
+          },
+          activity: activityRow,
+          activityPriceHistory: (activityPriceHistory || []) as ActivityPriceHistory[],
+          enrollmentPriceHistory: (enrollmentPriceHistory || []) as EnrollmentPriceHistory[],
+          accountHistory: (accountHistory || []) as Array<{
+            account_id: string | null;
+            effective_from: string;
+            effective_to: string | null;
+          }>,
+          rangeFrom: _recalcFrom,
+          rangeTo: _recalcTo,
+        });
       }
 
       const { data, error } = await supabase

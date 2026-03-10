@@ -122,6 +122,11 @@ export default function DebtorsRegistry() {
     [filteredRows],
   );
 
+  const totalDueAtMonthStart = useMemo(
+    () => filteredRows.reduce((sum, row) => sum + row.due_at_month_start, 0),
+    [filteredRows],
+  );
+
   const totalPayments = useMemo(
     () => filteredRows.reduce((sum, row) => sum + row.month_payments, 0),
     [filteredRows],
@@ -277,6 +282,9 @@ export default function DebtorsRegistry() {
                   Нараховано (місяць)
                 </TableHead>
                 <TableHead className="text-right">Факт нарахування</TableHead>
+                <TableHead className="text-right">
+                  {`До сплати на початок ${MONTHS[filterMonth]}`}
+                </TableHead>
                 <TableHead className="text-right">Сплачено (місяць)</TableHead>
                 <TableHead className="text-right">
                   Баланс (весь період)
@@ -312,6 +320,9 @@ export default function DebtorsRegistry() {
                       {formatCurrency(row.month_charges - row.month_refunds)}
                     </TableCell>
                     <TableCell className="text-right">
+                      {formatCurrency(row.due_at_month_start)}
+                    </TableCell>
+                    <TableCell className="text-right">
                       {formatCurrency(row.month_payments)}
                     </TableCell>
                     <TableCell
@@ -333,6 +344,9 @@ export default function DebtorsRegistry() {
                 </TableCell>
                 <TableCell className="text-right font-semibold">
                   {formatCurrency(totalActualCharges)}
+                </TableCell>
+                <TableCell className="text-right font-semibold">
+                  {formatCurrency(totalDueAtMonthStart)}
                 </TableCell>
                 <TableCell className="text-right font-semibold">
                   {formatCurrency(totalPayments)}
