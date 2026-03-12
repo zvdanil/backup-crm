@@ -308,26 +308,21 @@ export function useUpdateEnrollment() {
           continue;
         }
 
-        const priceForDate = getEnrollmentPriceForDate(
-          {
+        // Пропускаємо записи з ручними правками — їх не перезаписуємо
+        if (record.manual_value_edit) continue;
+
+        const { value: newValue, chargedAmount } = calculateAttendanceChargeForRecalc({
+          date: record.date,
+          status: record.status as AttendanceStatus | null,
+          enrollment: {
             custom_price: enrollment.custom_price,
             discount_percent: enrollment.discount_percent,
           },
+          activity,
+          activityPriceHistory,
           enrollmentPriceHistory,
-          record.date,
-        );
-
-        const newValue = calculateValueFromBillingRules(
-          record.date,
-          record.status as AttendanceStatus | null,
-          null,
-          priceForDate.custom_price,
-          priceForDate.discount_percent ?? 0,
-          billingRulesForDate || null,
           visitCountBefore,
-        );
-
-        const chargedAmount = newValue !== null ? newValue : 0;
+        });
         const currentAmount = record.charged_amount ?? 0;
 
         if (currentAmount !== chargedAmount || record.value !== newValue) {
@@ -891,6 +886,56 @@ export function getEnrollmentPriceForDate(
     custom_price: enrollment.custom_price,
     discount_percent: enrollment.discount_percent ?? 0,
   };
+}
+
+/**
+ * Унифицированный расчёт суммы начисления для одной записи посещения.
+ * Используется в месячном перерасчёте (журнал) и в recalcAttendanceInRange (при смене цены).
+ * Поддерживает историю цен активности и подписки.
+ */
+export function calculateAttendanceChargeForRecalc(params: {
+  date: string;
+  status: AttendanceStatus | null;
+  enrollment: { custom_price: number | null; discount_percent: number | null };
+  activity: { billing_rules: any } | null;
+  activityPriceHistory?: ActivityPriceHistory[];
+  enrollmentPriceHistory?: EnrollmentPriceHistory[];
+  visitCountBefore: number;
+}): { value: number | null; chargedAmount: number } {
+  const {
+    date,
+    status,
+    enrollment,
+    activity,
+    activityPriceHistory,
+    enrollmentPriceHistory,
+    visitCountBefore,
+  } = params;
+
+  const billingRulesForDate =
+    activityPriceHistory && activity
+      ? getBillingRulesForDate(activity as Activity, activityPriceHistory, date)
+      : activity?.billing_rules ?? null;
+
+  const priceForDate =
+    enrollmentPriceHistory && enrollmentPriceHistory.length > 0
+      ? getEnrollmentPriceForDate(enrollment, enrollmentPriceHistory, date)
+      : {
+          custom_price: enrollment.custom_price,
+          discount_percent: enrollment.discount_percent ?? 0,
+        };
+
+  const value = calculateValueFromBillingRules(
+    date,
+    status,
+    null,
+    priceForDate.custom_price,
+    priceForDate.discount_percent ?? 0,
+    billingRulesForDate,
+    visitCountBefore,
+  );
+  const chargedAmount = value !== null ? value : 0;
+  return { value, chargedAmount };
 }
 
 /**

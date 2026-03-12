@@ -26,7 +26,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EnhancedAttendanceCell } from "./EnhancedAttendanceCell";
-import { useEnrollments, useCreateEnrollment } from "@/hooks/useEnrollments";
+import {
+  useEnrollments,
+  useCreateEnrollment,
+  calculateAttendanceChargeForRecalc,
+} from "@/hooks/useEnrollments";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendance,
@@ -1643,38 +1647,39 @@ export function EnhancedAttendanceGrid({
         for (const record of sortedRecords) {
           if (!record.status) continue;
 
-          // Отримуємо billing_rules ДЛЯ ДАТИ ВІДМІТКИ (з урахуванням історії)
+          // Перевіряємо чи це subscription_with_logic (для visitCountBefore)
           const billingRulesForDate = priceHistory
             ? getBillingRulesForDate(activity, priceHistory, record.date)
             : activity.billing_rules;
-
-          // Перевіряємо чи це subscription_with_logic
           const customStatus = billingRulesForDate?.custom_statuses?.find(
             (cs: any) =>
               cs.id === record.status &&
               cs.is_active !== false &&
               cs.type === "subscription_with_logic",
           );
-
           let visitCountBefore = 0;
           if (customStatus) {
             visitCountBefore = visitCountByStatus.get(record.status) || 0;
             visitCountByStatus.set(record.status, visitCountBefore + 1);
           }
 
-          // Розраховуємо нове value на основі ПОТОЧНИХ правил для цієї дати
-          const newValue = calculateValueFromBillingRules(
-            record.date,
-            record.status,
-            null,
-            enrollment.custom_price,
-            enrollment.discount_percent || 0,
-            billingRulesForDate || null,
-            visitCountBefore,
-          );
-
-          const chargedAmount = newValue !== null ? newValue : 0;
+          const { value: newValue, chargedAmount } =
+            calculateAttendanceChargeForRecalc({
+              date: record.date,
+              status: record.status,
+              enrollment: {
+                custom_price: enrollment.custom_price,
+                discount_percent: enrollment.discount_percent,
+              },
+              activity,
+              activityPriceHistory: priceHistory,
+              enrollmentPriceHistory: undefined,
+              visitCountBefore,
+            });
           const existing = attendanceMap.get(record.key);
+
+          // Пропускаємо записи з ручними правками — їх не перезаписуємо
+          if (existing?.manual_value_edit) continue;
 
           // Оновлюємо тільки якщо значення змінилось
           if (
