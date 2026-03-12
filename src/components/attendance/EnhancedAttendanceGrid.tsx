@@ -30,6 +30,7 @@ import {
   useEnrollments,
   useCreateEnrollment,
   calculateAttendanceChargeForRecalc,
+  useEnrollmentPriceHistoryMap,
 } from "@/hooks/useEnrollments";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -119,6 +120,7 @@ export function EnhancedAttendanceGrid({
   const [customPrice, setCustomPrice] = useState("");
   const [discountPercent, setDiscountPercent] = useState("0");
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const totalsScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
@@ -254,6 +256,14 @@ export function EnhancedAttendanceGrid({
       ),
     [enrollments, enrollmentsWithCharges],
   );
+  const visibleEnrollmentIds = useMemo(
+    () => visibleEnrollments.map((e) => e.id),
+    [visibleEnrollments],
+  );
+  const {
+    data: enrollmentPriceHistoryMap = new Map(),
+    isLoading: enrollmentPriceHistoryLoading,
+  } = useEnrollmentPriceHistoryMap(visibleEnrollmentIds);
 
   // Фільтрація записів по групах
   const filteredEnrollments = useMemo(() => {
@@ -1601,6 +1611,14 @@ export function EnhancedAttendanceGrid({
   // Функція для пересчёту всіх відміток за місяць
   const handleRecalculateMonth = async () => {
     if (!activity || isRecalculating) return;
+    if (enrollmentPriceHistoryLoading) {
+      toast({
+        title: "Дані ще завантажуються",
+        description: "Дочекайтесь завантаження історії цін і спробуйте ще раз.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsRecalculating(true);
 
@@ -1645,26 +1663,38 @@ export function EnhancedAttendanceGrid({
         const visitCountByStatus = new Map<string, number>();
 
         for (const record of sortedRecords) {
-          if (!record.status) continue;
+          const existing = attendanceMap.get(record.key);
 
-          // Перевіряємо чи це subscription_with_logic (для visitCountBefore)
-          const billingRulesForDate = priceHistory
-            ? getBillingRulesForDate(activity, priceHistory, record.date)
-            : activity.billing_rules;
-          const customStatus = billingRulesForDate?.custom_statuses?.find(
-            (cs: any) =>
-              cs.id === record.status &&
-              cs.is_active !== false &&
-              cs.type === "subscription_with_logic",
-          );
-          let visitCountBefore = 0;
-          if (customStatus) {
-            visitCountBefore = visitCountByStatus.get(record.status) || 0;
-            visitCountByStatus.set(record.status, visitCountBefore + 1);
-          }
+          // Пропускаємо записи з ручними правками — їх не перезаписуємо
+          if (existing?.manual_value_edit) continue;
 
-          const { value: newValue, chargedAmount } =
-            calculateAttendanceChargeForRecalc({
+          let newValue: number | null = null;
+          let chargedAmount = 0;
+
+          if (record.status === null) {
+            // Числові відмітки: беремо значення як є і синхронізуємо charged_amount
+            newValue = existing?.value ?? null;
+            chargedAmount = newValue !== null ? newValue : 0;
+          } else {
+            // Перевіряємо чи це subscription_with_logic (для visitCountBefore)
+            const billingRulesForDate = priceHistory
+              ? getBillingRulesForDate(activity, priceHistory, record.date)
+              : activity.billing_rules;
+            const customStatus = billingRulesForDate?.custom_statuses?.find(
+              (cs: any) =>
+                cs.id === record.status &&
+                cs.is_active !== false &&
+                cs.type === "subscription_with_logic",
+            );
+            let visitCountBefore = 0;
+            if (customStatus) {
+              visitCountBefore = visitCountByStatus.get(record.status) || 0;
+              visitCountByStatus.set(record.status, visitCountBefore + 1);
+            }
+
+            const enrollmentPriceHistory =
+              enrollmentPriceHistoryMap.get(enrollmentId) || [];
+            const result = calculateAttendanceChargeForRecalc({
               date: record.date,
               status: record.status,
               enrollment: {
@@ -1673,13 +1703,12 @@ export function EnhancedAttendanceGrid({
               },
               activity,
               activityPriceHistory: priceHistory,
-              enrollmentPriceHistory: undefined,
+              enrollmentPriceHistory,
               visitCountBefore,
             });
-          const existing = attendanceMap.get(record.key);
-
-          // Пропускаємо записи з ручними правками — їх не перезаписуємо
-          if (existing?.manual_value_edit) continue;
+            newValue = result.value;
+            chargedAmount = result.chargedAmount;
+          }
 
           // Оновлюємо тільки якщо значення змінилось
           if (
@@ -1755,6 +1784,41 @@ export function EnhancedAttendanceGrid({
     }
   };
 
+  const handleRefreshData = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["attendance"] }),
+        queryClient.invalidateQueries({ queryKey: ["finance_transactions"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"], exact: false }),
+        queryClient.invalidateQueries({ queryKey: ["student_activity_balance"] }),
+        queryClient.invalidateQueries({ queryKey: ["student_account_balances"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["staff-journal-entries"],
+          exact: false,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["staff-journal-entries-all"],
+          exact: false,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["staff-journal-entries-filtered"],
+          exact: false,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["staff-journal-entries-all-cumulative"],
+          exact: false,
+        }),
+      ]);
+      await queryClient.refetchQueries({
+        queryKey: ["attendance", attendanceFilters],
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   if (enrollments.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
@@ -1775,20 +1839,34 @@ export function EnhancedAttendanceGrid({
           <h2 className="text-lg font-semibold flex-1 text-center">
             {MONTHS[month]} {year}
           </h2>
-          <div className="w-[140px]">
-            <Select
-              value={periodFilter}
-              onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}
+          <div className="flex items-center gap-2">
+            <div className="w-[140px]">
+              <Select
+                value={periodFilter}
+                onValueChange={(value) => setPeriodFilter(value as PeriodFilter)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">День</SelectItem>
+                  <SelectItem value="week">Тиждень</SelectItem>
+                  <SelectItem value="month">Місяць</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshData}
+              disabled={isRefreshing}
+              title="Оновити дані без змін у базі"
             >
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="day">День</SelectItem>
-                <SelectItem value="week">Тиждень</SelectItem>
-                <SelectItem value="month">Місяць</SelectItem>
-              </SelectContent>
-            </Select>
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${isRefreshing ? "animate-spin" : ""}`}
+              />
+              {isRefreshing ? "Оновлення..." : "Оновити"}
+            </Button>
           </div>
           <Button variant="outline" size="icon" onClick={handleNextMonth}>
             <ChevronRight className="h-4 w-4" />
@@ -1875,6 +1953,18 @@ export function EnhancedAttendanceGrid({
               </SelectContent>
             </Select>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshData}
+            disabled={isRefreshing}
+            title="Оновити дані без змін у базі"
+          >
+            <RefreshCw
+              className={`h-4 w-4 mr-1 ${isRefreshing ? "animate-spin" : ""}`}
+            />
+            {isRefreshing ? "Оновлення..." : "Оновити"}
+          </Button>
           <Button
             variant="outline"
             size="sm"

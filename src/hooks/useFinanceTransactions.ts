@@ -46,6 +46,7 @@ export interface FinanceTransaction {
   type: TransactionType;
   student_id: string | null;
   activity_id: string | null;
+  attendance_id?: string | null;
   /** For payment: optional activity IDs to allocate to, in priority order. Null = auto-distribute. */
   allocation_activity_ids?: string[] | null;
   staff_id: string | null;
@@ -478,19 +479,24 @@ export function useUpsertFinanceTransaction() {
       let query = supabaseAny
         .from("finance_transactions")
         .select("id")
-        .eq("date", transaction.date)
         .eq("type", transaction.type);
 
-      if (transaction.student_id) {
-        query = query.eq("student_id", transaction.student_id);
+      if (transaction.attendance_id) {
+        query = query.eq("attendance_id", transaction.attendance_id);
       } else {
-        query = query.is("student_id", null);
-      }
+        query = query.eq("date", transaction.date);
 
-      if (transaction.activity_id) {
-        query = query.eq("activity_id", transaction.activity_id);
-      } else {
-        query = query.is("activity_id", null);
+        if (transaction.student_id) {
+          query = query.eq("student_id", transaction.student_id);
+        } else {
+          query = query.is("student_id", null);
+        }
+
+        if (transaction.activity_id) {
+          query = query.eq("activity_id", transaction.activity_id);
+        } else {
+          query = query.is("activity_id", null);
+        }
       }
 
       const { data: existing, error: findError } = await query.maybeSingle();
@@ -509,6 +515,7 @@ export function useUpsertFinanceTransaction() {
             description: transaction.description,
             category: transaction.category,
             account_id: transaction.account_id ?? null, // Update account_id if provided
+            attendance_id: transaction.attendance_id ?? null,
           })
           .eq("id", existing.id)
           .select()
@@ -524,6 +531,7 @@ export function useUpsertFinanceTransaction() {
           .insert({
             ...insertData,
             account_id: insertData.account_id ?? null, // Ensure account_id is set
+            attendance_id: insertData.attendance_id ?? null,
           })
           .select()
           .single();

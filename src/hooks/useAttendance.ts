@@ -215,6 +215,7 @@ export function useSetAttendance() {
                       amount: data.charged_amount,
                       account_id: accountId,
                       description: 'Нарахування за відвідування',
+                      attendance_id: data.id,
                     })
                     .eq('id', existingTransaction.id);
                   
@@ -235,6 +236,7 @@ export function useSetAttendance() {
                       amount: data.charged_amount,
                       date: data.date,
                       description: 'Нарахування за відвідування',
+                      attendance_id: data.id,
                     });
                   
                   if (insertError) {

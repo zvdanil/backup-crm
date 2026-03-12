@@ -232,7 +232,7 @@ export function useUpdateEnrollment() {
 
     const { data: attendanceRows, error: attendanceError } = await supabaseAny
       .from('attendance')
-      .select('enrollment_id, date, status, charged_amount, value, notes, manual_value_edit')
+      .select('id, enrollment_id, date, status, charged_amount, value, notes, manual_value_edit')
       .eq('enrollment_id', enrollment.id)
       .gte('date', rangeStart)
       .lte('date', rangeEnd)
@@ -275,6 +275,7 @@ export function useUpdateEnrollment() {
     });
 
     const updates: Array<{
+      attendance_id: string;
       date: string;
       status: AttendanceStatus | null;
       charged_amount: number;
@@ -311,22 +312,35 @@ export function useUpdateEnrollment() {
         // Пропускаємо записи з ручними правками — їх не перезаписуємо
         if (record.manual_value_edit) continue;
 
-        const { value: newValue, chargedAmount } = calculateAttendanceChargeForRecalc({
-          date: record.date,
-          status: record.status as AttendanceStatus | null,
-          enrollment: {
-            custom_price: enrollment.custom_price,
-            discount_percent: enrollment.discount_percent,
-          },
-          activity,
-          activityPriceHistory,
-          enrollmentPriceHistory,
-          visitCountBefore,
-        });
+        let newValue: number | null = null;
+        let chargedAmount = 0;
+
+        if (record.status === null) {
+          // Числові відмітки: використовуємо поточне value як джерело
+          newValue = record.value ?? null;
+          chargedAmount = newValue !== null ? newValue : 0;
+        } else {
+          const result = calculateAttendanceChargeForRecalc({
+            date: record.date,
+            status: record.status as AttendanceStatus | null,
+            enrollment: {
+              custom_price: enrollment.custom_price,
+              discount_percent: enrollment.discount_percent,
+            },
+            activity,
+            activityPriceHistory,
+            enrollmentPriceHistory,
+            visitCountBefore,
+          });
+          newValue = result.value;
+          chargedAmount = result.chargedAmount;
+        }
+
         const currentAmount = record.charged_amount ?? 0;
 
         if (currentAmount !== chargedAmount || record.value !== newValue) {
           updates.push({
+            attendance_id: record.id,
             date: record.date,
             status: record.status,
             charged_amount: chargedAmount,
@@ -371,6 +385,7 @@ export function useUpdateEnrollment() {
                 amount: u.charged_amount,
                 account_id: accountId,
                 description: 'Нарахування за відвідування',
+                attendance_id: u.attendance_id,
               })
               .eq('id', txId),
           );
@@ -384,6 +399,7 @@ export function useUpdateEnrollment() {
               amount: u.charged_amount,
               date: u.date,
               description: 'Нарахування за відвідування',
+              attendance_id: u.attendance_id,
             }),
           );
         }

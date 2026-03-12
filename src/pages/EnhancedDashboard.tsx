@@ -604,7 +604,7 @@ export default function EnhancedDashboard() {
         
         // Определяем тип активности
         const isBaseOrFoodTariff = baseTariffIds.has(activity.activityId) || foodTariffIds.has(activity.activityId);
-        let activityData: Record<string, number> = {};
+        let activityData: Record<string, number | { amount: number; status: string | null }> = {};
         
         if (isBaseOrFoodTariff) {
           // For Garden Attendance Journal base/food tariffs: use finance_transactions
