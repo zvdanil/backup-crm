@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Banknote, Unlink, ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -270,6 +270,36 @@ export default function ActivityExpenseJournal() {
     }, 0);
   }, [isSalary, categoryId, advanceTransactionsAll, date]);
 
+  // Остаток авансу по підкатегорії після конкретної операції
+  const getAdvanceBalanceAfterTransaction = useCallback(
+    (tx: any): number => {
+      if (isSalary || !tx) return 0;
+      const key = tx.expense_category_id || null;
+
+      const sorted = [...advanceTransactionsAll]
+        .filter((row) => (row.expense_category_id || null) === key)
+        .sort((a, b) => {
+          if (a.date === b.date) {
+            return (a.id || '').localeCompare(b.id || '');
+          }
+          return a.date.localeCompare(b.date);
+        });
+
+      let balance = 0;
+      for (const row of sorted) {
+        if (row.expense_advance_type === 'issue') {
+          balance += row.amount || 0;
+        } else if (row.expense_advance_type === 'spend') {
+          balance -= row.advance_consumed_amount || 0;
+        }
+        if (row.id === tx.id) break;
+      }
+
+      return balance;
+    },
+    [advanceTransactionsAll, isSalary],
+  );
+
   const combinedTransactions = useMemo(() => {
     if (!isSalary) return transactions;
     return salaryPayoutRows;
@@ -528,23 +558,65 @@ export default function ActivityExpenseJournal() {
         await createTransaction.mutateAsync(payload as any);
       }
     } else if (editingId) {
-      await updateTransaction.mutateAsync({
-        id: editingId,
-        type: transactionType,
-        activity_id: id,
-        staff_id: null,
-        student_id: null,
-        expense_category_id: finalCategoryId,
-        amount: parsedAmount,
-        date,
-        description: description || null,
-        category: null,
-        account_id: accountId,
-        expense_advance_type: null,
-        real_amount: null,
-        advance_consumed_amount: null,
-      } as any);
-      salaryTransactionId = editingId;
+      // Редагування існуючої витрати
+      const canUseAdvanceOnEdit =
+        !isSalary && advanceMode === 'expense' && useAdvanceForExpense && categoryId !== 'new' && categoryId !== '';
+
+      if (canUseAdvanceOnEdit) {
+        // Оновлюємо витрату, списану з авансу (перерахунок сум)
+        const available = Math.max(0, selectedAdvanceBalanceForDate);
+        const consumedFromAdvance = Math.min(available, parsedAmount);
+        const accountCharge = Math.max(0, parsedAmount - consumedFromAdvance);
+
+        if (consumedFromAdvance > 0 && accountCharge > 0) {
+          toast({
+            title: 'Недостатньо авансу',
+            description: `З авансу списано ${formatCurrency(consumedFromAdvance)}, доплата з рахунку ${formatCurrency(accountCharge)}.`,
+          });
+        } else if (consumedFromAdvance > 0 && accountCharge === 0) {
+          toast({
+            title: 'Покупка покрита авансом',
+            description: `З авансу списано ${formatCurrency(consumedFromAdvance)}.`,
+          });
+        }
+
+        await updateTransaction.mutateAsync({
+          id: editingId,
+          type: transactionType,
+          activity_id: id,
+          staff_id: null,
+          student_id: null,
+          expense_category_id: finalCategoryId,
+          amount: accountCharge,
+          date,
+          description: description || 'Покупка з авансу',
+          category: null,
+          account_id: accountId,
+          expense_advance_type: 'spend',
+          real_amount: parsedAmount,
+          advance_consumed_amount: consumedFromAdvance,
+        } as any);
+        salaryTransactionId = editingId;
+      } else {
+        // Оновлюємо звичайну витрату (без авансу)
+        await updateTransaction.mutateAsync({
+          id: editingId,
+          type: transactionType,
+          activity_id: id,
+          staff_id: null,
+          student_id: null,
+          expense_category_id: finalCategoryId,
+          amount: parsedAmount,
+          date,
+          description: description || null,
+          category: null,
+          account_id: accountId,
+          expense_advance_type: null,
+          real_amount: null,
+          advance_consumed_amount: null,
+        } as any);
+        salaryTransactionId = editingId;
+      }
     } else {
       const canUseAdvance = useAdvanceForExpense && categoryId !== 'new' && categoryId !== '';
       if (canUseAdvance) {
@@ -1226,9 +1298,14 @@ export default function ActivityExpenseJournal() {
                                   {formatCurrency((t.real_amount ?? t.amount) || 0)}
                                 </div>
                                 {t.expense_advance_type === 'spend' && (
-                                  <div className="text-[10px] text-muted-foreground">
-                                    З рахунку: {formatCurrency(t.amount || 0)} · З авансу: {formatCurrency(t.advance_consumed_amount || 0)}
-                                  </div>
+                                  <>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      З рахунку: {formatCurrency(t.amount || 0)} · З авансу: {formatCurrency(t.advance_consumed_amount || 0)}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      Залишок авансу: {formatCurrency(getAdvanceBalanceAfterTransaction(t))}
+                                    </div>
+                                  </>
                                 )}
                                 {t.expense_advance_type === 'issue' && (
                                   <div className="text-[10px] text-muted-foreground">
@@ -1292,7 +1369,8 @@ export default function ActivityExpenseJournal() {
                                     </Button>
                                   )}
                                   <>
-                                    {!t.expense_advance_type && (
+                                    {/* Редагування дозволене для звичайних витрат і витрат, списаних з авансу */}
+                                    {(!t.expense_advance_type || t.expense_advance_type === 'spend') && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -1301,7 +1379,7 @@ export default function ActivityExpenseJournal() {
                                           setEditingId(t.id);
                                           setAmount(((t.real_amount ?? t.amount) || 0).toString());
                                           setAdvanceMode('expense');
-                                          setUseAdvanceForExpense(false);
+                                          setUseAdvanceForExpense(t.expense_advance_type === 'spend');
                                           const salTxId = 'salary_transaction_id' in t ? t.salary_transaction_id : t.id;
                                           setCommission(commissionsMap.get(salTxId || '')?.amount?.toString() ?? '');
                                           setDate(t.date);
