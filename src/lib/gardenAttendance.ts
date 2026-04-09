@@ -76,7 +76,9 @@ export function calculateDailyAccrual(
   const baseTariffIds = config.base_tariff_ids || [];
   const foodTariffIds = config.food_tariff_ids || [];
 
-  const dateObj = new Date(date);
+  // Parse date string as local date to avoid timezone issues (project convention)
+  const dateParts = typeof date === 'string' ? date.split('-').map(Number) : null;
+  const dateObj = dateParts ? new Date(dateParts[0], dateParts[1] - 1, dateParts[2]) : new Date(date);
   const year = dateObj.getFullYear();
   const month = dateObj.getMonth();
   const workingDaysInMonth = getWorkingDaysInMonth(year, month);

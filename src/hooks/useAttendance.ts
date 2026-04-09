@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import type { AttendanceStatus } from '@/lib/attendance';
 import { getMonthStartDate, getMonthEndDate } from '@/lib/attendance';
+import { fetchAllRows } from '@/lib/supabasePagination';
 
 export interface Attendance {
   id: string;
@@ -34,40 +35,43 @@ export function useAttendance(filters: { activityId?: string; month?: number; ye
       const startDate = getMonthStartDate(filters.year, filters.month);
       const endDate = getMonthEndDate(filters.year, filters.month);
 
-      let query = supabase
-        .from('attendance')
-        .select(`
-          id,
-          enrollment_id,
-          group_lesson_id,
-          date,
-          status,
-          charged_amount,
-          value,
-          notes,
-          manual_value_edit,
-          created_at,
-          updated_at,
-          enrollments!inner (
-            *,
-            students (*),
-            activities (*)
-          )
-        `)
-        .eq('enrollments.activity_id', filters.activityId)
-        .gte('date', startDate)
-        .lte('date', endDate);
+      const groupLessonId = filters.groupLessonId;
 
-      if (filters.groupLessonId === null) {
-        query = query.is('group_lesson_id', null);
-      } else if (filters.groupLessonId) {
-        query = query.eq('group_lesson_id', filters.groupLessonId);
-      }
+      // fetchAllRows обходит лимит Supabase 1000 строк постраничной загрузкой
+      return fetchAllRows((from, to) => {
+        let query = supabase
+          .from('attendance')
+          .select(`
+            id,
+            enrollment_id,
+            group_lesson_id,
+            date,
+            status,
+            charged_amount,
+            value,
+            notes,
+            manual_value_edit,
+            created_at,
+            updated_at,
+            enrollments!inner (
+              *,
+              students (*),
+              activities (*)
+            )
+          `)
+          .eq('enrollments.activity_id', filters.activityId)
+          .gte('date', startDate)
+          .lte('date', endDate)
+          .range(from, to);
 
-      const { data, error } = await query;
+        if (groupLessonId === null) {
+          query = query.is('group_lesson_id', null);
+        } else if (groupLessonId) {
+          query = query.eq('group_lesson_id', groupLessonId);
+        }
 
-      if (error) throw error;
-      return data || [];
+        return query;
+      });
     },
     enabled: !!filters.activityId && filters.month !== undefined && filters.year !== undefined,
   });
@@ -145,13 +149,6 @@ export function useSetAttendance() {
       return data;
     },
     onSuccess: async (data) => {
-      console.log('[Dashboard Debug] useSetAttendance.onSuccess called', {
-        attendanceId: data?.id,
-        enrollmentId: data?.enrollment_id,
-        date: data?.date,
-        charged_amount: data?.charged_amount,
-        timestamp: new Date().toISOString(),
-      });
       
       // Создаем/обновляем/удаляем finance_transaction из attendance
       if (data && data.enrollment_id) {
@@ -201,14 +198,12 @@ export function useSetAttendance() {
               .eq('date', data.date)
               .eq('type', 'income')
               .maybeSingle();
-            
+
             if (findError && findError.code !== 'PGRST116') {
               console.error('[Dashboard Debug] Error finding existing transaction:', findError);
             } else {
               if (data.charged_amount && data.charged_amount > 0) {
-                // Если charged_amount > 0, создаем или обновляем транзакцию
                 if (existingTransaction && existingTransaction.id) {
-                  // Обновляем существующую транзакцию
                   const { error: updateError } = await supabaseAny
                     .from('finance_transactions')
                     .update({
@@ -218,14 +213,13 @@ export function useSetAttendance() {
                       attendance_id: data.id,
                     })
                     .eq('id', existingTransaction.id);
-                  
+
                   if (updateError) {
                     console.error('[Dashboard Debug] Error updating finance_transaction:', updateError);
                   } else {
                     console.log('[Dashboard Debug] Finance transaction updated:', existingTransaction.id);
                   }
                 } else {
-                  // Создаем новую транзакцию
                   const { error: insertError } = await supabaseAny
                     .from('finance_transactions')
                     .insert({
@@ -238,7 +232,7 @@ export function useSetAttendance() {
                       description: 'Нарахування за відвідування',
                       attendance_id: data.id,
                     });
-                  
+
                   if (insertError) {
                     console.error('[Dashboard Debug] Error creating finance_transaction:', insertError);
                   } else {
@@ -246,13 +240,12 @@ export function useSetAttendance() {
                   }
                 }
               } else {
-                // Если charged_amount = 0 или null, удаляем транзакцию если она существует
                 if (existingTransaction && existingTransaction.id) {
                   const { error: deleteError } = await supabaseAny
                     .from('finance_transactions')
                     .delete()
                     .eq('id', existingTransaction.id);
-                  
+
                   if (deleteError) {
                     console.error('[Dashboard Debug] Error deleting finance_transaction:', deleteError);
                   } else {
@@ -267,13 +260,12 @@ export function useSetAttendance() {
         }
       }
       
-      // Invalidate all related queries.
+      // Flush attendance cache synchronously so mutateAsync callers see fresh data immediately.
       // NOTE: Do NOT invalidate staff-journal-entries here — syncStaffJournalEntriesForMonth
       // runs AFTER mutateAsync resolves, so we would trigger refetch with stale data.
       // Staff journal invalidation happens in useUpsertStaffJournalEntry/useDeleteStaffJournalEntry onSuccess.
-      console.log('[Dashboard Debug] Invalidating queries...');
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['attendance'] }),
+        queryClient.refetchQueries({ queryKey: ['attendance'], type: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
         queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),

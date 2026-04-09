@@ -20,6 +20,7 @@ import { useSetAttendance, useAttendance, useDeleteAttendance } from '@/hooks/us
 import { useUpsertFinanceTransaction, useDeleteFinanceTransaction } from '@/hooks/useFinanceTransactions';
 import { supabase } from '@/integrations/supabase/client';
 import { calculateDailyAccrual, type GardenAttendanceConfig } from '@/lib/gardenAttendance';
+import { fetchAllRows } from '@/lib/supabasePagination';
 import { useUpsertStaffJournalEntry, useDeleteStaffJournalEntry, useAllStaffBillingRulesForActivity, getStaffBillingRuleForDate, type StaffBillingRule } from '@/hooks/useStaffBilling';
 import { calculateMonthlyStaffAccruals, type AttendanceRecord } from '@/lib/salaryCalculator';
 import { applyDeductionsToAmount } from '@/lib/staffSalary';
@@ -48,13 +49,14 @@ const MONTHS = [
 ];
 
 export default function GardenAttendanceJournal() {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  // Stable reference to component mount time — avoids `days` useMemo recomputing on every render
+  const nowRef = useRef(new Date());
+  const [year, setYear] = useState(nowRef.current.getFullYear());
+  const [month, setMonth] = useState(nowRef.current.getMonth());
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(['all']));
   const [controllerActivityId, setControllerActivityId] = useState<string>('');
-  const [selectedDayIndex, setSelectedDayIndex] = useState(now.getDate() - 1);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(nowRef.current.getDate() - 1);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [optimisticOverrides, setOptimisticOverrides] = useState<Map<string, { status: AttendanceStatus | null; amount: number }>>(new Map());
   const isMobile = useIsMobile();
@@ -117,7 +119,7 @@ export default function GardenAttendanceJournal() {
   const deleteStaffJournalEntry = useDeleteStaffJournalEntry();
 
   const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
+  const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, nowRef.current), [allDays, periodFilter]);
   const selectedDay = allDays[selectedDayIndex] || allDays[0];
   const selectedDateStr = selectedDay ? formatDateString(selectedDay) : '';
 
@@ -269,8 +271,8 @@ export default function GardenAttendanceJournal() {
     if (!attendanceData || !Array.isArray(attendanceData)) return map;
     attendanceData.forEach((a: any) => {
       const key = `${a.enrollment_id}-${a.date}`;
-      map.set(key, { 
-        status: a.status, 
+      map.set(key, {
+        status: a.status,
         amount: a.charged_amount || 0,
         value: a.value || null
       });
@@ -489,26 +491,30 @@ export default function GardenAttendanceJournal() {
         // Get controller activity enrollment IDs to fetch attendance
         const controllerEnrollmentIds = enrollments.map((e) => e.id);
 
-        // Fetch attendance with enrollment and student data
-        const { data: monthAttendanceData = [], error: attendanceError } = await supabase
-          .from('attendance')
-          .select(`
-            *,
-            enrollments!inner(
-              id,
-              student_id,
-              activity_id,
-              students!inner(
-                id,
-                full_name
-              )
-            )
-          `)
-          .in('enrollment_id', controllerEnrollmentIds)
-          .gte('date', monthStart)
-          .lte('date', monthEnd);
-
-        if (attendanceError) {
+        // Fetch attendance with enrollment and student data (paginated to bypass Supabase 1000-row limit)
+        let monthAttendanceData: any[] = [];
+        try {
+          monthAttendanceData = await fetchAllRows((from, to) =>
+            supabase
+              .from('attendance')
+              .select(`
+                *,
+                enrollments!inner(
+                  id,
+                  student_id,
+                  activity_id,
+                  students!inner(
+                    id,
+                    full_name
+                  )
+                )
+              `)
+              .in('enrollment_id', controllerEnrollmentIds)
+              .gte('date', monthStart)
+              .lte('date', monthEnd)
+              .range(from, to)
+          );
+        } catch (attendanceError) {
           continue;
         }
 
@@ -760,7 +766,7 @@ export default function GardenAttendanceJournal() {
       if (accrualResult) {
         calculatedAmount = accrualResult.amount;
         calculatedValue = accrualResult.amount;
-        
+
         if (status === 'absent' && accrualResult.foodTariff !== null && accrualResult.foodTariff > 0) {
           foodTariffAmount = accrualResult.foodTariff;
         }
@@ -772,6 +778,7 @@ export default function GardenAttendanceJournal() {
         foodActivityEntries = (accrualResult.foodTariffs || [])
           .filter((item) => item.dailyTariff > 0)
           .map((item) => ({ activityId: item.activityId, amount: item.dailyTariff }));
+
       } else {
         // If config not found or base tariff not found, log warning but continue
       }
@@ -899,12 +906,10 @@ export default function GardenAttendanceJournal() {
       }
     }
 
-    // Invalidate queries and force refetch AFTER all mutations complete
-    // Ждем немного, чтобы убедиться, что все мутации завершились
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    // Await attendance refetch so the cache is fresh before the optimistic override is removed.
+    await queryClient.refetchQueries({ queryKey: ['attendance'], type: 'active' });
+
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['attendance'] }),
       queryClient.invalidateQueries({ queryKey: ['finance_transactions'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['student_activity_balance'] }),
@@ -914,13 +919,6 @@ export default function GardenAttendanceJournal() {
       queryClient.invalidateQueries({ queryKey: ['staff-journal-entries-all-cumulative'], exact: false }),
       queryClient.invalidateQueries({ queryKey: ['staff-expenses'] }),
     ]);
-    
-    // Принудительно перезапрашиваем ВСЕ запросы дашборда (не только активные)
-    await queryClient.refetchQueries({ 
-      queryKey: ['dashboard'], 
-      exact: false,
-      type: 'all', // Перезапрашиваем все, включая неактивные
-    });
   }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient, scheduleDebouncedSync]);
 
   // Wrapper for instant optimistic UI: update display immediately, run mutations in background
@@ -933,7 +931,7 @@ export default function GardenAttendanceJournal() {
     const amount = 0;
     setOptimisticOverrides((prev) => {
       const next = new Map(prev);
-      next.set(key, { status, amount }); // Explicit null to show "cleared" before server confirms
+      next.set(key, { status, amount });
       return next;
     });
     handleStatusChange(enrollmentId, studentId, date, status, null).finally(() => {
