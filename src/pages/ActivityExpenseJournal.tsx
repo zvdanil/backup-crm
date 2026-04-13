@@ -19,7 +19,9 @@ import { useStaff } from '@/hooks/useStaff';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useCreateStaffPayout, useUpdateStaffPayout, useDeleteStaffPayout } from '@/hooks/useStaffBilling';
 import { useDividendParticipants, useDividendSettings, useCreateDividendPayout, useUpdateDividendPayout, useDeleteDividendPayout } from '@/hooks/useDividendJournal';
+import { useCreateCashWithdrawal, useDeleteCashWithdrawal } from '@/hooks/useCashWithdrawals';
 import { DividendPayoutFormDialog } from '@/components/dividend/DividendPayoutFormDialog';
+import { CashWithdrawalDialog } from '@/components/finance/CashWithdrawalDialog';
 import { PayrollPayoutDialog } from '@/components/staff/PayrollPayoutDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDate, formatDateString, getDaysInMonth, getMonthStartDate, getMonthEndDate, getWeekdayShort, isWeekend, WEEKEND_BG_COLOR } from '@/lib/attendance';
@@ -109,6 +111,14 @@ export default function ActivityExpenseJournal() {
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false);
   const [dividendSource, setDividendSource] = useState<{ source: 'transaction' | 'payout'; id: string } | null>(null);
   const [dividendInitialValues, setDividendInitialValues] = useState<{ payout_date: string; total_amount: number; account_id: string | null } | null>(null);
+  const [cashWithdrawalDialogOpen, setCashWithdrawalDialogOpen] = useState(false);
+  const [cashWithdrawalTransaction, setCashWithdrawalTransaction] = useState<{
+    id: string;
+    amount: number;
+    date: string;
+    description?: string | null;
+    account_id?: string | null;
+  } | null>(null);
 
   const { data: activity } = useActivity(id || '');
   const { data: dividendParticipants = [] } = useDividendParticipants();
@@ -119,6 +129,10 @@ export default function ActivityExpenseJournal() {
   const deleteDividendPayout = useDeleteDividendPayout();
   const { data: accounts = [] } = usePaymentAccounts();
   const { data: staff = [] } = useStaff();
+  const defaultCashAccountId = accounts.find((account) =>
+    account.name.toLowerCase().includes('готівка') ||
+    account.name.toLowerCase().includes('нал')
+  )?.id ?? null;
 
   // Инициализируем selectedAccountId при изменении активности
   useEffect(() => {
@@ -133,6 +147,8 @@ export default function ActivityExpenseJournal() {
   const createTransaction = useCreateFinanceTransaction();
   const updateTransaction = useUpdateFinanceTransaction();
   const deleteTransaction = useDeleteFinanceTransaction();
+  const createCashWithdrawal = useCreateCashWithdrawal();
+  const deleteCashWithdrawal = useDeleteCashWithdrawal();
   const syncCommission = useCommissionEntry();
   const createPayout = useCreateStaffPayout();
   const updatePayout = useUpdateStaffPayout();
@@ -145,6 +161,38 @@ export default function ActivityExpenseJournal() {
   const journalEntries = journalEntriesData ?? EMPTY_ARRAY;
   const upsertJournalEntry = useUpsertExpenseJournalEntry();
   const deleteJournalEntry = useDeleteExpenseJournalEntry();
+
+  const openCashWithdrawalDialog = (transaction: {
+    id: string;
+    amount: number;
+    date: string;
+    description?: string | null;
+    account_id?: string | null;
+  }) => {
+    setCashWithdrawalTransaction(transaction);
+    setCashWithdrawalDialogOpen(true);
+  };
+
+  const closeCashWithdrawalDialog = () => {
+    setCashWithdrawalDialogOpen(false);
+    setCashWithdrawalTransaction(null);
+  };
+
+  const handleCreateCashWithdrawal = async (payload: {
+    expenseTransactionId: string;
+    cashAccountId: string;
+    commissionPercent: number;
+    creditedAmount: number;
+  }) => {
+    await createCashWithdrawal.mutateAsync(payload);
+    queryClient.invalidateQueries({ queryKey: [ACTIVITY_EXPENSE_QUERY_KEYS.financeTransactions] });
+  };
+
+  const handleDeleteCashWithdrawal = async (cashWithdrawalId: string) => {
+    if (!window.confirm('Зняти позначку виведення коштів?')) return;
+    await deleteCashWithdrawal.mutateAsync(cashWithdrawalId);
+    queryClient.invalidateQueries({ queryKey: [ACTIVITY_EXPENSE_QUERY_KEYS.financeTransactions] });
+  };
 
   const transactionType = getTransactionTypeForCategory(activity?.category || null);
   const isSalary = activity?.category === 'salary';
@@ -1256,6 +1304,11 @@ export default function ActivityExpenseJournal() {
                                     Виведено як дівіденд
                                   </div>
                                 )}
+                                {t.cash_withdrawal_id && (
+                                  <div className="text-xs text-foreground/70 mt-1 font-medium">
+                                    Виведено як готівка
+                                  </div>
+                                )}
                               </TableCell>
                               {(isActualExpense || isSalary) && (
                                 <TableCell className="text-sm">
@@ -1366,6 +1419,38 @@ export default function ActivityExpenseJournal() {
                                       }}
                                     >
                                       <Banknote className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {(isActualExpense || isSalary) && !t.dividend_payout_id && !t.cash_withdrawal_id && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      title="Вивести як готівку"
+                                      onClick={() => {
+                                        openCashWithdrawalDialog({
+                                          id: t.id,
+                                          amount: t.amount || 0,
+                                          date: t.date,
+                                          description: t.description || null,
+                                          account_id: t.account_id || null,
+                                        });
+                                      }}
+                                    >
+                                      <ArrowUp className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  {(isActualExpense || isSalary) && t.cash_withdrawal_id && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-muted-foreground"
+                                      title="Зняти позначку «виведено як готівка»"
+                                      onClick={async () => {
+                                        await handleDeleteCashWithdrawal(t.cash_withdrawal_id!);
+                                      }}
+                                    >
+                                      <Unlink className="h-4 w-4" />
                                     </Button>
                                   )}
                                   <>
@@ -1655,6 +1740,21 @@ export default function ActivityExpenseJournal() {
         </DialogContent>
       </Dialog>
       )}
+
+      <CashWithdrawalDialog
+        open={cashWithdrawalDialogOpen}
+        onOpenChange={(open) => {
+          setCashWithdrawalDialogOpen(open);
+          if (!open) {
+            setCashWithdrawalTransaction(null);
+          }
+        }}
+        transaction={cashWithdrawalTransaction}
+        accounts={accounts}
+        defaultCashAccountId={defaultCashAccountId}
+        onSubmit={handleCreateCashWithdrawal}
+        isSaving={createCashWithdrawal.isPending}
+      />
 
       <DividendPayoutFormDialog
         open={dividendDialogOpen}

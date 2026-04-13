@@ -208,7 +208,7 @@ export function useCreateAccountTransfer() {
               amount: transfer.commission_amount,
               date: transfer.transfer_date,
               description: commissionDescription,
-              account_id: transfer.from_account_id,
+              account_id: null,
               transfer_id: transferId,
             });
           }

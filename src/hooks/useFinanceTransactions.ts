@@ -60,6 +60,7 @@ export interface FinanceTransaction {
   description: string | null;
   category: string | null;
   dividend_payout_id?: string | null;
+  cash_withdrawal_id?: string | null;
   salary_transaction_id?: string | null; // Commission links to parent salary tx
   staff_payout_id?: string | null; // Salary tx from staff payout form
   created_at: string;
