@@ -3,9 +3,10 @@ import { ArrowLeft, Calendar, ArrowRightLeft, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { usePaymentAccounts, useUpdatePaymentAccount } from '@/hooks/usePaymentAccounts';
+import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useAccountBalance, useAccountTransactions } from '@/hooks/useAccountBalances';
 import { useAccountTransfers, useCancelAccountTransfer } from '@/hooks/useAccountTransfers';
+import { usePaymentAccountAdjustments, useCreatePaymentAccountAdjustment, useUpdatePaymentAccountAdjustment, type PaymentAccountAdjustment } from '@/hooks/usePaymentAccountAdjustments';
 import { formatCurrency, formatDate } from '@/lib/attendance';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -105,6 +106,62 @@ function getPeriodBounds(
   return null;
 }
 
+function getPeriodStart(
+  periodType: PeriodType,
+  periodValue: string,
+  customFrom?: string
+): Date | null {
+  if (periodType === 'all') return null;
+  if (periodType === 'custom' && customFrom) {
+    return new Date(customFrom);
+  }
+  if (periodType === 'month' && /^\d{4}-\d{2}$/.test(periodValue)) {
+    const [y, m] = periodValue.split('-').map(Number);
+    return new Date(y, m - 1, 1);
+  }
+  if (periodType === 'quarter' && /^\d{4}-Q[1-4]$/.test(periodValue)) {
+    const [y, q] = [parseInt(periodValue.slice(0, 4), 10), parseInt(periodValue.slice(-1), 10)];
+    const startM = (q - 1) * 3;
+    return new Date(y, startM, 1);
+  }
+  if (periodType === 'halfYear' && /^\d{4}-H[12]$/.test(periodValue)) {
+    const y = parseInt(periodValue.slice(0, 4), 10);
+    const h = periodValue.endsWith('H1') ? 1 : 2;
+    const startM = (h - 1) * 6;
+    return new Date(y, startM, 1);
+  }
+  if (periodType === 'year' && /^\d{4}$/.test(periodValue)) {
+    const y = parseInt(periodValue, 10);
+    return new Date(y, 0, 1);
+  }
+  return null;
+}
+
+function canEditOpeningBalance(
+  periodType: PeriodType,
+  periodValue: string,
+  customFrom?: string,
+  customTo?: string
+): boolean {
+  // Редактирование разрешено только если начало периода - это месяц
+  const start = getPeriodStart(periodType, periodValue, customFrom);
+  if (!start) return false;
+
+  // Для custom периода проверяем, что диапазон - один месяц
+  if (periodType === 'custom' && customFrom && customTo) {
+    const startDate = new Date(customFrom);
+    const endDate = new Date(customTo);
+    const startMonth = startDate.getMonth();
+    const startYear = startDate.getFullYear();
+    const endMonth = endDate.getMonth();
+    const endYear = endDate.getFullYear();
+    return startYear === endYear && startMonth === endMonth;
+  }
+
+  // Для других периодов редактирование разрешено только для month
+  return periodType === 'month';
+}
+
 function inPeriod(
   dateStr: string,
   periodType: PeriodType,
@@ -173,10 +230,14 @@ export default function AccountDetail() {
   const [openingBalanceDialogOpen, setOpeningBalanceDialogOpen] = useState(false);
   const [openingBalanceDate, setOpeningBalanceDate] = useState('');
   const [openingBalanceAmount, setOpeningBalanceAmount] = useState('');
+  const [editingAdjustment, setEditingAdjustment] = useState<PaymentAccountAdjustment | null>(null);
 
   const { data: accounts = [] } = usePaymentAccounts();
   const account = accounts.find((a) => a.id === id);
-  const updateAccount = useUpdatePaymentAccount();
+
+  const { data: adjustments = [] } = usePaymentAccountAdjustments(id || '');
+  const createAdjustment = useCreatePaymentAccountAdjustment();
+  const updateAdjustment = useUpdatePaymentAccountAdjustment();
 
   const { data: balance, isLoading: balanceLoading } = useAccountBalance(id || '');
   const { data: transactions = [], isLoading: transactionsLoading } = useAccountTransactions(id || '');
@@ -256,29 +317,103 @@ export default function AccountDetail() {
   }, [transfers, isPeriodSelected, periodType, periodValue, customDateFrom, customDateTo]);
 
   const monthReference = useMemo(() => {
-    if (periodType === 'month') {
-      const parsed = parseYearMonth(periodValue);
-      if (parsed) return parsed;
+    const start = getPeriodStart(periodType, periodValue, customDateFrom);
+    if (start) {
+      return { year: start.getFullYear(), month: start.getMonth() + 1 };
     }
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() + 1 };
-  }, [periodType, periodValue]);
+  }, [periodType, periodValue, customDateFrom]);
 
   const endOfPreviousMonth = useMemo(
     () => new Date(monthReference.year, monthReference.month - 1, 0, 23, 59, 59, 999),
     [monthReference]
   );
 
+  const periodStart = getPeriodStart(periodType, periodValue, customDateFrom);
+
+  const allAccountAdjustments = useMemo(() => {
+    if (adjustments?.length > 0) return adjustments;
+    if (account?.opening_balance_date) {
+      return [
+        {
+          id: 'legacy',
+          account_id: id || '',
+          adjustment_date: account.opening_balance_date,
+          amount: Number(account.opening_balance_amount ?? 0) || 0,
+          notes: null,
+          created_at: account.opening_balance_date,
+          updated_at: account.opening_balance_date,
+        },
+      ];
+    }
+    return [] as PaymentAccountAdjustment[];
+  }, [adjustments, account, id]);
+
+  const startingPeriodAdjustment = useMemo(() => {
+    if (!periodStart) return null;
+    const periodStartMonthEnd = new Date(
+      periodStart.getFullYear(),
+      periodStart.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    );
+
+    return (
+      allAccountAdjustments
+        .filter((adjustment) => {
+          const adjustmentDate = new Date(adjustment.adjustment_date);
+          return adjustmentDate >= periodStart && adjustmentDate <= periodStartMonthEnd;
+        })
+        .sort((a, b) =>
+          new Date(b.adjustment_date).getTime() - new Date(a.adjustment_date).getTime()
+        )[0] ?? null
+    );
+  }, [allAccountAdjustments, periodStart]);
+
+  const periodAdjustments = useMemo(() => {
+    if (!isPeriodSelected) return [] as PaymentAccountAdjustment[];
+    return allAccountAdjustments.filter((adjustment) =>
+      inPeriod(adjustment.adjustment_date, periodType, periodValue, customDateFrom, customDateTo)
+    );
+  }, [allAccountAdjustments, isPeriodSelected, periodType, periodValue, customDateFrom, customDateTo]);
+
+  const periodAdjustmentsTotal = useMemo(
+    () => periodAdjustments.reduce((sum, adjustment) => sum + Number(adjustment.amount || 0), 0),
+    [periodAdjustments]
+  );
+
+  const periodStartOverlapAdjustment = useMemo(() => {
+    if (!startingPeriodAdjustment || !periodStart) return 0;
+    const periodStartDate = periodStart.toISOString().split('T')[0];
+    return startingPeriodAdjustment.adjustment_date === periodStartDate
+      ? Number(startingPeriodAdjustment.amount || 0)
+      : 0;
+  }, [startingPeriodAdjustment, periodStart]);
+
+  const previousCorrectionsTotal = useMemo(() => {
+    if (!periodStart) return 0;
+    return allAccountAdjustments
+      .filter((adjustment) => new Date(adjustment.adjustment_date) < periodStart)
+      .reduce((sum, adjustment) => sum + (Number(adjustment.amount) || 0), 0);
+  }, [allAccountAdjustments, periodStart]);
+
   const previousMonthBalance = useMemo(() => {
     const ledgerBeforeMonth = transactions.reduce((sum, tx) => {
       const txDate = new Date(tx.date);
       return txDate <= endOfPreviousMonth ? sum + (Number(tx.amount) || 0) : sum;
     }, 0);
-    return ledgerBeforeMonth;
-  }, [transactions, endOfPreviousMonth]);
+    return ledgerBeforeMonth + previousCorrectionsTotal;
+  }, [transactions, endOfPreviousMonth, previousCorrectionsTotal]);
 
-  const manualOpeningAmount = Number(account?.opening_balance_amount ?? 0) || 0;
-  const openingAtMonthStart = previousMonthBalance + manualOpeningAmount;
+  const manualOpeningAmount = startingPeriodAdjustment
+    ? Number(startingPeriodAdjustment.amount || 0)
+    : 0;
+
+  const openingAtPeriodStart = previousMonthBalance + manualOpeningAmount;
 
   // Значення за період для плиток (коли обрано період)
   const periodTileValues = useMemo(() => {
@@ -305,6 +440,8 @@ export default function AccountDetail() {
       balance: income - expense,
     };
   }, [transactions, transfers, isPeriodSelected, periodType, periodValue, customDateFrom, customDateTo, id]);
+
+  const endingAtPeriod = openingAtPeriodStart + (periodTileValues?.balance ?? 0) + periodAdjustmentsTotal - periodStartOverlapAdjustment;
 
   if (!account) {
     return (
@@ -481,51 +618,42 @@ export default function AccountDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm font-medium text-muted-foreground mb-1">
-                  Залишок на початок місяця
-                </p>
                 <div className={cn(
                   "text-2xl font-bold",
-                  openingAtMonthStart >= 0 ? "text-green-600" : "text-red-600"
+                  openingAtPeriodStart >= 0 ? "text-green-600" : "text-red-600"
                 )}>
-                  {formatCurrency(openingAtMonthStart)}
+                  {formatCurrency(openingAtPeriodStart)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   Баланс за минулий місяць: {formatCurrency(previousMonthBalance)}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  + Введений залишок: {formatCurrency(manualOpeningAmount)}
-                  {account?.opening_balance_date ? ` (на дату ${account.opening_balance_date})` : ''}
-                </p>
-                <div className="hidden">
-                {account?.opening_balance_date && (account?.opening_balance_amount ?? 0) !== 0 ? (
-                  <>
-                    <div className="text-2xl font-bold">
-                      {formatCurrency(Number(account.opening_balance_amount) || 0)}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      на дату {account.opening_balance_date}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Не вказано</p>
+                {periodAdjustments.length > 0 && (
+                  <div className="space-y-1 mt-1">
+                    {periodAdjustments.map((adjustment) => (
+                      <p key={adjustment.id} className="text-xs text-muted-foreground">
+                        + Корекція: {formatCurrency(adjustment.amount)}
+                        {adjustment.adjustment_date ? ` (на дату ${adjustment.adjustment_date})` : ''}
+                      </p>
+                    ))}
+                  </div>
                 )}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => {
-                    setOpeningBalanceDate(account?.opening_balance_date || '');
-                    setOpeningBalanceAmount(
-                      account?.opening_balance_amount != null ? String(account.opening_balance_amount) : ''
-                    );
-                    setOpeningBalanceDialogOpen(true);
-                  }}
-                >
-                  <Pencil className="h-4 w-4 mr-1" />
-                  {account?.opening_balance_date ? 'Редагувати' : 'Вказати'}
-                </Button>
+                {canEditOpeningBalance(periodType, periodValue, customDateFrom, customDateTo) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => {
+                      const existingAdjustment = startingPeriodAdjustment;
+                      setEditingAdjustment(existingAdjustment);
+                      setOpeningBalanceDate(periodStart ? periodStart.toISOString().split('T')[0] : '');
+                      setOpeningBalanceAmount(existingAdjustment ? String(existingAdjustment.amount) : '');
+                      setOpeningBalanceDialogOpen(true);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    {account?.opening_balance_date ? 'Редагувати' : 'Вказати'}
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
@@ -547,6 +675,26 @@ export default function AccountDetail() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   = Внесений залишок + Надходження − Витрати − Перекази
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Залишок на кінець періоду
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={cn(
+                  "text-2xl font-bold",
+                  endingAtPeriod >= 0 ? "text-green-600" : "text-red-600"
+                )}>
+                  {formatCurrency(endingAtPeriod)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  = Залишок на початок періоду + Надходження − Витрати
+                  {periodAdjustments.length > 0 ? ' + Корекції за період' : ''}
                 </p>
               </CardContent>
             </Card>
@@ -893,12 +1041,22 @@ export default function AccountDetail() {
                     ? null
                     : Number(openingBalanceAmount);
                 const dateVal = openingBalanceDate?.trim() || null;
+                if (!dateVal) return;
+
                 try {
-                  await updateAccount.mutateAsync({
-                    id: account.id,
-                    opening_balance_date: dateVal,
-                    opening_balance_amount: amountNum ?? 0,
-                  });
+                  if (editingAdjustment && editingAdjustment.id !== 'legacy') {
+                    await updateAdjustment.mutateAsync({
+                      id: editingAdjustment.id,
+                      amount: amountNum ?? 0,
+                    });
+                  } else {
+                    await createAdjustment.mutateAsync({
+                      account_id: account.id,
+                      adjustment_date: dateVal,
+                      amount: amountNum ?? 0,
+                    });
+                  }
+                  setEditingAdjustment(null);
                   setOpeningBalanceDialogOpen(false);
                 } catch {
                   // toast from mutation

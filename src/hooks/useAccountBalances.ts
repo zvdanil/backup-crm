@@ -34,6 +34,7 @@ export function useAccountBalance(accountId: string) {
         { data: expenseEntriesData },
         directExpenseData,
         transferExpenseData,
+        adjustmentData,
         { data: dividendPayoutsData },
       ] = await Promise.all([
         supabaseAny
@@ -83,6 +84,13 @@ export function useAccountBalance(accountId: string) {
             .not('transfer_id', 'is', null)
             .range(from, to)
         ),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('payment_account_adjustments')
+            .select('amount')
+            .eq('account_id', accountId)
+            .range(from, to)
+        ),
         supabaseAny
           .from('dividend_payout_legs')
           .select('payout_id, account_id, amount')
@@ -90,8 +98,8 @@ export function useAccountBalance(accountId: string) {
       ]);
 
       const openingFromAccount = Number(accountData?.opening_balance_amount ?? 0) || 0;
-      // account_opening_balances (student balances) only correct student balance display, not account state
-      const opening_balance = openingFromAccount;
+      const adjustmentsTotal = (adjustmentData || []).reduce((sum: number, adjustment: any) => sum + Number(adjustment.amount || 0), 0);
+      const opening_balance = (adjustmentData || []).length > 0 ? adjustmentsTotal : openingFromAccount;
       const actual_receipts = (paymentData || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
       const expected_income = (incomeData || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
 
@@ -140,6 +148,9 @@ export function useAccountBalance(accountId: string) {
       const expenses = salaryTotal + expenseEntriesTotal + directExpenseTotal + dividendTotal;
 
       // Залишок = реальні доходи (з внесеними залишками) − реальні витрати
+      // Нотатка: actual_receipts + transfers_out беруть ВСІ операції за весь час, тому
+      // opening_balance повинна включати реальні операції до opening_balance_date
+      // Поточна логика: opening_balance = тільки manual entry, а операції перед ним вже в receipts/expenses
       const free_funds = opening_balance + actual_receipts - expenses - transfers_out;
       const expected_receipts = expected_income - actual_receipts;
 
