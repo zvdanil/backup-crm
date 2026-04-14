@@ -341,17 +341,35 @@ export default function StaffExpenseJournal() {
   const allDays = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const days = useMemo(() => filterDaysByPeriod(allDays, periodFilter, now), [allDays, periodFilter, now]);
 
-  // Sync scroll between header and body
+  // Sync scroll between header and body (bidirectional)
   useEffect(() => {
     const header = headerScrollRef.current;
-    if (!header) return;
-    const sync = () => {
-      const left = header.scrollLeft;
-      if (bodyScrollRef.current) bodyScrollRef.current.scrollLeft = left;
+    const body = bodyScrollRef.current;
+    if (!header || !body) return;
+
+    let syncing = false;
+
+    const syncFromHeader = () => {
+      if (syncing) return;
+      syncing = true;
+      body.scrollLeft = header.scrollLeft;
+      syncing = false;
     };
-    header.addEventListener('scroll', sync, { passive: true });
-    sync();
-    return () => header.removeEventListener('scroll', sync);
+
+    const syncFromBody = () => {
+      if (syncing) return;
+      syncing = true;
+      header.scrollLeft = body.scrollLeft;
+      syncing = false;
+    };
+
+    header.addEventListener('scroll', syncFromHeader, { passive: true });
+    body.addEventListener('scroll', syncFromBody, { passive: true });
+
+    return () => {
+      header.removeEventListener('scroll', syncFromHeader);
+      body.removeEventListener('scroll', syncFromBody);
+    };
   }, [days.length, filteredStaff.length]);
 
   const tableColGroup = useMemo(() => (
@@ -1270,7 +1288,7 @@ export default function StaffExpenseJournal() {
         {/* Grid */}
         <div className="sticky top-16 z-30 bg-card">
           <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-            <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
+            <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto', tableLayout: 'fixed' } : { tableLayout: 'fixed' }}>
               {tableColGroup}
               <thead>
                 <tr className="bg-muted/50">
@@ -1297,7 +1315,7 @@ export default function StaffExpenseJournal() {
           </div>
         </div>
         <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
-          <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto' } : undefined}>
+          <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto', tableLayout: 'fixed' } : { tableLayout: 'fixed' }}>
             {tableColGroup}
             <tbody>
               {filteredStaff.map((staffMember) => {
