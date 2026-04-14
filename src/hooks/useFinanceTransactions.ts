@@ -403,7 +403,7 @@ export function useDeleteFinanceTransaction() {
       // Получаем транзакцию перед удалением для проверки типа
       const { data: tx, error: fetchError } = await supabaseAny
         .from("finance_transactions")
-        .select("id, type, staff_id, date, amount, staff_payout_id")
+        .select("id, type, staff_id, date, amount, staff_payout_id, cash_withdrawal_id")
         .eq("id", id)
         .single();
 
@@ -415,6 +415,22 @@ export function useDeleteFinanceTransaction() {
           deleteNote: "Видалено через журнал транзакцій",
         });
         return;
+      }
+
+      // Якщо транзакція пов'язана з виведенням коштів — видаляємо payment-транзакцію на касовому рахунку
+      if (tx?.cash_withdrawal_id) {
+        const { data: withdrawal } = await supabaseAny
+          .from("cash_withdrawals")
+          .select("income_transaction_id")
+          .eq("id", tx.cash_withdrawal_id)
+          .single();
+
+        if (withdrawal?.income_transaction_id) {
+          await supabaseAny
+            .from("finance_transactions")
+            .delete()
+            .eq("id", withdrawal.income_transaction_id);
+        }
       }
 
       const { error } = await supabaseAny

@@ -932,12 +932,19 @@ export default function AccountDetail() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={TRANSACTION_TYPE_COLORS[transaction.type] || ''}
-                          >
-                            {TRANSACTION_TYPE_LABELS[transaction.type] || transaction.type}
-                          </Badge>
+                          <div className="flex items-center gap-1">
+                            <Badge
+                              variant="outline"
+                              className={TRANSACTION_TYPE_COLORS[transaction.type] || ''}
+                            >
+                              {TRANSACTION_TYPE_LABELS[transaction.type] || transaction.type}
+                            </Badge>
+                            {(transaction as any).cash_withdrawal_id && (
+                              <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-900 dark:text-blue-200">
+                                Вивід коштів
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">

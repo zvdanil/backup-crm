@@ -30,7 +30,7 @@ export function useAccountBalance(accountId: string) {
         { data: accountData },
         paymentData,
         incomeData,
-        { data: staffPayoutsData },
+        salaryTxData,
         { data: expenseEntriesData },
         directExpenseData,
         transferExpenseData,
@@ -58,11 +58,14 @@ export function useAccountBalance(accountId: string) {
             .eq('type', 'income')
             .range(from, to)
         ),
-        supabaseAny
-          .from('staff_payouts')
-          .select('amount, account_id, dividend_payout_id')
-          .eq('account_id', accountId)
-          .or('is_deleted.is.null,is_deleted.eq.false'),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount, dividend_payout_id')
+            .eq('account_id', accountId)
+            .eq('type', 'salary')
+            .range(from, to)
+        ),
         supabaseAny
           .from('expense_journal_entries')
           .select('amount, account_id, activity_id, dividend_payout_id, activities(is_actual_expense, account_id)'),
@@ -103,11 +106,10 @@ export function useAccountBalance(accountId: string) {
       const actual_receipts = (paymentData || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
       const expected_income = (incomeData || []).reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
 
-      // Виплати зарплати
-      const salaryTotal = (staffPayoutsData || []).reduce((sum: number, p: any) => {
-        if (p.dividend_payout_id) return sum;
-        if (matchesAccount(p.account_id)) return sum + (p.amount || 0);
-        return sum;
+      // Виплати зарплати (з finance_transactions, як у useAccountTransactions)
+      const salaryTotal = (salaryTxData || []).reduce((sum: number, tx: any) => {
+        if (tx.dividend_payout_id) return sum;
+        return sum + Number(tx.amount || 0);
       }, 0);
 
       // Витрати з expense_journal_entries (is_actual_expense)
@@ -177,6 +179,7 @@ export interface AccountTransactionItem {
   amount: number;
   description: string | null;
   transfer_id?: string | null;
+  cash_withdrawal_id?: string | null;
   _source: 'finance_transaction' | 'dividend_leg';
 }
 
@@ -188,7 +191,7 @@ export function useAccountTransactions(accountId: string) {
         fetchAllRows<any>((from, to) =>
           supabaseAny
             .from('finance_transactions')
-            .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, activities(is_actual_expense)')
+            .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, cash_withdrawal_id, activities(is_actual_expense)')
             .eq('account_id', accountId)
             .order('date', { ascending: false })
             .order('created_at', { ascending: false })
@@ -263,6 +266,7 @@ export function useAccountTransactions(accountId: string) {
               : -Math.abs(Number(t.amount) || 0),
           description: t.description ?? null,
           transfer_id: t.transfer_id ?? null,
+          cash_withdrawal_id: t.cash_withdrawal_id ?? null,
           _source: 'finance_transaction',
         };
       });

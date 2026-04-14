@@ -67,7 +67,7 @@ export function useCreateCashWithdrawal() {
       const { data: incomeTx, error: incomeError } = await supabaseAny
         .from('finance_transactions')
         .insert({
-          type: 'income',
+          type: 'payment',
           amount: creditedAmount,
           date: expenseTx.date,
           account_id: payload.cashAccountId,
