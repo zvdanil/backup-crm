@@ -15,6 +15,7 @@ import { useActivities } from '@/hooks/useActivities';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { useExpenseCategories } from '@/hooks/useExpenseCategories';
 import { useCommissionEntry, useCommissionsForSalaryTransactions } from '@/hooks/useCommissionEntry';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { 
   getDaysInMonth, 
   formatShortDate, 
@@ -98,6 +99,9 @@ export default function StaffExpenseJournal() {
   const [payoutErrors, setPayoutErrors] = useState<Record<string, { message: string }>>({});
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
+  const [mobileStaffIdx, setMobileStaffIdx] = useState(0);
+  const [mobileSelectedDate, setMobileSelectedDate] = useState<string>('');
 
   // All hooks must be at the top level - no hooks inside loops or conditionals
   const { data: staff = [] } = useStaff();
@@ -371,6 +375,36 @@ export default function StaffExpenseJournal() {
       body.removeEventListener('scroll', syncFromBody);
     };
   }, [days.length, filteredStaff.length]);
+
+  // Mobile: reset staff index when filtered staff changes
+  useEffect(() => {
+    setMobileStaffIdx(0);
+  }, [filteredStaff.length]);
+
+  // Mobile: reset selected date when month/year changes
+  useEffect(() => {
+    if (days.length === 0) return;
+    const todayStr = formatDateString(now);
+    if (days.some(d => formatDateString(d) === todayStr)) {
+      setMobileSelectedDate(todayStr);
+    } else {
+      setMobileSelectedDate(formatDateString(days[0]));
+    }
+  }, [year, month, days.length]);
+
+  const mobileStaff = filteredStaff[Math.min(mobileStaffIdx, filteredStaff.length - 1)] ?? null;
+
+  const mobileTotalAccrued = useMemo(() =>
+    !mobileStaff ? 0 :
+    journalEntries.filter(e => e.staff_id === mobileStaff.id)
+      .reduce((s, e) => s + (e.amount || 0), 0),
+  [mobileStaff, journalEntries]);
+
+  const mobileTotalPaid = useMemo(() =>
+    !mobileStaff ? 0 :
+    staffPayouts.filter((p: any) => p.staff_id === mobileStaff.id)
+      .reduce((s: number, p: any) => s + (p.amount || 0), 0),
+  [mobileStaff, staffPayouts]);
 
   const tableColGroup = useMemo(() => (
     <colgroup>
@@ -1162,23 +1196,51 @@ export default function StaffExpenseJournal() {
         <div className="mb-4 rounded-xl border bg-card p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-medium">Журнали витрат по активностях</div>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setAddExpenseJournalDialogOpen(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              журнал витрат
-            </Button>
+            {!isMobile && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setAddExpenseJournalDialogOpen(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                журнал витрат
+              </Button>
+            )}
           </div>
           {expenseActivities.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {expenseActivities.map((activity) => (
-                <Button key={activity.id} variant="outline" size="sm" asChild>
-                  <Link to={`/activities/${activity.id}/expenses`}>{activity.name}</Link>
-                </Button>
-              ))}
-            </div>
+            isMobile ? (
+              <div className="flex flex-col gap-2">
+                {[...expenseActivities.filter(a => a.category !== 'salary')].sort((a, b) => {
+                  const ORDER = ['Поточні витрати', 'Витрати по безналу', 'Кейтеринг', 'Комісії'];
+                  const ai = ORDER.indexOf(a.name);
+                  const bi = ORDER.indexOf(b.name);
+                  if (ai === -1 && bi === -1) return a.name.localeCompare(b.name, 'uk-UA');
+                  if (ai === -1) return 1;
+                  if (bi === -1) return -1;
+                  return ai - bi;
+                }).map((activity) => (
+                  <div key={activity.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                    <Link to={`/activities/${activity.id}/expenses`} className="text-sm text-primary hover:underline flex-1 min-w-0 truncate">
+                      {activity.name}
+                    </Link>
+                    <Button size="sm" variant="default" asChild>
+                      <Link to={`/activities/${activity.id}/expenses?add=1`}>
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Додати
+                      </Link>
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {expenseActivities.map((activity) => (
+                  <Button key={activity.id} variant="outline" size="sm" asChild>
+                    <Link to={`/activities/${activity.id}/expenses`}>{activity.name}</Link>
+                  </Button>
+                ))}
+              </div>
+            )
           ) : (
             <div className="text-sm text-muted-foreground">Немає журналів витрат</div>
           )}
@@ -1286,165 +1348,318 @@ export default function StaffExpenseJournal() {
         </div>
 
         {/* Grid */}
-        <div className="sticky top-16 z-30 bg-card">
-          <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
-            <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto', tableLayout: 'fixed' } : { tableLayout: 'fixed' }}>
-              {tableColGroup}
-              <thead>
-                <tr className="bg-muted/50">
-                  <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
-                    Персонал
-                  </th>
-                  {days.map((day) => (
-                    <th
-                      key={formatDateString(day)}
+        {isMobile ? (
+          /* ===== MOBILE LAYOUT ===== */
+          <div className="space-y-3">
+            {/* Staff navigator */}
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={mobileStaffIdx === 0}
+                onClick={() => setMobileStaffIdx(i => i - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="flex-1 text-center min-w-0">
+                {mobileStaff ? (
+                  <>
+                    <Link to={`/staff/${mobileStaff.id}`} className="font-semibold text-sm text-primary hover:underline truncate block">
+                      {mobileStaff.full_name}
+                    </Link>
+                    <div className="text-xs text-muted-foreground truncate">{mobileStaff.position}</div>
+                  </>
+                ) : (
+                  <div className="text-sm text-muted-foreground">Немає співробітників</div>
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={mobileStaffIdx >= filteredStaff.length - 1}
+                onClick={() => setMobileStaffIdx(i => i + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Monthly summary */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg border bg-card p-3 text-center">
+                <div className="text-xs text-muted-foreground mb-1">Нараховано</div>
+                <div className="font-semibold text-primary text-sm">{formatCurrency(mobileTotalAccrued)}</div>
+              </div>
+              <div className="rounded-lg border bg-card p-3 text-center">
+                <div className="text-xs text-muted-foreground mb-1">Виплачено</div>
+                <div className="font-semibold text-red-600 text-sm">{formatCurrency(mobileTotalPaid)}</div>
+              </div>
+            </div>
+
+            {/* Date strip */}
+            <div className="overflow-x-auto rounded-xl border bg-card px-2 py-2">
+              <div className="flex gap-1">
+                {days.map(day => {
+                  const dateStr = formatDateString(day);
+                  const isSelected = dateStr === mobileSelectedDate;
+                  const hasAuto = mobileStaff && getAutoCellValue(mobileStaff.id, dateStr) !== null;
+                  const hasPayout = mobileStaff && (payoutMap.get(`${mobileStaff.id}-${dateStr}`) || 0) > 0;
+                  const hasDot = hasAuto || hasPayout;
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      onClick={() => setMobileSelectedDate(dateStr)}
                       className={cn(
-                        "px-1 py-2 text-center text-xs font-medium",
-                        isWeekend(day)
-                          ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
-                          : 'text-muted-foreground'
+                        'flex flex-col items-center min-w-[40px] rounded-lg px-1 py-2 text-xs transition-colors',
+                        isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-muted',
+                        isWeekend(day) && !isSelected && 'text-muted-foreground/50'
                       )}
                     >
-                      <div>{getWeekdayShort(day)}</div>
-                      <div className="font-semibold">{formatShortDate(day)}</div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-            </table>
-          </div>
-        </div>
-        <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
-          <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto', tableLayout: 'fixed' } : { tableLayout: 'fixed' }}>
-            {tableColGroup}
-            <tbody>
-              {filteredStaff.map((staffMember) => {
-                // Get activities from pre-computed map (no hooks here!)
-                const staffActivities = staffActivitiesMap.get(staffMember.id) || [];
-                // Only show "Авто нарахування" row if staff has automatic billing rules
-                const hasAutoRates = staffHasAutoRates.has(staffMember.id);
+                      <span>{getWeekdayShort(day)}</span>
+                      <span className="font-bold text-sm leading-tight">{day.getDate()}</span>
+                      <span className={cn(
+                        'w-1.5 h-1.5 rounded-full mt-0.5',
+                        hasDot
+                          ? (isSelected ? 'bg-primary-foreground' : 'bg-primary')
+                          : 'invisible'
+                      )} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                return (
-                  <React.Fragment key={staffMember.id}>
-                    {/* Staff row with all activities combined - only if has automatic rates */}
-                    {hasAutoRates && rowTypeFilter.includes('auto') && (
-                  <tr className="border-t hover:bg-muted/20">
-                      <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
-                        <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
-                          {staffMember.full_name}
-                        </Link>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {staffMember.position}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Авто нарахування
-                        </div>
-                      </td>
-                      {days.map((day) => {
-                        const dateStr = formatDateString(day);
-                        const cellValue = getAutoCellValue(staffMember.id, dateStr);
-                        
-                        // Проверяем, является ли ставка почасовой
-                        const history = manualRateHistoryMap.get(staffMember.id);
-                        const currentRate = getStaffManualRateForDate(history, dateStr, null);
-                        const isHourly = currentRate?.manual_rate_type === 'hourly';
+            {/* Day detail card */}
+            {mobileStaff && mobileSelectedDate ? (
+              <div className="rounded-xl border bg-card p-4 space-y-4">
+                <div className="font-medium text-sm">{formatDate(mobileSelectedDate)}</div>
 
-                        return (
-                          <td
-                            key={dateStr}
-                            className={cn(
-                              "p-0.5 text-center",
-                              isWeekend(day) && WEEKEND_BG_COLOR
-                            )}
-                          >
-                            <div className={cn(
-                              "w-full h-8 text-xs rounded flex flex-col items-center justify-center",
-                              cellValue !== null ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground"
-                            )}>
-                              {cellValue !== null ? (
-                                <>
-                                  <div>{formatCurrency(cellValue.amount, false)}</div>
-                                  {isHourly && cellValue.hours !== null && (
-                                    <div className="text-[10px] text-muted-foreground/80">
-                                      {cellValue.hours.toFixed(1)} год.
-                                    </div>
-                                  )}
-                                </>
-                              ) : '—'}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                    )}
-                    {rowTypeFilter.includes('manual') && (manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
-                      <tr key={`${staffMember.id}-${manualActivity.activityId || 'null'}`} className="border-t bg-muted/10">
-                        <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
-                          <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
-                            {staffMember.full_name}
-                          </Link>
-                          {' — '}
-                          {manualActivity.name}
-                        </td>
-                        {days.map((day) =>
-                          renderManualCell(
-                            staffMember.id,
-                            manualActivity.activityId,
-                            formatDateString(day),
-                            isWeekend(day)
-                          )
-                        )}
-                      </tr>
-                    ))}
-                    {rowTypeFilter.includes('payouts') && (
-                      <tr className="border-t bg-muted/20">
-                        <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
-                          <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
-                            {staffMember.full_name}
-                          </Link>
-                          {' — Виплати'}
-                        </td>
-                        {days.map((day) => {
-                          const dateStr = formatDateString(day);
-                          const amount = payoutMap.get(`${staffMember.id}-${dateStr}`) || 0;
-                          return (
-                            <td
-                              key={dateStr}
-                              className={cn(
-                                "p-0.5 text-center text-red-600 font-medium",
-                                isWeekend(day) && WEEKEND_BG_COLOR
+                {/* Авто нарахування */}
+                {rowTypeFilter.includes('auto') && staffHasAutoRates.has(mobileStaff.id) && (() => {
+                  const val = getAutoCellValue(mobileStaff.id, mobileSelectedDate);
+                  const history = manualRateHistoryMap.get(mobileStaff.id);
+                  const rate = getStaffManualRateForDate(history, mobileSelectedDate, null);
+                  const isHourly = rate?.manual_rate_type === 'hourly';
+                  return (
+                    <div className="border-b pb-3">
+                      <div className="text-xs text-muted-foreground mb-1 font-medium">Авто нарахування</div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Нараховано</span>
+                        <span className={val ? 'font-semibold text-primary text-sm' : 'text-muted-foreground text-sm'}>
+                          {val ? (
+                            <>
+                              {formatCurrency(val.amount)}
+                              {isHourly && val.hours !== null && (
+                                <span className="text-xs text-muted-foreground ml-1">({val.hours.toFixed(1)} год.)</span>
                               )}
-                            >
-                              <button
-                                type="button"
-                                className={cn(
-                                  "w-full h-8 rounded transition-colors",
-                                  amount > 0
-                                    ? "underline decoration-dotted underline-offset-2 hover:text-red-700"
-                                    : "text-muted-foreground hover:bg-muted"
-                                )}
-                                title={amount > 0 ? "Редагувати виплати за дату" : "Додати виплату за дату"}
-                                onClick={() => openPayoutDialogForCell(staffMember.id, dateStr)}
-                              >
-                                {amount > 0 ? formatCurrency(amount, false) : '—'}
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                            </>
+                          ) : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
-        <div className="mt-4 text-sm text-muted-foreground">
-          <p>• Натисніть на клітинку для введення суми вручну</p>
-          <p>• Автоматичні нарахування з основного журналу відображаються автоматично</p>
-          <p>• Вручну введені суми мають пріоритет над автоматичними</p>
-        </div>
+                {/* Ручні нарахування */}
+                {rowTypeFilter.includes('manual') && (manualActivitiesByStaff.get(mobileStaff.id) || []).map(manualActivity => {
+                  const key = `${mobileStaff.id}-${manualActivity.activityId || 'null'}-${mobileSelectedDate}-manual`;
+                  const entry = journalMap.get(key);
+                  return (
+                    <div key={manualActivity.activityId || 'null'} className="border-b pb-3">
+                      <div className="text-xs text-muted-foreground mb-1 font-medium">{manualActivity.name}</div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Ручне нарахування</span>
+                        <span className={entry ? 'font-semibold text-primary text-sm' : 'text-muted-foreground text-sm'}>
+                          {entry ? formatCurrency((entry as any).amount) : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Виплати */}
+                {rowTypeFilter.includes('payouts') && (() => {
+                  const amount = payoutMap.get(`${mobileStaff.id}-${mobileSelectedDate}`) || 0;
+                  return (
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1 font-medium">Виплати</div>
+                      <div className="flex justify-between items-center gap-2">
+                        <span className={cn('text-sm font-semibold', amount > 0 ? 'text-red-600' : 'text-muted-foreground')}>
+                          {amount > 0 ? formatCurrency(amount) : '—'}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openPayoutDialogForCell(mobileStaff.id, mobileSelectedDate)}
+                        >
+                          {amount > 0 ? 'Редагувати' : '+ Виплата'}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+                Немає даних
+              </div>
+            )}
+          </div>
+        ) : (
+          /* ===== DESKTOP LAYOUT ===== */
+          <>
+            <div className="sticky top-16 z-30 bg-card">
+              <div ref={headerScrollRef} className="overflow-x-auto border rounded-xl border-b-0">
+                <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto', tableLayout: 'fixed' } : { tableLayout: 'fixed' }}>
+                  {tableColGroup}
+                  <thead>
+                    <tr className="bg-muted/50">
+                      <th className="sticky left-0 z-20 bg-muted/50 px-4 py-3 text-left text-sm font-medium text-muted-foreground">
+                        Персонал
+                      </th>
+                      {days.map((day) => (
+                        <th
+                          key={formatDateString(day)}
+                          className={cn(
+                            "px-1 py-2 text-center text-xs font-medium",
+                            isWeekend(day)
+                              ? `text-muted-foreground/50 ${WEEKEND_BG_COLOR}`
+                              : 'text-muted-foreground'
+                          )}
+                        >
+                          <div>{getWeekdayShort(day)}</div>
+                          <div className="font-semibold">{formatShortDate(day)}</div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                </table>
+              </div>
+            </div>
+            <div ref={bodyScrollRef} className="overflow-x-auto border rounded-xl border-t-0">
+              <table className={periodFilter === 'month' ? 'w-full border-collapse' : 'border-collapse'} style={periodFilter !== 'month' ? { width: 'auto', tableLayout: 'fixed' } : { tableLayout: 'fixed' }}>
+                {tableColGroup}
+                <tbody>
+                  {filteredStaff.map((staffMember) => {
+                    const staffActivities = staffActivitiesMap.get(staffMember.id) || [];
+                    const hasAutoRates = staffHasAutoRates.has(staffMember.id);
+
+                    return (
+                      <React.Fragment key={staffMember.id}>
+                        {hasAutoRates && rowTypeFilter.includes('auto') && (
+                          <tr className="border-t hover:bg-muted/20">
+                            <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium text-sm">
+                              <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                                {staffMember.full_name}
+                              </Link>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {staffMember.position}
+                              </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Авто нарахування
+                              </div>
+                            </td>
+                            {days.map((day) => {
+                              const dateStr = formatDateString(day);
+                              const cellValue = getAutoCellValue(staffMember.id, dateStr);
+                              const history = manualRateHistoryMap.get(staffMember.id);
+                              const currentRate = getStaffManualRateForDate(history, dateStr, null);
+                              const isHourly = currentRate?.manual_rate_type === 'hourly';
+                              return (
+                                <td
+                                  key={dateStr}
+                                  className={cn("p-0.5 text-center", isWeekend(day) && WEEKEND_BG_COLOR)}
+                                >
+                                  <div className={cn(
+                                    "w-full h-8 text-xs rounded flex flex-col items-center justify-center",
+                                    cellValue !== null ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground"
+                                  )}>
+                                    {cellValue !== null ? (
+                                      <>
+                                        <div>{formatCurrency(cellValue.amount, false)}</div>
+                                        {isHourly && cellValue.hours !== null && (
+                                          <div className="text-[10px] text-muted-foreground/80">
+                                            {cellValue.hours.toFixed(1)} год.
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : '—'}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        )}
+                        {rowTypeFilter.includes('manual') && (manualActivitiesByStaff.get(staffMember.id) || []).map((manualActivity) => (
+                          <tr key={`${staffMember.id}-${manualActivity.activityId || 'null'}`} className="border-t bg-muted/10">
+                            <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
+                              <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                                {staffMember.full_name}
+                              </Link>
+                              {' — '}
+                              {manualActivity.name}
+                            </td>
+                            {days.map((day) =>
+                              renderManualCell(
+                                staffMember.id,
+                                manualActivity.activityId,
+                                formatDateString(day),
+                                isWeekend(day)
+                              )
+                            )}
+                          </tr>
+                        ))}
+                        {rowTypeFilter.includes('payouts') && (
+                          <tr className="border-t bg-muted/20">
+                            <td className="sticky left-0 z-10 bg-card/95 px-4 py-2 text-sm text-muted-foreground">
+                              <Link to={`/staff/${staffMember.id}`} className="text-primary hover:underline">
+                                {staffMember.full_name}
+                              </Link>
+                              {' — Виплати'}
+                            </td>
+                            {days.map((day) => {
+                              const dateStr = formatDateString(day);
+                              const amount = payoutMap.get(`${staffMember.id}-${dateStr}`) || 0;
+                              return (
+                                <td
+                                  key={dateStr}
+                                  className={cn(
+                                    "p-0.5 text-center text-red-600 font-medium",
+                                    isWeekend(day) && WEEKEND_BG_COLOR
+                                  )}
+                                >
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      "w-full h-8 rounded transition-colors",
+                                      amount > 0
+                                        ? "underline decoration-dotted underline-offset-2 hover:text-red-700"
+                                        : "text-muted-foreground hover:bg-muted"
+                                    )}
+                                    title={amount > 0 ? "Редагувати виплати за дату" : "Додати виплату за дату"}
+                                    onClick={() => openPayoutDialogForCell(staffMember.id, dateStr)}
+                                  >
+                                    {amount > 0 ? formatCurrency(amount, false) : '—'}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 text-sm text-muted-foreground">
+              <p>• Натисніть на клітинку для введення суми вручну</p>
+              <p>• Автоматичні нарахування з основного журналу відображаються автоматично</p>
+              <p>• Вручну введені суми мають пріоритет над автоматичними</p>
+            </div>
+          </>
+        )}
       </div>
       <PayrollPayoutDialog
         open={payoutDialogOpen}
