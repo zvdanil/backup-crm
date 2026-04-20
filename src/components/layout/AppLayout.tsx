@@ -1,9 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Users, 
-  BookOpen, 
+import {
+  LayoutDashboard,
+  Users,
+  BookOpen,
   Calendar,
   UserCog,
   Menu,
@@ -20,7 +20,8 @@ import {
   ChevronDown,
   BookOpenCheck,
   FileText,
-  Scale
+  Scale,
+  ListChecks,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,7 @@ const referenceItems = [
   { name: 'Персонал', href: '/staff', icon: UserCog, section: 'staff' },
   { name: 'Сводний звіт', href: '/summary-report', icon: ClipboardList, section: 'summary_report' },
   { name: 'Фінансовий звіт', href: '/financial-report', icon: FileText, section: 'financial_report' },
+  { name: 'Звіт витрат', href: '/expenses-report', icon: ListChecks, section: 'expenses_report' },
   { name: 'Журнал дивідендів', href: '/dividend-journal', icon: Scale, section: 'dividend_journal' },
 ];
 

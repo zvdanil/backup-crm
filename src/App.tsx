@@ -32,6 +32,7 @@ import CalendarPage from "./pages/Calendar";
 import DebtorsRegistry from "./pages/DebtorsRegistry";
 import FinancialSummaryReport from "./pages/FinancialSummaryReport";
 import DividendJournal from "./pages/DividendJournal";
+import RealExpensesReport from "./pages/RealExpensesReport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -305,6 +306,16 @@ const AppRoutes = () => {
               allowedRoles={["owner", "admin", "viewer"]}
             >
               <DividendJournal />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses-report"
+          element={
+            <ProtectedRoute
+              allowedRoles={["owner", "admin", "viewer"]}
+            >
+              <RealExpensesReport />
             </ProtectedRoute>
           }
         />
