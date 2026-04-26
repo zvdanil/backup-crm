@@ -180,6 +180,8 @@ export interface AccountTransactionItem {
   description: string | null;
   transfer_id?: string | null;
   cash_withdrawal_id?: string | null;
+  category?: string | null;
+  student_id?: string | null;
   _source: 'finance_transaction' | 'dividend_leg';
 }
 
@@ -191,7 +193,7 @@ export function useAccountTransactions(accountId: string) {
         fetchAllRows<any>((from, to) =>
           supabaseAny
             .from('finance_transactions')
-            .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, cash_withdrawal_id, activities(is_actual_expense)')
+            .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, cash_withdrawal_id, category, student_id, activities(is_actual_expense)')
             .eq('account_id', accountId)
             .order('date', { ascending: false })
             .order('created_at', { ascending: false })
@@ -267,6 +269,8 @@ export function useAccountTransactions(accountId: string) {
           description: t.description ?? null,
           transfer_id: t.transfer_id ?? null,
           cash_withdrawal_id: t.cash_withdrawal_id ?? null,
+          category: t.category ?? null,
+          student_id: t.student_id ?? null,
           _source: 'finance_transaction',
         };
       });

@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, ArrowRightLeft, X } from 'lucide-react';
+import { ArrowLeft, Calendar, ArrowRightLeft, X, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -41,10 +41,13 @@ import { useState, useMemo } from 'react';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AccountTransferDialog } from '@/components/accounts/AccountTransferDialog';
+import { AccountIncomeDialog, ACCOUNT_INCOME_CATEGORY } from '@/components/accounts/AccountIncomeDialog';
+import type { FinanceTransaction } from '@/hooks/useFinanceTransactions';
 
 // Тільки реальні операції (income виключено — це прогноз)
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   payment: 'Оплата',
+  account_income: 'Надходження',
   expense: 'Витрата',
   salary: 'ЗП',
   household: 'Господарські',
@@ -54,6 +57,7 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 
 const TRANSACTION_TYPE_COLORS: Record<string, string> = {
   payment: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  account_income: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
   expense: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
   salary: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   household: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
@@ -231,6 +235,8 @@ export default function AccountDetail() {
   const [openingBalanceDate, setOpeningBalanceDate] = useState('');
   const [openingBalanceAmount, setOpeningBalanceAmount] = useState('');
   const [editingAdjustment, setEditingAdjustment] = useState<PaymentAccountAdjustment | null>(null);
+  const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
+  const [editingIncome, setEditingIncome] = useState<FinanceTransaction | null>(null);
 
   const { data: accounts = [] } = usePaymentAccounts();
   const account = accounts.find((a) => a.id === id);
@@ -252,7 +258,17 @@ export default function AccountDetail() {
     let filtered = transactions;
 
     if (typeFilter !== 'all') {
-      filtered = filtered.filter((t) => t.type === typeFilter);
+      if (typeFilter === 'account_income') {
+        filtered = filtered.filter(
+          (t) => t.type === 'payment' && (t as any).category === ACCOUNT_INCOME_CATEGORY
+        );
+      } else if (typeFilter === 'payment') {
+        filtered = filtered.filter(
+          (t) => t.type === 'payment' && (t as any).category !== ACCOUNT_INCOME_CATEGORY
+        );
+      } else {
+        filtered = filtered.filter((t) => t.type === typeFilter);
+      }
     }
 
     if (isPeriodSelected) {
@@ -475,10 +491,16 @@ export default function AccountDetail() {
           </div>
         }
         actions={
-          <Button variant="outline" onClick={() => setTransferDialogOpen(true)}>
-            <ArrowRightLeft className="h-4 w-4 mr-2" />
-            Перекази
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="default" onClick={() => { setEditingIncome(null); setIncomeDialogOpen(true); }}>
+              <PlusCircle className="h-4 w-4 mr-2" />
+              Надходження
+            </Button>
+            <Button variant="outline" onClick={() => setTransferDialogOpen(true)}>
+              <ArrowRightLeft className="h-4 w-4 mr-2" />
+              Перекази
+            </Button>
+          </div>
         }
       />
 
@@ -917,12 +939,16 @@ export default function AccountDetail() {
                 <TableBody>
                   {filteredTransactions.map((transaction) => {
                     const hasTransferId = !!(transaction as any).transfer_id;
+                    const isAccountIncome =
+                      transaction.type === 'payment' &&
+                      (transaction as any).category === ACCOUNT_INCOME_CATEGORY;
+                    const displayTypeKey = isAccountIncome ? 'account_income' : transaction.type;
                     // Находим перевод для этой транзакции
-                    const relatedTransfer = hasTransferId 
+                    const relatedTransfer = hasTransferId
                       ? transfers.find(t => t.id === (transaction as any).transfer_id)
                       : null;
                     const canCancel = hasTransferId && relatedTransfer && !relatedTransfer.is_cancelled;
-                    
+
                     return (
                       <TableRow key={transaction.id}>
                         <TableCell>
@@ -935,9 +961,9 @@ export default function AccountDetail() {
                           <div className="flex items-center gap-1">
                             <Badge
                               variant="outline"
-                              className={TRANSACTION_TYPE_COLORS[transaction.type] || ''}
+                              className={TRANSACTION_TYPE_COLORS[displayTypeKey] || ''}
                             >
-                              {TRANSACTION_TYPE_LABELS[transaction.type] || transaction.type}
+                              {TRANSACTION_TYPE_LABELS[displayTypeKey] || transaction.type}
                             </Badge>
                             {(transaction as any).cash_withdrawal_id && (
                               <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-900 dark:text-blue-200">
@@ -970,6 +996,32 @@ export default function AccountDetail() {
                           </span>
                         </TableCell>
                         <TableCell>
+                          {isAccountIncome && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setEditingIncome({
+                                  id: transaction.id,
+                                  type: 'payment',
+                                  date: transaction.date,
+                                  amount: transaction.amount,
+                                  description: transaction.description,
+                                  category: (transaction as any).category,
+                                  account_id: id ?? null,
+                                  student_id: null,
+                                  activity_id: null,
+                                  staff_id: null,
+                                  created_at: '',
+                                  updated_at: '',
+                                } as FinanceTransaction);
+                                setIncomeDialogOpen(true);
+                              }}
+                            >
+                              <Pencil className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                          )}
                           {canCancel && (
                             <Button
                               variant="ghost"
@@ -1081,6 +1133,18 @@ export default function AccountDetail() {
         onOpenChange={setTransferDialogOpen}
         defaultFromAccountId={id}
       />
+
+      {id && (
+        <AccountIncomeDialog
+          open={incomeDialogOpen}
+          onOpenChange={(open) => {
+            setIncomeDialogOpen(open);
+            if (!open) setEditingIncome(null);
+          }}
+          accountId={id}
+          transaction={editingIncome}
+        />
+      )}
 
       <AlertDialog open={!!cancellingTransferId} onOpenChange={() => setCancellingTransferId(null)}>
         <AlertDialogContent>

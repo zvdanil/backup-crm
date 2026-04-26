@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Landmark, MoreVertical, Pencil, Trash2 } from 'lucide-react';
+import { Landmark, MoreVertical, Pencil, Trash2, PlusCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,6 +12,7 @@ import type { PaymentAccount } from '@/hooks/usePaymentAccounts';
 import { useAccountBalance } from '@/hooks/useAccountBalances';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/attendance';
+import { AccountIncomeDialog } from './AccountIncomeDialog';
 
 interface PaymentAccountCardProps {
   account: PaymentAccount;
@@ -24,8 +26,10 @@ export function PaymentAccountCard({
   onDelete,
 }: PaymentAccountCardProps) {
   const { data: balance, isLoading: balanceLoading } = useAccountBalance(account.id);
+  const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
 
   return (
+    <>
     <Link to={`/accounts/${account.id}`} className="block">
       <div className="group rounded-xl bg-card border border-border p-5 shadow-soft hover:shadow-card transition-shadow animate-fade-in cursor-pointer">
         <div className="flex items-start justify-between">
@@ -51,7 +55,7 @@ export function PaymentAccountCard({
               {balanceLoading ? (
                 <div className="mt-2 h-4 w-20 bg-muted animate-pulse rounded" />
               ) : balance ? (
-                <div className="mt-3">
+                <div className="mt-3 space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Залишок на рахунку</span>
                     <span className={cn(
@@ -61,6 +65,19 @@ export function PaymentAccountCard({
                       {formatCurrency(balance.free_funds)}
                     </span>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIncomeDialogOpen(true);
+                    }}
+                  >
+                    <PlusCircle className="h-3.5 w-3.5 mr-1" />
+                    Надходження
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -89,5 +106,11 @@ export function PaymentAccountCard({
         </div>
       </div>
     </Link>
+    <AccountIncomeDialog
+      open={incomeDialogOpen}
+      onOpenChange={setIncomeDialogOpen}
+      accountId={account.id}
+    />
+    </>
   );
 }
