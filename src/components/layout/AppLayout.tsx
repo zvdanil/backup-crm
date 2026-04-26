@@ -172,8 +172,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[250px]">
-                <div className="flex flex-col gap-2 mt-8">
+              <SheetContent side="left" className="w-[250px] flex flex-col">
+                <div className="flex flex-col gap-2 mt-8 overflow-y-auto flex-1 pb-4">
                   {/* Основные пункты меню */}
                   {navItems.map((item) => (
                     <Link

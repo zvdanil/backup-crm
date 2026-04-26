@@ -166,6 +166,15 @@ function canEditOpeningBalance(
   return periodType === 'month';
 }
 
+function parseDateLocal(dateStr: string): Date {
+  // CLAUDE.md rule 2: YYYY-MM-DD must be parsed in local timezone, not UTC
+  const parts = dateStr?.split('-').map(Number);
+  if (parts?.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  return new Date(dateStr); // fallback for ISO timestamps
+}
+
 function inPeriod(
   dateStr: string,
   periodType: PeriodType,
@@ -176,7 +185,8 @@ function inPeriod(
   const bounds = getPeriodBounds(periodType, periodValue, customFrom, customTo);
   if (!bounds) return true;
   const [start, end] = bounds;
-  const d = new Date(dateStr);
+  const d = parseDateLocal(dateStr);
+  if (isNaN(d.getTime())) return false;
   return d >= start && d <= end;
 }
 
@@ -931,6 +941,7 @@ export default function AccountDetail() {
                   <TableRow>
                     <TableHead>Дата</TableHead>
                     <TableHead>Тип</TableHead>
+                    <TableHead>Платник</TableHead>
                     <TableHead>Опис</TableHead>
                     <TableHead className="text-right">Сума</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -971,6 +982,15 @@ export default function AccountDetail() {
                               </Badge>
                             )}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {(transaction as any).student_name ? (
+                            <span className="text-sm font-medium">
+                              {(transaction as any).student_name}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -1037,7 +1057,7 @@ export default function AccountDetail() {
                     );
                   })}
                   <TableRow className="bg-muted/50 font-semibold border-t-2">
-                    <TableCell colSpan={3} className="text-right">
+                    <TableCell colSpan={4} className="text-right">
                       Разом
                     </TableCell>
                     <TableCell className="text-right">

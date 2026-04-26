@@ -31,6 +31,8 @@ const ALL_TYPES: { value: RealExpenseType; label: string }[] = [
   { value: 'expense', label: 'Витрата' },
   { value: 'salary', label: 'Зарплата' },
   { value: 'household', label: 'Госп. витрата' },
+  { value: 'dividend', label: 'Дивіденди' },
+  { value: 'transfer', label: 'Перекази' },
 ];
 
 function toLocalDateString(date: Date): string {
@@ -316,10 +318,14 @@ export default function RealExpensesReport() {
                       </div>
 
                       {/* Fields */}
-                      {(row.category_name ?? row.activity_name) && (
+                      {(row.type === 'transfer' ? row.to_account_name : (row.category_name ?? row.activity_name)) && (
                         <div className="flex justify-between text-sm gap-4">
-                          <span className="text-muted-foreground shrink-0">Категорія</span>
-                          <span className="text-right">{row.category_name ?? row.activity_name}</span>
+                          <span className="text-muted-foreground shrink-0">
+                            {row.type === 'transfer' ? 'Отримувач' : 'Категорія'}
+                          </span>
+                          <span className="text-right">
+                            {row.type === 'transfer' ? `→ ${row.to_account_name}` : (row.category_name ?? row.activity_name)}
+                          </span>
                         </div>
                       )}
                       {row.recipient_name && (
@@ -383,7 +389,9 @@ export default function RealExpensesReport() {
                           <TableCell className="text-sm">{formatDate(row.date)}</TableCell>
                           <TableCell className="text-sm">{getOperationLabel(row)}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">
-                            {row.category_name ?? row.activity_name ?? '—'}
+                            {row.type === 'transfer' && row.to_account_name
+                              ? <span>→ {row.to_account_name}</span>
+                              : row.category_name ?? row.activity_name ?? '—'}
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                             {row.description ?? '—'}
