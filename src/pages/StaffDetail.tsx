@@ -46,6 +46,8 @@ import {
   useUpdateStaffPayout,
   useDeleteStaffPayout,
   useUpsertStaffJournalEntry,
+  useZeroOutJournalEntry,
+  useAutoFixConflictingJournalEntries,
   getStaffBillingRuleForDate,
   getStaffManualRateForDate,
   type StaffBillingRule,
@@ -254,6 +256,8 @@ export default function StaffDetail() {
   const updatePayout = useUpdateStaffPayout();
   const deletePayout = useDeleteStaffPayout();
   const upsertJournalEntry = useUpsertStaffJournalEntry();
+  const zeroOutJournalEntry = useZeroOutJournalEntry();
+  useAutoFixConflictingJournalEntries(id, allJournalEntries);
 
   // State for editing journal entries in financial calendar
   const [editingCell, setEditingCell] = useState<{
@@ -442,10 +446,38 @@ export default function StaffDetail() {
     }
   };
 
+  const effectiveAllJournalEntries = useMemo(() => {
+    const manualKeys = new Set<string>();
+    allJournalEntries.forEach((entry) => {
+      if (entry.is_manual_override) {
+        manualKeys.add(`${entry.activity_id ?? ""}:${entry.date}:${entry.group_lesson_id ?? ""}`);
+      }
+    });
+    return allJournalEntries.filter(
+      (entry) =>
+        entry.is_manual_override ||
+        !manualKeys.has(`${entry.activity_id ?? ""}:${entry.date}:${entry.group_lesson_id ?? ""}`),
+    );
+  }, [allJournalEntries]);
+
+  const effectiveJournalEntries = useMemo(() => {
+    const manualKeys = new Set<string>();
+    journalEntries.forEach((entry) => {
+      if (entry.is_manual_override) {
+        manualKeys.add(`${entry.activity_id ?? ""}:${entry.date}:${entry.group_lesson_id ?? ""}`);
+      }
+    });
+    return journalEntries.filter(
+      (entry) =>
+        entry.is_manual_override ||
+        !manualKeys.has(`${entry.activity_id ?? ""}:${entry.date}:${entry.group_lesson_id ?? ""}`),
+    );
+  }, [journalEntries]);
+
   const monthSummary = useMemo(() => {
     const startDate = getMonthStartDate(calendarYear, calendarMonth);
     const endDate = getMonthEndDate(calendarYear, calendarMonth);
-    const accrued = journalEntries.reduce(
+    const accrued = effectiveJournalEntries.reduce(
       (sum, entry) => sum + (Number(entry.amount) || 0),
       0,
     );
@@ -458,7 +490,7 @@ export default function StaffDetail() {
     const openingForMonth = staffBalancesForMonth.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
     return { accrued, paid, balance: accrued - paid + openingForMonth };
-  }, [journalEntries, payouts, staffBalancesForMonth, calendarMonth, calendarYear]);
+  }, [effectiveJournalEntries, payouts, staffBalancesForMonth, calendarMonth, calendarYear]);
 
   // Создаем Map для быстрого доступа к названиям групповых занятий
   const groupLessonsMap = useMemo(() => {
@@ -482,7 +514,7 @@ export default function StaffDetail() {
       }
     >();
 
-    journalEntries.forEach((entry) => {
+    effectiveJournalEntries.forEach((entry) => {
       const activityId = entry.activity_id || "none";
       const mode = entry.is_manual_override ? "manual" : "auto";
       const isGroup =
@@ -549,10 +581,10 @@ export default function StaffDetail() {
         // Внутри каждой группы - по алфавиту
         return a.name.localeCompare(b.name, "uk-UA");
       });
-  }, [journalEntries, activities, groupLessonsMap]);
+  }, [effectiveJournalEntries, activities, groupLessonsMap]);
 
   const totalSummary = useMemo(() => {
-    const accrued = allJournalEntries.reduce(
+    const accrued = effectiveAllJournalEntries.reduce(
       (sum, entry) => sum + (Number(entry.amount) || 0),
       0,
     );
@@ -562,14 +594,14 @@ export default function StaffDetail() {
     );
     const openingCumulative = staffBalancesCumulative.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
     return { accrued, paid, balance: accrued - paid + openingCumulative };
-  }, [allJournalEntries, payouts, staffBalancesCumulative]);
+  }, [effectiveAllJournalEntries, payouts, staffBalancesCumulative]);
 
   const payoutPeriodSummary = useMemo(() => {
     const selectedMonthKey = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}`;
     const selectedMonthEnd = getMonthEndDate(calendarYear, calendarMonth);
     const monthDue = new Map<string, number>();
 
-    allJournalEntries.forEach((entry) => {
+    effectiveAllJournalEntries.forEach((entry) => {
       if (entry.date <= selectedMonthEnd) {
         const monthKey = entry.date.slice(0, 7);
         monthDue.set(monthKey, (monthDue.get(monthKey) || 0) + (Number(entry.amount) || 0));
@@ -652,7 +684,7 @@ export default function StaffDetail() {
       selectedMonthTaggedPayouts,
     };
   }, [
-    allJournalEntries,
+    effectiveAllJournalEntries,
     calendarMonth,
     calendarYear,
     payouts,
@@ -877,10 +909,13 @@ export default function StaffDetail() {
   const handleSaveManualEntry = () => {
     if (!editingCell || !id) return;
 
-    // Extract realActivityId and mode from rowKey (editingCell.activityId is now rowKey)
+    // Extract realActivityId, mode and group_lesson_id from rowKey
+    // rowKey format: "{activityId}:{mode}:{type}[:{groupLessonId}]"
     const parts = editingCell.activityId.split(":");
     const activityIdPart = parts[0]; // "abc123" or "none"
     const mode = parts[1]; // "auto" or "manual"
+    const isGroupRow = parts[2] === "group";
+    const groupLessonIdFromKey = isGroupRow ? (parts[3] ?? null) : null;
     const realActivityId = activityIdPart === "none" ? null : activityIdPart;
     const isEditingAutoEntry = mode === "auto";
 
@@ -894,49 +929,39 @@ export default function StaffDetail() {
     const rateValue = currentRate?.manual_rate_value || 0;
 
     // Find existing auto entry (to zero out if editing auto row)
+    // Filter by group_lesson_id to target the exact entry for this row
     const existingAutoEntry = journalEntries.find(
       (entry) =>
         (entry.activity_id === realActivityId ||
           (entry.activity_id === null && realActivityId === null)) &&
         entry.date === editingCell.date &&
-        entry.is_manual_override === false,
+        entry.is_manual_override === false &&
+        (groupLessonIdFromKey
+          ? entry.group_lesson_id === groupLessonIdFromKey
+          : !entry.group_lesson_id),
     );
 
     // Find existing manual entry (to update)
+    // Filter by group_lesson_id to target the exact entry for this row
     const existingManualEntry = journalEntries.find(
       (entry) =>
         (entry.activity_id === realActivityId ||
           (entry.activity_id === null && realActivityId === null)) &&
         entry.date === editingCell.date &&
-        entry.is_manual_override === true,
+        entry.is_manual_override === true &&
+        (groupLessonIdFromKey
+          ? entry.group_lesson_id === groupLessonIdFromKey
+          : !entry.group_lesson_id),
     );
 
-    // Use manual entry for update, or auto entry if editing auto row and no manual exists
+    // Use manual entry for update, or null if editing auto row and no manual exists
     const existing =
       existingManualEntry || (isEditingAutoEntry ? null : existingAutoEntry);
 
-    // Function to zero out auto entry when creating manual override
+    // Zero out the auto entry by its exact ID — avoids duplicate insertion
     const zeroOutAutoEntry = () => {
-      if (
-        isEditingAutoEntry &&
-        existingAutoEntry &&
-        existingAutoEntry.amount !== 0
-      ) {
-        upsertJournalEntry.mutate(
-          {
-            id: existingAutoEntry.id,
-            staff_id: id,
-            activity_id: realActivityId,
-            date: editingCell.date,
-            amount: 0,
-            base_amount: existingAutoEntry.base_amount,
-            hours_worked: 0,
-            deductions_applied: existingAutoEntry.deductions_applied || [],
-            is_manual_override: false, // Keep as auto entry
-            notes: "Обнулено (є ручне коригування)",
-          },
-          {}
-        );
+      if (isEditingAutoEntry && existingAutoEntry) {
+        zeroOutJournalEntry.mutate({ entryId: existingAutoEntry.id, staffId: id });
       }
     };
 
@@ -957,6 +982,7 @@ export default function StaffDetail() {
           id: existing?.id,
           staff_id: id,
           activity_id: realActivityId,
+          group_lesson_id: groupLessonIdFromKey ?? undefined,
           date: editingCell.date,
           amount,
           base_amount: rateValue,
@@ -1003,6 +1029,7 @@ export default function StaffDetail() {
             id: existing?.id,
             staff_id: id,
             activity_id: realActivityId,
+            group_lesson_id: groupLessonIdFromKey ?? undefined,
             date: editingCell.date,
             amount: totalAmount,
             base_amount: dailyRate,
@@ -1050,6 +1077,7 @@ export default function StaffDetail() {
           id: existing?.id,
           staff_id: id,
           activity_id: realActivityId,
+          group_lesson_id: groupLessonIdFromKey ?? undefined,
           date: editingCell.date,
           amount,
           base_amount: rateValue,
@@ -1081,6 +1109,7 @@ export default function StaffDetail() {
           id: existing?.id,
           staff_id: id,
           activity_id: realActivityId,
+          group_lesson_id: groupLessonIdFromKey ?? undefined,
           date: editingCell.date,
           amount,
           base_amount: amount,
@@ -2274,7 +2303,7 @@ function FinancialCalendarTable({
                             isWeekendDay && WEEKEND_BG_COLOR,
                           )}
                         >
-                          {hasEntry || amount > 0 ? (
+                          {amount !== 0 || (activity.isManual && hasEntry) ? (
                             <Popover
                               open={isPopoverOpen || isEditing}
                               onOpenChange={(open) => {

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { getMonthStartDate, getMonthEndDate, formatLocalDate } from "@/lib/attendance";
@@ -615,6 +616,98 @@ export function useUpsertStaffJournalEntry() {
       });
     },
   });
+}
+
+// Zero out a specific journal entry by its ID (used when a manual override replaces an auto entry)
+export function useZeroOutJournalEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ entryId, staffId }: { entryId: string; staffId: string }) => {
+      const { error } = await supabase
+        .from("staff_journal_entries" as any)
+        .update({
+          amount: 0,
+          hours_worked: 0,
+          notes: "Обнулено (є ручне коригування)",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", entryId);
+
+      if (error) throw error;
+      return { staffId };
+    },
+    onSuccess: ({ staffId }) => {
+      queryClient.invalidateQueries({ queryKey: ["staff-journal-entries", staffId] });
+      queryClient.invalidateQueries({ queryKey: ["staff-journal-entries-all"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["staff-journal-entries-filtered"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["staff-journal-entries-all-cumulative"], exact: false });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Помилка обнулення автонарахування",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+}
+
+// Auto-fix historical double-counted entries: zeros out non-zero auto entries
+// that have a corresponding manual override for the same (activity, date, group_lesson_id).
+// Runs once per component mount — idempotent and silent.
+export function useAutoFixConflictingJournalEntries(
+  staffId: string | undefined,
+  allEntries: StaffJournalEntry[],
+) {
+  const queryClient = useQueryClient();
+  const hasRun = useRef(false);
+
+  useEffect(() => {
+    if (hasRun.current || !staffId || allEntries.length === 0) return;
+
+    // Collect keys where a manual override entry exists
+    const manualKeys = new Set<string>();
+    allEntries.forEach((entry) => {
+      if (entry.is_manual_override) {
+        manualKeys.add(
+          `${entry.activity_id ?? ""}:${entry.date}:${entry.group_lesson_id ?? ""}`,
+        );
+      }
+    });
+
+    // Find non-zero auto entries that conflict with a manual override
+    const conflictingAutoIds = allEntries
+      .filter(
+        (entry) =>
+          !entry.is_manual_override &&
+          Number(entry.amount) !== 0 &&
+          manualKeys.has(
+            `${entry.activity_id ?? ""}:${entry.date}:${entry.group_lesson_id ?? ""}`,
+          ),
+      )
+      .map((entry) => entry.id);
+
+    hasRun.current = true;
+    if (conflictingAutoIds.length === 0) return;
+
+    supabase
+      .from("staff_journal_entries" as any)
+      .update({
+        amount: 0,
+        hours_worked: 0,
+        notes: "Обнулено (є ручне коригування)",
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", conflictingAutoIds)
+      .then(({ error }) => {
+        if (error) return;
+        queryClient.invalidateQueries({ queryKey: ["staff-journal-entries", staffId] });
+        queryClient.invalidateQueries({ queryKey: ["staff-journal-entries-all"], exact: false });
+        queryClient.invalidateQueries({ queryKey: ["staff-journal-entries-filtered"], exact: false });
+        queryClient.invalidateQueries({ queryKey: ["staff-journal-entries-all-cumulative"], exact: false });
+      });
+  }, [staffId, allEntries, queryClient]);
 }
 
 // Delete staff journal entry
