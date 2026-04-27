@@ -138,7 +138,11 @@ export function useSetAttendance() {
         });
         throw error;
       }
-      
+
+      if (data?.id) {
+        supabaseAny.rpc('log_attendance_change', { p_record_id: data.id }).then(() => {});
+      }
+
       console.log('[Dashboard Debug] useSetAttendance.mutationFn success', {
         id: data?.id,
         enrollment_id: data?.enrollment_id,
