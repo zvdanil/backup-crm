@@ -162,6 +162,7 @@ export function EnhancedAttendanceGrid({
       year,
     });
   const queryClient = useQueryClient();
+  const enrollmentMarkQueuesRef = useRef(new Map<string, Promise<void>>());
   const attendanceFilters = useMemo(
     () => ({ activityId, month, year }),
     [activityId, month, year],
@@ -1397,6 +1398,8 @@ export function EnhancedAttendanceGrid({
       // Якщо value вже передано з компонента - використовуємо його
       // Інакше розраховуємо value на основі billing_rules
       let finalValue = value;
+      // Для subscription_with_logic: колбек завершення черги відмітки
+      let subscriptionMarkComplete: (() => void) | undefined;
 
       if (finalValue === null || finalValue === undefined) {
         // Отримуємо billing_rules для дати (з урахуванням історії)
@@ -1415,58 +1418,38 @@ export function EnhancedAttendanceGrid({
         );
 
         if (customStatus) {
-          // Рахуємо кількість відвідувань з цим статусом за місяць ДО поточної дати
-          // ВАЖЛИВО: використовуємо attendanceData з бази + оптимістичні оновлення
-          const dateParts = date.split("-").map(Number);
-          const dateObj = new Date(
-            dateParts[0],
-            dateParts[1] - 1,
-            dateParts[2],
+          // Послідовна черга на enrollment: попереджає race condition при паралельних відмітках.
+          // Кожна наступна відмітка чекає завершення попередньої (mutateAsync + onSuccess refetch),
+          // тому читає свіжий кеш і отримує правильний visitCountBefore.
+          const prevQueue =
+            enrollmentMarkQueuesRef.current.get(enrollmentId) ??
+            Promise.resolve();
+          const thisMarkDone = new Promise<void>(
+            (resolve) => { subscriptionMarkComplete = resolve; },
           );
-          const monthStart = new Date(
-            dateObj.getFullYear(),
-            dateObj.getMonth(),
-            1,
+          enrollmentMarkQueuesRef.current.set(
+            enrollmentId,
+            prevQueue.catch(() => {}).then(() => thisMarkDone),
           );
+          await prevQueue.catch(() => {});
 
-          // Спочатку рахуємо з attendanceData (завантажені з бази)
-          attendanceData.forEach((att: any) => {
+          // Читаємо свіжий кеш: onSuccess попередньої відмітки вже викликав refetchQueries
+          const freshCacheData =
+            (queryClient.getQueryData([
+              "attendance",
+              attendanceFilters,
+            ]) as any[]) ?? attendanceData;
+
+          const [dy, dm, dd] = date.split("-").map(Number);
+          const dateObj = new Date(dy, dm - 1, dd);
+          const monthStart = new Date(dy, dm - 1, 1);
+
+          freshCacheData.forEach((att: any) => {
             if (att.enrollment_id !== enrollmentId) return;
             if (att.status !== status) return;
-            const attDate = new Date(att.date);
-            if (attDate >= monthStart && attDate < dateObj) {
-              visitCountBefore++;
-            }
-          });
-
-          // Потім додаємо оптимістичні оновлення з attendanceMap (які ще не збережені в базі)
-          attendanceMap.forEach((att, key) => {
-            // Перевіряємо що це той самий enrollment
-            if (!key.startsWith(`${enrollmentId}-`)) return;
-            // Перевіряємо що статус співпадає
-            if (att.status !== status) return;
-            // Перевіряємо що дата в межах місяця і ДО поточної
-            const attDateParts = key
-              .split("-")
-              .slice(1)
-              .join("-")
-              .split("-")
-              .map(Number);
-            const attDate = new Date(
-              attDateParts[0],
-              attDateParts[1] - 1,
-              attDateParts[2],
-            );
-            // Перевіряємо що ця запис ще не врахована в attendanceData
-            const alreadyCounted = attendanceData.some(
-              (attData: any) =>
-                attData.enrollment_id === enrollmentId &&
-                attData.date === key.split("-").slice(1).join("-") &&
-                attData.status === status,
-            );
-            if (!alreadyCounted && attDate >= monthStart && attDate < dateObj) {
-              visitCountBefore++;
-            }
+            const [ay, am, ad] = att.date.split("-").map(Number);
+            const attDate = new Date(ay, am - 1, ad);
+            if (attDate >= monthStart && attDate < dateObj) visitCountBefore++;
           });
         }
 
@@ -1566,6 +1549,8 @@ export function EnhancedAttendanceGrid({
               : "Не вдалося оновити фінансові дані після зміни відмітки",
           variant: "destructive",
         });
+      } finally {
+        subscriptionMarkComplete?.();
       }
     }
   };
