@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { AccountTransferDialog } from '@/components/accounts/AccountTransferDialog';
 import { AccountIncomeDialog, ACCOUNT_INCOME_CATEGORY } from '@/components/accounts/AccountIncomeDialog';
 import type { FinanceTransaction } from '@/hooks/useFinanceTransactions';
+import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu';
 
 // Тільки реальні операції (income виключено — це прогноз)
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
@@ -848,7 +849,8 @@ export default function AccountDetail() {
                   </TableHeader>
                   <TableBody>
                     {filteredTransfers.map((transfer) => (
-                      <TableRow key={transfer.id}>
+                      <RecordInfoContextMenu key={transfer.id} tableName="account_transfers" recordId={transfer.id}>
+                      <TableRow>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -898,6 +900,7 @@ export default function AccountDetail() {
                           )}
                         </TableCell>
                       </TableRow>
+                      </RecordInfoContextMenu>
                     ))}
                   </TableBody>
                 </Table>
@@ -961,7 +964,8 @@ export default function AccountDetail() {
                     const canCancel = hasTransferId && relatedTransfer && !relatedTransfer.is_cancelled;
 
                     return (
-                      <TableRow key={transaction.id}>
+                      <RecordInfoContextMenu key={transaction.id} tableName="finance_transactions" recordId={transaction.id}>
+                      <TableRow>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -1054,6 +1058,7 @@ export default function AccountDetail() {
                           )}
                         </TableCell>
                       </TableRow>
+                      </RecordInfoContextMenu>
                     );
                   })}
                   <TableRow className="bg-muted/50 font-semibold border-t-2">

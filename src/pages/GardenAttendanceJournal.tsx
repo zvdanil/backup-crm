@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { GardenAttendanceCell } from '@/components/attendance/GardenAttendanceCell';
+import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu';
 import { useEnrollments } from '@/hooks/useEnrollments';
 import { useActivities } from '@/hooks/useActivities';
 import { useGroups } from '@/hooks/useGroups';
@@ -267,11 +268,12 @@ export default function GardenAttendanceJournal() {
 
   // Create attendance map
   const attendanceMap = useMemo(() => {
-    const map = new Map<string, { status: AttendanceStatus | null; amount: number; value: number | null }>();
+    const map = new Map<string, { id: string | undefined; status: AttendanceStatus | null; amount: number; value: number | null }>();
     if (!attendanceData || !Array.isArray(attendanceData)) return map;
     attendanceData.forEach((a: any) => {
       const key = `${a.enrollment_id}-${a.date}`;
       map.set(key, {
+        id: a.id,
         status: a.status,
         amount: a.charged_amount || 0,
         value: a.value || null
@@ -284,7 +286,7 @@ export default function GardenAttendanceJournal() {
   const attendanceMapWithOptimistic = useMemo(() => {
     const merged = new Map(attendanceMap);
     optimisticOverrides.forEach((val, key) => {
-      merged.set(key, { ...val, value: null });
+      merged.set(key, { ...val, id: undefined, value: null });
     });
     return merged;
   }, [attendanceMap, optimisticOverrides]);
@@ -1202,6 +1204,7 @@ export default function GardenAttendanceJournal() {
                               </span>
                             )}
                           </div>
+                          <RecordInfoContextMenu tableName="attendance" recordId={attendance?.id} mode="last_changed" asChild={false}>
                           <GardenAttendanceCell
                             status={attendance?.status || null}
                             amount={attendance?.amount || null}
@@ -1209,6 +1212,7 @@ export default function GardenAttendanceJournal() {
                             isWeekend={selectedDay ? isWeekend(selectedDay) : false}
                             onChange={handleCellChange(enrollment.id, enrollment.student_id, selectedDateStr)}
                           />
+                          </RecordInfoContextMenu>
                         </div>
                       </div>
                     );
@@ -1245,6 +1249,7 @@ export default function GardenAttendanceJournal() {
                             </span>
                           )}
                         </div>
+                        <RecordInfoContextMenu tableName="attendance" recordId={attendance?.id} mode="last_changed" asChild={false}>
                         <GardenAttendanceCell
                           status={attendance?.status || null}
                           amount={attendance?.amount || null}
@@ -1252,6 +1257,7 @@ export default function GardenAttendanceJournal() {
                           isWeekend={selectedDay ? isWeekend(selectedDay) : false}
                           onChange={handleCellChange(enrollment.id, enrollment.student_id, selectedDateStr)}
                         />
+                        </RecordInfoContextMenu>
                       </div>
                     </div>
                   );
@@ -1430,8 +1436,8 @@ export default function GardenAttendanceJournal() {
                               const attendance = attendanceMapWithOptimistic.get(key);
                               
                               return (
+                                <RecordInfoContextMenu key={dateStr} tableName="attendance" recordId={attendance?.id} mode="last_changed">
                                 <td
-                                  key={dateStr}
                                   className={cn(
                                     "p-1 text-center border-l-2 border-border/50",
                                     isWeekend(day) && WEEKEND_BG_COLOR
@@ -1445,6 +1451,7 @@ export default function GardenAttendanceJournal() {
                                     onChange={handleCellChange(enrollment.id, enrollment.student_id, dateStr)}
                                   />
                                 </td>
+                                </RecordInfoContextMenu>
                               );
                             })}
                           </tr>
@@ -1452,7 +1459,7 @@ export default function GardenAttendanceJournal() {
                       </React.Fragment>
                     );
                   })}
-                  
+
                   {/* Children without group */}
                   {groupedEnrollments.noGroupEnrollments.length > 0 && (
                     <React.Fragment>
@@ -1491,8 +1498,8 @@ export default function GardenAttendanceJournal() {
                             const attendance = attendanceMapWithOptimistic.get(key);
                             
                             return (
+                            <RecordInfoContextMenu key={dateStr} tableName="attendance" recordId={attendance?.id} mode="last_changed">
                             <td
-                                key={dateStr}
                                 className={cn(
                                 "p-1 text-center border-l-2 border-border/50",
                                   isWeekend(day) && WEEKEND_BG_COLOR
@@ -1506,6 +1513,7 @@ export default function GardenAttendanceJournal() {
                                   onChange={handleCellChange(enrollment.id, enrollment.student_id, dateStr)}
                                 />
                               </td>
+                            </RecordInfoContextMenu>
                             );
                           })}
                         </tr>

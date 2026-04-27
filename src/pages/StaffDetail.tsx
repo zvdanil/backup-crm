@@ -115,6 +115,7 @@ import { useCommissionEntry, useCommissionsForSalaryTransactions } from "@/hooks
 import { useExpenseCategories } from "@/hooks/useExpenseCategories";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { RecordInfoContextMenu } from "@/components/shared/RecordInfoContextMenu";
 
 const MONTH_NAMES_UA = [
   "Січень",
@@ -1667,7 +1668,8 @@ export default function StaffDetail() {
                             : null;
 
                         return (
-                          <TableRow key={rule.id}>
+                          <RecordInfoContextMenu key={rule.id} tableName="staff_billing_rules" recordId={rule.id}>
+                          <TableRow>
                             <TableCell>
                               {rule.activity_id ? (
                                 <Badge variant="outline" className="bg-blue-50">
@@ -1732,6 +1734,7 @@ export default function StaffDetail() {
                               </Button>
                             </TableCell>
                           </TableRow>
+                          </RecordInfoContextMenu>
                         );
                       })}
                     </TableBody>
@@ -1764,7 +1767,8 @@ export default function StaffDetail() {
                     </TableHeader>
                     <TableBody>
                       {manualRateHistory.map((entry) => (
-                        <TableRow key={entry.id}>
+                        <RecordInfoContextMenu key={entry.id} tableName="staff_manual_rate_history" recordId={entry.id}>
+                        <TableRow>
                           <TableCell>
                             {entry.activity_id ? (
                               <Badge variant="outline" className="bg-blue-50">
@@ -1808,6 +1812,7 @@ export default function StaffDetail() {
                             </Button>
                           </TableCell>
                         </TableRow>
+                        </RecordInfoContextMenu>
                       ))}
                     </TableBody>
                   </Table>
@@ -2296,8 +2301,8 @@ function FinancialCalendarTable({
                       const isWeekendDay = isWeekend(date);
 
                       return (
+                        <RecordInfoContextMenu key={dateStr} tableName="staff_journal_entries" recordId={entry?.id}>
                         <TableCell
-                          key={dateStr}
                           className={cn(
                             "text-center p-0.5",
                             isWeekendDay && WEEKEND_BG_COLOR,
@@ -3181,6 +3186,7 @@ function FinancialCalendarTable({
                             </Popover>
                           )}
                         </TableCell>
+                        </RecordInfoContextMenu>
                       );
                     })}
                   </TableRow>
@@ -3257,9 +3263,13 @@ function FinancialCalendarTable({
                     <span className="text-muted-foreground">—</span>
                   );
 
+                const lastPayoutId = amount > 0
+                  ? (payouts.filter((p: any) => p.payout_date === dateStr).at(-1)?.id ?? null)
+                  : null;
+
                 return (
+                  <RecordInfoContextMenu key={dateStr} tableName="staff_payouts" recordId={lastPayoutId}>
                   <TableCell
-                    key={dateStr}
                     className={cn(
                       "text-center cursor-pointer hover:bg-primary/10",
                       isWeekend(date) && WEEKEND_BG_COLOR,
@@ -3304,6 +3314,7 @@ function FinancialCalendarTable({
                       cellContent
                     )}
                   </TableCell>
+                  </RecordInfoContextMenu>
                 );
               })}
             </TableRow>

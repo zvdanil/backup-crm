@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { RecordInfoContextMenu } from "@/components/shared/RecordInfoContextMenu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -216,8 +217,8 @@ export function PayrollPayoutDialog({
                 const salTxId = salaryTxByPayoutId.get(payout.id);
                 const comm = salTxId ? commissionsMap.get(salTxId) : undefined;
                 return (
+                  <RecordInfoContextMenu key={payout.id} tableName="staff_payouts" recordId={payout.id}>
                   <div
-                    key={payout.id}
                     className="flex items-center justify-between gap-2 rounded-md border p-2 text-sm"
                   >
                     <div className="min-w-0">
@@ -259,6 +260,7 @@ export function PayrollPayoutDialog({
                       </Button>
                     </div>
                   </div>
+                  </RecordInfoContextMenu>
                 );
               })}
             </div>

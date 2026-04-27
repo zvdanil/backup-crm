@@ -44,6 +44,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
+import { RecordInfoContextMenu } from "@/components/shared/RecordInfoContextMenu";
 
 const MONTHS_TITLE = [
   "Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень",
@@ -522,7 +523,8 @@ export function StudentPaymentHistory({
                   : null;
 
                 return (
-                  <TableRow key={payment.id}>
+                  <RecordInfoContextMenu key={payment.id} tableName="finance_transactions" recordId={payment.id}>
+                  <TableRow>
                     <TableCell className="text-muted-foreground">
                       {formatDate(payment.date)}
                     </TableCell>
@@ -576,6 +578,7 @@ export function StudentPaymentHistory({
                       </TableCell>
                     )}
                   </TableRow>
+                  </RecordInfoContextMenu>
                 );
               })}
             </TableBody>

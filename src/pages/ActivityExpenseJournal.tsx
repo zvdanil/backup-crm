@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { resolvePayrollPayoutPrefill, type ResolvedPayrollPayoutPrefill } from '@/lib/payrollPayoutContract';
 import { toast } from '@/hooks/use-toast';
+import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -1438,7 +1439,8 @@ export default function ActivityExpenseJournal() {
                                   ? accounts.find(a => a.id === activity.account_id)?.name || 'Без рахунку'
                                   : 'Без рахунку');
                             return (
-                              <TableRow key={t.id}>
+                              <RecordInfoContextMenu key={t.id} tableName="finance_transactions" recordId={t.id}>
+                              <TableRow>
                                 <TableCell className="text-sm">{formatDate(t.date)}</TableCell>
                                 {isSalary && (
                                   <TableCell className="text-sm">
@@ -1580,6 +1582,7 @@ export default function ActivityExpenseJournal() {
                                   </div>
                                 </TableCell>
                               </TableRow>
+                              </RecordInfoContextMenu>
                             );
                           })}
                         </TableBody>

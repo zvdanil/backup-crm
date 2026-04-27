@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EnhancedAttendanceCell } from "./EnhancedAttendanceCell";
+import { RecordInfoContextMenu } from "@/components/shared/RecordInfoContextMenu";
 import {
   useEnrollments,
   useCreateEnrollment,
@@ -358,6 +359,7 @@ export function EnhancedAttendanceGrid({
     const map = new Map<
       string,
       {
+        id: string | undefined;
         status: AttendanceStatus | null;
         amount: number;
         value: number | null;
@@ -369,6 +371,7 @@ export function EnhancedAttendanceGrid({
     attendanceData.forEach((a: any) => {
       const key = `${a.enrollment_id}-${a.date}`;
       map.set(key, {
+        id: a.id,
         status: a.status,
         amount: a.charged_amount || 0,
         value: a.value ?? null,
@@ -859,6 +862,7 @@ export function EnhancedAttendanceGrid({
           );
 
           optimisticMap.set(key, {
+            id: undefined,
             status: "present",
             amount: chargedAmount,
             value: calculatedValue,
@@ -2153,6 +2157,7 @@ export function EnhancedAttendanceGrid({
                                 {totals.absent} · Σ: {totals.values}
                               </p>
                             </div>
+                            <RecordInfoContextMenu tableName="attendance" recordId={attendance?.id} mode="last_changed" asChild={false}>
                             <EnhancedAttendanceCell
                               status={attendance?.status || null}
                               amount={attendance?.amount || 0}
@@ -2184,6 +2189,7 @@ export function EnhancedAttendanceGrid({
                               activity={activity}
                               priceHistory={priceHistory}
                             />
+                            </RecordInfoContextMenu>
                           </div>
                         </div>
                       );
@@ -2244,6 +2250,7 @@ export function EnhancedAttendanceGrid({
                             {totals.absent} · Σ: {totals.values}
                           </p>
                         </div>
+                        <RecordInfoContextMenu tableName="attendance" recordId={attendance?.id} mode="last_changed" asChild={false}>
                         <EnhancedAttendanceCell
                           status={attendance?.status || null}
                           amount={attendance?.amount || 0}
@@ -2275,6 +2282,7 @@ export function EnhancedAttendanceGrid({
                           activity={activity}
                           priceHistory={priceHistory}
                         />
+                        </RecordInfoContextMenu>
                       </div>
                     </div>
                   );
@@ -2562,8 +2570,8 @@ export function EnhancedAttendanceGrid({
                                 const attendance = attendanceMap.get(key);
 
                                 return (
+                                  <RecordInfoContextMenu key={dateStr} tableName="attendance" recordId={attendance?.id} mode="last_changed">
                                   <td
-                                    key={dateStr}
                                     className={cn(
                                       "p-0.5 text-center",
                                       isWeekend(day) && WEEKEND_BG_COLOR,
@@ -2601,6 +2609,7 @@ export function EnhancedAttendanceGrid({
                                       priceHistory={priceHistory}
                                     />
                                   </td>
+                                  </RecordInfoContextMenu>
                                 );
                               })}
                               <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">
@@ -2684,8 +2693,8 @@ export function EnhancedAttendanceGrid({
                             const attendance = attendanceMap.get(key);
 
                             return (
+                              <RecordInfoContextMenu key={dateStr} tableName="attendance" recordId={attendance?.id} mode="last_changed">
                               <td
-                                key={dateStr}
                                 className={cn(
                                   "p-0.5 text-center",
                                   isWeekend(day) && WEEKEND_BG_COLOR,
@@ -2721,6 +2730,7 @@ export function EnhancedAttendanceGrid({
                                   priceHistory={priceHistory}
                                 />
                               </td>
+                              </RecordInfoContextMenu>
                             );
                           })}
                           <td className="sticky right-0 z-10 bg-card px-2 py-2 text-xs text-center">

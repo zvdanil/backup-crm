@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { Student } from '@/hooks/useStudents';
 import { Link } from 'react-router-dom';
+import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu';
 
 interface StudentCardProps {
   student: Student;
@@ -21,6 +22,7 @@ export function StudentCard({ student, onEdit, onDelete }: StudentCardProps) {
     : null;
 
   return (
+    <RecordInfoContextMenu tableName="students" recordId={student.id}>
     <div className="group rounded-xl bg-card border border-border p-5 shadow-soft hover:shadow-card transition-shadow animate-fade-in">
       <div className="flex items-start justify-between">
         <Link to={`/students/${student.id}`} className="flex items-center gap-3 hover:opacity-80">
@@ -80,5 +82,6 @@ export function StudentCard({ student, onEdit, onDelete }: StudentCardProps) {
         </div>
       )}
     </div>
+    </RecordInfoContextMenu>
   );
 }

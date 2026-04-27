@@ -12,6 +12,7 @@ import { useActivityPriceHistory } from '@/hooks/useActivities';
 import type { Activity } from '@/hooks/useActivities';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -35,6 +36,7 @@ export function ActivityCard({ activity, enrolledCount = 0, onEdit, onDelete }: 
   }, [activity, priceHistory, currentDate]);
   
   return (
+    <RecordInfoContextMenu tableName="activities" recordId={activity.id}>
     <div className="group rounded-xl bg-card border border-border p-5 shadow-soft hover:shadow-card transition-shadow animate-fade-in">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
@@ -100,5 +102,6 @@ export function ActivityCard({ activity, enrolledCount = 0, onEdit, onDelete }: 
         )}
       </div>
     </div>
+    </RecordInfoContextMenu>
   );
 }

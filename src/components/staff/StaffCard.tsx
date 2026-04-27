@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Link } from 'react-router-dom';
 import type { Staff } from '@/hooks/useStaff';
+import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu';
 
 interface StaffCardProps {
   staff: Staff;
@@ -17,6 +18,7 @@ interface StaffCardProps {
 
 export function StaffCard({ staff, onEdit, onDelete }: StaffCardProps) {
   return (
+    <RecordInfoContextMenu tableName="staff" recordId={staff.id}>
     <div className="group rounded-xl bg-card border border-border p-5 shadow-soft hover:shadow-card transition-shadow animate-fade-in">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
@@ -63,5 +65,6 @@ export function StaffCard({ staff, onEdit, onDelete }: StaffCardProps) {
         </div>
       )}
     </div>
+    </RecordInfoContextMenu>
   );
 }

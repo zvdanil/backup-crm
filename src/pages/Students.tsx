@@ -40,6 +40,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { RecordInfoContextMenu } from "@/components/shared/RecordInfoContextMenu";
 
 export default function Students() {
   const [search, setSearch] = useState("");
@@ -304,6 +305,7 @@ export default function Students() {
 
                     {filteredStudents.map((student) => (
                       <div key={student.id} className="contents">
+                        <RecordInfoContextMenu tableName="students" recordId={student.id}>
                         <div className="px-4 py-3 border-b bg-card sticky left-0 z-20">
                           <Link
                             to={`/students/${student.id}`}
@@ -317,6 +319,7 @@ export default function Students() {
                             </div>
                           )}
                         </div>
+                        </RecordInfoContextMenu>
                         {activeActivities.map((activity) => {
                           const enrollment = enrollmentMap.get(
                             `${student.id}:${activity.id}`,
