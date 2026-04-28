@@ -92,6 +92,7 @@ export default function ActivityExpenseJournal() {
   const [sortBy, setSortBy] = useState<'date' | 'staff' | 'amount'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
   const [articleDialogOpen, setArticleDialogOpen] = useState(false);
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
   const [articleName, setArticleName] = useState('');
@@ -1145,7 +1146,7 @@ export default function ActivityExpenseJournal() {
             <div className="text-2xl font-semibold text-destructive">{formatCurrency(totalAmount)}</div>
           </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
               <Button
                 variant={filterCategoryId === 'all' ? 'default' : 'outline'}
                 size="sm"
@@ -1170,6 +1171,14 @@ export default function ActivityExpenseJournal() {
                   {c.name}
                 </Button>
               ))}
+              <div className="w-px h-5 bg-border self-center" />
+              <Button
+                variant={viewMode === 'flat' ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode(v => v === 'flat' ? 'grouped' : 'flat')}
+              >
+                Всі записи
+              </Button>
             </div>
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               {isSalary && (
@@ -1224,15 +1233,21 @@ export default function ActivityExpenseJournal() {
           </div>
         ) : (
           <div className="space-y-4">
-            {Array.from(groupedByCategory.entries()).map(([key, items]) => {
+            {(viewMode === 'flat'
+              ? [{ key: '__flat__', items: filteredTransactions }]
+              : Array.from(groupedByCategory.entries()).map(([key, items]) => ({ key, items }))
+            ).map(({ key, items }) => {
+              const isFlat = viewMode === 'flat';
               const categoryName = key === 'none' ? 'Без категорії' : (categoriesMap.get(key) || 'Без категорії');
               const groupTotal = items.reduce((sum, t) => sum + (t.amount || 0), 0);
               return (
                 <div key={key} className="rounded-xl border bg-card">
+                  {!isFlat && (
                   <div className="flex items-center justify-between border-b px-4 py-2 text-sm font-semibold">
                     <span>{categoryName}</span>
                     <span className="text-destructive">{formatCurrency(groupTotal)}</span>
                   </div>
+                  )}
                   {isMobile ? (
                     /* ===== MOBILE: card list ===== */
                     <div className="divide-y">
@@ -1264,6 +1279,12 @@ export default function ActivityExpenseJournal() {
                             </div>
 
                             {/* Fields */}
+                            {isFlat && (
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">Категорія</span>
+                                <span>{t.expense_category_id ? (categoriesMap.get(t.expense_category_id) || 'Без категорії') : 'Без категорії'}</span>
+                              </div>
+                            )}
                             {isActualExpense && (
                               <div className="flex justify-between text-sm">
                                 <span className="text-muted-foreground">Рахунок</span>
@@ -1417,6 +1438,7 @@ export default function ActivityExpenseJournal() {
                                 </Button>
                               </TableHead>
                             )}
+                            {isFlat && <TableHead className="w-[160px]">Категорія</TableHead>}
                             <TableHead>Опис</TableHead>
                             {(isActualExpense || isSalary) && <TableHead className="w-[180px]">Рахунок</TableHead>}
                             <TableHead className="w-[120px]">
@@ -1445,6 +1467,11 @@ export default function ActivityExpenseJournal() {
                                 {isSalary && (
                                   <TableCell className="text-sm">
                                     {t.staff_id ? (staff.find(s => s.id === t.staff_id)?.full_name || '—') : '—'}
+                                  </TableCell>
+                                )}
+                                {isFlat && (
+                                  <TableCell className="text-sm text-muted-foreground">
+                                    {t.expense_category_id ? (categoriesMap.get(t.expense_category_id) || 'Без категорії') : 'Без категорії'}
                                   </TableCell>
                                 )}
                                 <TableCell>
