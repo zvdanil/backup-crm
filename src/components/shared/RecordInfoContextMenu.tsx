@@ -91,25 +91,31 @@ export function RecordInfoContextMenu({ tableName: _tableName, recordId, mode = 
   const { role } = useAuth();
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  if ((role !== 'owner' && role !== 'admin') || !recordId) {
+  // Non-privileged users: pass children through directly.
+  if (role !== 'owner' && role !== 'admin') {
     return <>{children}</>;
   }
 
+  // For owner/admin: always render the ContextMenu wrapper regardless of recordId.
+  // This keeps children structurally stable so they don't remount when a record is
+  // created or deleted (e.g., switching between status "П" and a numeric value).
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild={useAsChild}>{children}</ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem
-            className="flex items-center gap-2"
-            onSelect={() => setDialogOpen(true)}
-          >
-            <Info className="h-4 w-4" />
-            Інфо
-          </ContextMenuItem>
-        </ContextMenuContent>
+        {recordId && (
+          <ContextMenuContent>
+            <ContextMenuItem
+              className="flex items-center gap-2"
+              onSelect={() => setDialogOpen(true)}
+            >
+              <Info className="h-4 w-4" />
+              Інфо
+            </ContextMenuItem>
+          </ContextMenuContent>
+        )}
       </ContextMenu>
-      {dialogOpen && (
+      {dialogOpen && recordId && (
         <RecordInfoDialog
           recordId={recordId}
           mode={mode}

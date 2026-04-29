@@ -88,6 +88,7 @@ export function EnhancedAttendanceCell({
   const [notes, setNotes] = useState<string>(notesProp || "");
   const inputRef = useRef<HTMLInputElement>(null);
   const justAutoSetRef = useRef(false);
+  const switchingToNumberRef = useRef(false);
 
   // Синхронізуємо inputValue та notes з пропсами
   useEffect(() => {
@@ -200,6 +201,7 @@ export function EnhancedAttendanceCell({
   };
 
   const handleInputFocus = () => {
+    switchingToNumberRef.current = false;
     setIsEditing(true);
     // Якщо поле зі статусом - очищаємо його для вводу числа (якщо користувач починає вводити)
     if (status) {
@@ -213,6 +215,7 @@ export function EnhancedAttendanceCell({
   const handleInputClick = (e: React.MouseEvent<HTMLInputElement>) => {
     // Якщо клікаємо по порожній клітинці - одразу ставимо "Присутній" без поповера
     if (
+      !switchingToNumberRef.current &&
       !status &&
       (value === null || value === undefined || value === 0) &&
       inputValue === ""
@@ -624,6 +627,7 @@ export function EnhancedAttendanceCell({
             onClick={() => {
               // Якщо вибираємо "Число" - очищаємо статус і дозволяємо ввести число
               // Але зберігаємо коментар!
+              switchingToNumberRef.current = true;
               onChange(null, null, notes || null);
               setInputValue("");
               setIsEditing(true);
