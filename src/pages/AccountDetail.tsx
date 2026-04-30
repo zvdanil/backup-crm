@@ -48,6 +48,7 @@ import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu
 // Тільки реальні операції (income виключено — це прогноз)
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   payment: 'Оплата',
+  cash_in: 'Вивід готівки',
   account_income: 'Надходження',
   expense: 'Витрата',
   salary: 'ЗП',
@@ -58,6 +59,7 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 
 const TRANSACTION_TYPE_COLORS: Record<string, string> = {
   payment: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+  cash_in: 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200',
   account_income: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
   expense: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
   salary: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',

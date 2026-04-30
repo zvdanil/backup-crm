@@ -16,13 +16,20 @@ export interface MonthlyFinancialData {
   projectedIncome: number; // Прогноз дохода
   projectedExpense: number; // Прогноз расхода
   actualIncome: number; // Реальный доход
-  actualExpense: number; // Реальный расход
+  actualExpense: number; // Оборот по всім витратам (включно з дивідендами)
+  transferExpense: number; // Перекази між рахунками
+  businessExpense: number; // Реальні витрати: зарплата + журнали затрат (без дивідендів і виводу коштів)
+  delta: number; // Реальний дохід − Реальні витрати
+  dividendExpense: number; // Виведено дивідендів
+  cashWithdrawal: number; // Вивід коштів (витрати з cash_withdrawal_id)
+  expenseWithoutDividends: number; // Оборот по витратах без дівідендів
   expectedBalance: number; // projectedIncome - projectedExpense
   actualBalance: number; // actualIncome - actualExpense
-  difference: number; // actualBalance - expectedBalance
-  cumulativeDifference: number; // Накопительное отклонение
-  accountBalance: number; // Накопительный остаток (с учетом начального остатка)
-  initialBalance?: number; // Остаток на начало периода (только для отдельных счетов)
+  difference: number; // actualBalance - expectedBalance (не відображається)
+  cumulativeDifference: number; // Накопичене відхилення (не відображається)
+  accountBalance: number; // Залишок на рахунку (накопичений, з opening_balance)
+  accountBalanceWithoutDividends: number; // Баланс без дивідендів (накопичений)
+  initialBalance?: number; // Залишок на початок місяця (тільки для окремих рахунків)
 }
 
 interface UseFinancialSummaryReportParams {
@@ -125,8 +132,22 @@ export function useFinancialSummaryReport({
       const results: MonthlyFinancialData[] = [];
       // Накопительные показатели считаются только в рамках выбранного периода
       let cumulativeDifference = 0;
+
+      // Сума opening_balance_amount по рахунках, чия дата відкриття — до початку звітного періоду.
+      // Це виправляє розбіжність між звітом і карткою рахунку: картка завжди включає opening_balance.
+      const initialOpeningBalance = (accounts || []).reduce((sum: number, acc: any) => {
+        if (!matchesAccount(acc.id)) return sum;
+        const dateVal = acc.opening_balance_date;
+        const amountVal = Number(acc.opening_balance_amount || 0);
+        if (!dateVal || dateVal < reportStart) {
+          return sum + amountVal;
+        }
+        return sum;
+      }, 0);
+
       // Перенос залишку: баланс на кінець попереднього місяця = початок поточного
-      let accountBalance = 0;
+      let accountBalance = initialOpeningBalance;
+      let accountBalanceWithoutDividends = initialOpeningBalance;
 
       // Сума внесених залишків на рахунках для місяця (дата внесённого остатка в цьому місяці)
       const getOpeningBalanceForMonth = (startDate: string, endDate: string): number =>
@@ -151,7 +172,7 @@ export function useFinancialSummaryReport({
           supabaseAny
             .from('finance_transactions')
             .select('amount, account_id')
-            .eq('type', 'payment')
+            .in('type', ['payment', 'cash_in'])
             .lt('date', monthStartDate)
             .range(from, to)
         );
@@ -248,8 +269,20 @@ export function useFinancialSummaryReport({
         }, 0);
 
         const preMonthActualExpense = preMonthSalaryPayoutTotal + preMonthActualExpenseTotal + preMonthDirectExpenseTotal + preMonthTransferExpenseTotal + preMonthDividendTotal;
-        // Тільки перенос: дохід до місяця − витрати до місяця (внесені залишки додаються в циклі по місяцях)
-        return preMonthIncome - preMonthActualExpense;
+
+        // Додаємо opening_balance_amount для рахунків, чия дата — до початку місяця (або не вказана).
+        // Без цього залишок у звіті не збігається з карткою рахунку.
+        const preMonthOpeningBalance = (accounts || []).reduce((sum: number, acc: any) => {
+          if (!matchesAccount(acc.id)) return sum;
+          const dateVal = acc.opening_balance_date;
+          const amountVal = Number(acc.opening_balance_amount || 0);
+          if (!dateVal || dateVal < monthStartDate) {
+            return sum + amountVal;
+          }
+          return sum;
+        }, 0);
+
+        return preMonthIncome - preMonthActualExpense + preMonthOpeningBalance;
       };
 
       // Обрабатываем каждый месяц
@@ -282,10 +315,13 @@ export function useFinancialSummaryReport({
           { data: salaryProjections },
           { data: expenseProjections },
           actualPayments,
+          cashInPayments,
+          transferInPayments,
           { data: salaryPayouts },
           { data: actualExpenses },
           directExpenseTransactions,
-          transferExpenseTransactions
+          transferExpenseTransactions,
+          cashWithdrawalTransactions,
         ] = await Promise.all([
           projectedIncomePromise,
           // 2. Прогнозируемый расход (метод начисления)
@@ -301,12 +337,34 @@ export function useFinancialSummaryReport({
             .select('amount, activity_id, activities(is_actual_expense)')
             .gte('entry_date', startDate)
             .lte('entry_date', endDate),
-          // 3. Реальный доход (кассовый метод) - с учетом счетов
+          // 3. Реальный доход от оплат (type=payment, без переказів): родительские платежи
           fetchAllRows<any>((from, to) =>
             supabaseAny
               .from('finance_transactions')
               .select('amount, account_id')
               .eq('type', 'payment')
+              .is('transfer_id', null)
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .range(from, to)
+          ),
+          // 3.1. Поступления от вывода наличных (cash_in): учитываются в залишку, но не в "Реальному доходу"
+          fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from('finance_transactions')
+              .select('amount, account_id')
+              .eq('type', 'cash_in')
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .range(from, to)
+          ),
+          // 3.2. Входящие переказы (type=payment, transfer_id IS NOT NULL): учитываются в залишку, но не в "Реальному доходу"
+          fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from('finance_transactions')
+              .select('amount, account_id')
+              .eq('type', 'payment')
+              .not('transfer_id', 'is', null)
               .gte('date', startDate)
               .lte('date', endDate)
               .range(from, to)
@@ -347,7 +405,18 @@ export function useFinancialSummaryReport({
               .gte('date', startDate)
               .lte('date', endDate)
               .range(from, to)
-          )
+          ),
+          // 5. Вивід коштів: витрати, позначені як готівковий вивід (cash_withdrawal_id IS NOT NULL)
+          fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from('finance_transactions')
+              .select('amount, account_id, activities(is_actual_expense, account_id)')
+              .in('type', ['expense', 'household'])
+              .not('cash_withdrawal_id', 'is', null)
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .range(from, to)
+          ),
         ]);
 
         let projectedIncome = 0;
@@ -376,6 +445,21 @@ export function useFinancialSummaryReport({
         const projectedExpense = salaryProjectionTotal + expenseProjectionTotal;
 
         const actualIncome = (actualPayments || []).reduce((sum: number, tx: any) => {
+          if (matchesAccount(tx.account_id)) {
+            return sum + (tx.amount || 0);
+          }
+          return sum;
+        }, 0);
+
+        // cash_in и входящие переказы не входят в "Реальний дохід", но учитываются в "Залишку на рахунку"
+        const cashInTotal = (cashInPayments || []).reduce((sum: number, tx: any) => {
+          if (matchesAccount(tx.account_id)) {
+            return sum + (tx.amount || 0);
+          }
+          return sum;
+        }, 0);
+
+        const transferInTotal = (transferInPayments || []).reduce((sum: number, tx: any) => {
           if (matchesAccount(tx.account_id)) {
             return sum + (tx.amount || 0);
           }
@@ -432,6 +516,24 @@ export function useFinancialSummaryReport({
         }, 0);
 
         const actualExpense = salaryPayoutTotal + actualExpenseTotal + directExpenseTotal + transferExpenseTotal + dividendExpenseTotal;
+        const expenseWithoutDividends = actualExpense - dividendExpenseTotal;
+
+        // Вивід коштів: сума витрат, що були виведені готівкою
+        const cashWithdrawalTotal = (cashWithdrawalTransactions || []).reduce((sum: number, tx: any) => {
+          const isActual = tx.activities?.is_actual_expense ?? true; // прямі витрати без activity вважаємо реальними
+          if (!isActual) return sum;
+          const txAccountId = tx.account_id || tx.activities?.account_id || null;
+          if (matchesAccount(txAccountId)) return sum + (tx.amount || 0);
+          return sum;
+        }, 0);
+
+        // Реальні витрати по госп. діяльності:
+        // Всі реальні витрати (actualExpense) за вирахуванням:
+        // - переказів між рахунками (не є витратою підприємства)
+        // - дивідендів (виведення коштів власниками)
+        // - виводу коштів (готівкове зняття)
+        const businessExpense = actualExpense - transferExpenseTotal - dividendExpenseTotal - cashWithdrawalTotal;
+        const delta = actualIncome - businessExpense;
 
         // Расчетные показатели
         const expectedBalance = projectedIncome - projectedExpense;
@@ -445,6 +547,8 @@ export function useFinancialSummaryReport({
           if (monthIndex === 0) {
             const carriedForward = await calculateInitialBalanceForMonth(y, m);
             const enteredOpening = getOpeningBalanceForMonth(startDate, endDate);
+            // calculateInitialBalanceForMonth вже включає opening_balance_amount до дати місяця,
+            // тому getOpeningBalanceForMonth додає лише ті, що потрапляють саме в цей місяць
             monthInitialBalance = carriedForward + enteredOpening;
           } else {
             monthInitialBalance = accountBalance;
@@ -454,9 +558,13 @@ export function useFinancialSummaryReport({
         }
 
         if (monthInitialBalance !== undefined) {
-          accountBalance = monthInitialBalance + actualBalance;
+          accountBalance = monthInitialBalance + actualBalance + cashInTotal + transferInTotal;
+          accountBalanceWithoutDividends = monthInitialBalance + (actualIncome + cashInTotal + transferInTotal - expenseWithoutDividends);
         } else {
-          accountBalance += actualBalance;
+          // Для режиму "всі рахунки": додаємо opening_balance_amount, якщо їх дата потрапляє в цей місяць
+          const monthOpening = getOpeningBalanceForMonth(startDate, endDate);
+          accountBalance += actualBalance + cashInTotal + transferInTotal + monthOpening;
+          accountBalanceWithoutDividends += (actualIncome + cashInTotal + transferInTotal - expenseWithoutDividends) + monthOpening;
         }
 
         results.push({
@@ -466,11 +574,18 @@ export function useFinancialSummaryReport({
           projectedExpense,
           actualIncome,
           actualExpense,
+          transferExpense: transferExpenseTotal,
+          businessExpense,
+          delta,
+          dividendExpense: dividendExpenseTotal,
+          cashWithdrawal: cashWithdrawalTotal,
+          expenseWithoutDividends,
           expectedBalance,
           actualBalance,
           difference,
           cumulativeDifference,
           accountBalance,
+          accountBalanceWithoutDividends,
           initialBalance: monthInitialBalance,
         });
       }

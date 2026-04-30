@@ -47,7 +47,7 @@ export function useAccountBalance(accountId: string) {
             .from('finance_transactions')
             .select('amount')
             .eq('account_id', accountId)
-            .eq('type', 'payment')
+            .in('type', ['payment', 'cash_in'])
             .range(from, to)
         ),
         fetchAllRows<any>((from, to) =>
@@ -226,7 +226,7 @@ export function useAccountTransactions(accountId: string) {
         if (t.dividend_payout_id) return false;
         if (t.type === 'income') return false; // нарахування — прогноз, не реальний дохід
         if (t.type === 'advance_payment') return false; // застаріла система авансів, не відображаємо
-        if (t.type === 'payment' || t.type === 'salary') return true; // реальні дохід і витрата
+        if (t.type === 'payment' || t.type === 'salary' || t.type === 'cash_in') return true; // реальні дохід і витрата
         if (t.type === 'expense' || t.type === 'household') {
           if (t.transfer_id) return true; // переказ — завжди реальний
           const isActual = t.activities?.is_actual_expense === true;
@@ -256,7 +256,7 @@ export function useAccountTransactions(accountId: string) {
       );
 
       const txItems: AccountTransactionItem[] = transactions.map((t: any) => {
-        const isIncome = t.type === 'income' || t.type === 'payment';
+        const isIncome = t.type === 'income' || t.type === 'payment' || t.type === 'cash_in';
         const isTransfer = t.transfer_id != null && String(t.transfer_id).length > 0;
         const displayType = isTransfer ? 'transfer' : t.type;
         return {

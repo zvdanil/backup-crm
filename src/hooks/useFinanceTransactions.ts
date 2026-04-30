@@ -39,7 +39,8 @@ export type TransactionType =
   | "expense"
   | "payment"
   | "salary"
-  | "household";
+  | "household"
+  | "cash_in";
 
 export interface FinanceTransaction {
   id: string;

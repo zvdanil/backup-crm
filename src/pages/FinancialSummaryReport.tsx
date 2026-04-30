@@ -6,9 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
-import { Info, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -58,13 +57,14 @@ export default function FinancialSummaryReport() {
     );
   }, [filterStartYear, filterStartMonth, filterEndYear, filterEndMonth, filterAccountIds, reportStartYear, reportStartMonth, reportEndYear, reportEndMonth, reportAccountIds]);
 
-  // Формируем отчёт только при нажатии кнопки
+  // Формируем отчёт только при нажатии кнопки "Сформувати звіт"
   const { data: reportData = [], isLoading, refetch } = useFinancialSummaryReport({
     startYear: reportStartYear,
     startMonth: reportStartMonth,
     endYear: reportEndYear,
     endMonth: reportEndMonth,
     accountIds: reportAccountIds.length > 0 ? reportAccountIds : undefined,
+    enabled: reportRequested,
   });
 
   const handleGenerateReport = () => {
@@ -87,8 +87,9 @@ export default function FinancialSummaryReport() {
     await refetch({ cancelRefetch: true });
   };
 
-  // Определяем, показывать ли все колонки (для всех счетов) или только основные (для конкретного счёта)
-  const showAllColumns = reportAccountIds.length === 0 || reportAccountIds.length > 1;
+  // showAllColumns — тільки для режиму "всі рахунки" (без фільтру).
+  // При виборі 1 або кількох конкретних рахунків — структура одного рахунку (суми по обраних рахунках).
+  const showAllColumns = reportAccountIds.length === 0;
 
   const toggleAccount = (accountId: string | null) => {
     const accountIdStr = accountId === null ? 'null' : accountId;
@@ -302,38 +303,22 @@ export default function FinancialSummaryReport() {
                     {!showAllColumns && reportData.length > 0 && reportData[0].initialBalance !== undefined && (
                       <TableHead className="text-right">Залишок на початок періоду</TableHead>
                     )}
-                    <TableHead className="text-right">Прогноз доходу</TableHead>
-                    {showAllColumns && (
-                      <>
-                        <TableHead className="text-right">Прогноз витрат</TableHead>
-                        <TableHead className="text-right">Очікуваний баланс</TableHead>
-                      </>
-                    )}
+                    {/* Прогноз доходу, Прогноз витрат, Очікуваний баланс — тимчасово приховані */}
                     <TableHead className="text-right">Реальний дохід</TableHead>
+                    <TableHead className="text-right">Оборот по всім витратам</TableHead>
+                    {!showAllColumns && (
+                      <TableHead className="text-right">Перекази</TableHead>
+                    )}
+                    <TableHead className="text-right">Вивід коштів</TableHead>
+                    <TableHead className="text-right">Виведено дивідендів</TableHead>
                     <TableHead className="text-right">Реальні витрати</TableHead>
+                    <TableHead className="text-right">Дельта</TableHead>
+                    {showAllColumns && (
+                      <TableHead className="text-right">Оборот по витратах без дівідендів</TableHead>
+                    )}
                     <TableHead className="text-right">Реальний баланс</TableHead>
                     {showAllColumns && (
-                      <>
-                        <TableHead className="text-right">Різниця від очікування</TableHead>
-                        <TableHead className="text-right">
-                          <div className="flex items-center gap-1 justify-end">
-                            Де гроші?
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger>
-                                  <Info className="h-3 w-3 text-muted-foreground" />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p className="max-w-xs">
-                                    Накопительне відхилення від плану. Пояснює розрив між очікуваним
-                                    прибутком та фактичною наявністю грошей.
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </TableHead>
-                      </>
+                      <TableHead className="text-right">Баланс без дивідендів</TableHead>
                     )}
                     <TableHead className="text-right">Залишок на рахунку</TableHead>
                   </TableRow>
@@ -351,25 +336,40 @@ export default function FinancialSummaryReport() {
                             {formatCurrency(row.initialBalance ?? 0)}
                           </TableCell>
                         )}
-                      <TableCell className="text-right">
-                        {formatCurrency(row.projectedIncome)}
-                      </TableCell>
-                      {showAllColumns && (
-                        <>
-                          <TableCell className="text-right">
-                            {formatCurrency(row.projectedExpense)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(row.expectedBalance)}
-                          </TableCell>
-                        </>
-                      )}
+                      {/* Прогноз доходу, Прогноз витрат, Очікуваний баланс — тимчасово приховані */}
                       <TableCell className="text-right">
                         {formatCurrency(row.actualIncome)}
                       </TableCell>
                       <TableCell className="text-right">
                         {formatCurrency(row.actualExpense)}
                       </TableCell>
+                      {!showAllColumns && (
+                        <TableCell className="text-right">
+                          {formatCurrency(row.transferExpense)}
+                        </TableCell>
+                      )}
+                      <TableCell className="text-right">
+                        {formatCurrency(row.cashWithdrawal)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(row.dividendExpense)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(row.businessExpense)}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          'text-right font-medium',
+                          row.delta < 0 && 'text-destructive bg-destructive/10'
+                        )}
+                      >
+                        {formatCurrency(row.delta)}
+                      </TableCell>
+                      {showAllColumns && (
+                        <TableCell className="text-right">
+                          {formatCurrency(row.expenseWithoutDividends)}
+                        </TableCell>
+                      )}
                       <TableCell
                         className={cn(
                           'text-right font-medium',
@@ -379,14 +379,14 @@ export default function FinancialSummaryReport() {
                         {formatCurrency(row.actualBalance)}
                       </TableCell>
                       {showAllColumns && (
-                        <>
-                          <TableCell className="text-right">
-                            {formatCurrency(row.difference)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {formatCurrency(row.cumulativeDifference)}
-                          </TableCell>
-                        </>
+                        <TableCell
+                          className={cn(
+                            'text-right font-medium',
+                            row.accountBalanceWithoutDividends < 0 && 'text-destructive bg-destructive/10'
+                          )}
+                        >
+                          {formatCurrency(row.accountBalanceWithoutDividends)}
+                        </TableCell>
                       )}
                       <TableCell className="text-right font-medium">
                         {formatCurrency(row.accountBalance)}
