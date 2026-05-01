@@ -46,6 +46,222 @@ const MONTHS_UA = [
   'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'
 ];
 
+export interface StudentBreakdownEntry {
+  studentName: string;
+  accountId: string | null;
+  accountName: string;
+  charges: number;
+  refunds: number;
+  net: number;
+}
+
+export function useProjectedIncomeBreakdown({
+  startYear,
+  startMonth,
+  endYear,
+  endMonth,
+  accountIds,
+  enabled = true,
+}: UseFinancialSummaryReportParams) {
+  return useQuery({
+    queryKey: ['projected-income-breakdown', startYear, startMonth, endYear, endMonth, accountIds],
+    enabled,
+    queryFn: async (): Promise<ProjectedIncomeBreakdownRow[]> => {
+      const reportStart = getMonthStartDate(startYear, startMonth);
+      const reportEnd = getMonthEndDate(endYear, endMonth);
+
+      const [
+        { data: enrollmentsRaw },
+        { data: accounts },
+        attendanceData,
+        refundData,
+        { data: exclusionsRaw },
+      ] = await Promise.all([
+        supabaseAny
+          .from('enrollments')
+          .select(
+            'id, student_id, activity_id, account_id, custom_price, is_active, unenrolled_at, enrolled_at, effective_from, students(full_name), activities(id, name, account_id, billing_rules, default_price, balance_display_mode, config)'
+          ),
+        supabaseAny.from('payment_accounts').select('id, name'),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('attendance')
+            .select('enrollment_id, charged_amount')
+            .gte('date', reportStart)
+            .lte('date', reportEnd)
+            .range(from, to)
+        ),
+        fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('student_id, activity_id, amount')
+            .eq('type', 'expense')
+            .not('student_id', 'is', null)
+            .not('activity_id', 'is', null)
+            .gte('date', reportStart)
+            .lte('date', reportEnd)
+            .range(from, to)
+        ),
+        supabaseAny
+          .from('subscription_charge_exclusions')
+          .select('enrollment_id, year, month'),
+      ]);
+
+      const enrollments = enrollmentsRaw || [];
+      const accountMap = new Map((accounts || []).map((a: any) => [a.id, a.name as string]));
+
+      // Food tariff IDs from garden controllers
+      const foodTariffIdSet = new Set<string>();
+      enrollments.forEach((e: any) => {
+        if (!isGardenAttendanceController(e.activities)) return;
+        const cfg = getGardenAttendanceConfig(e.activities);
+        (cfg.food_tariff_ids || []).forEach((id: string) => foodTariffIdSet.add(id));
+      });
+
+      // Enrollment price history
+      const enrollmentIds = enrollments.map((e: any) => e.id as string);
+      const priceHistoryMap = new Map<string, any[]>();
+      if (enrollmentIds.length > 0) {
+        const { data: phData } = await supabaseAny
+          .from('enrollment_price_history')
+          .select('enrollment_id, custom_price, effective_from, effective_to')
+          .in('enrollment_id', enrollmentIds);
+        (phData || []).forEach((ph: any) => {
+          if (!priceHistoryMap.has(ph.enrollment_id)) priceHistoryMap.set(ph.enrollment_id, []);
+          priceHistoryMap.get(ph.enrollment_id)!.push(ph);
+        });
+      }
+
+      // Exclusions: "enrollmentId-year-month" (month 0-indexed у БД)
+      const exclusionSet = new Set(
+        (exclusionsRaw || []).map((ex: any) => `${ex.enrollment_id}-${ex.year}-${ex.month}`)
+      );
+
+      // Attendance sums by enrollment
+      const attByEnrollment = new Map<string, number>();
+      attendanceData.forEach((att: any) => {
+        attByEnrollment.set(att.enrollment_id, (attByEnrollment.get(att.enrollment_id) || 0) + (att.charged_amount || 0));
+      });
+
+      // Refund sums by student+activity
+      const refundByStudentActivity = new Map<string, number>();
+      refundData.forEach((tx: any) => {
+        const key = `${tx.student_id}-${tx.activity_id}`;
+        refundByStudentActivity.set(key, (refundByStudentActivity.get(key) || 0) + (tx.amount || 0));
+      });
+
+      // Months in period
+      const months: Array<{ year: number; month: number }> = [];
+      for (let y = startYear; y <= endYear; y++) {
+        const mStart = y === startYear ? startMonth : 0;
+        const mEnd = y === endYear ? endMonth : 11;
+        for (let m = mStart; m <= mEnd; m++) months.push({ year: y, month: m });
+      }
+
+      const matchesAccount = (accountId: string | null) => {
+        if (!accountIds || accountIds.length === 0) return true;
+        return accountId === null ? accountIds.includes('null') : accountIds.includes(accountId);
+      };
+
+      const getRateForMonthEnd = (enrollmentId: string, e: any, activity: any, monthEndStr: string): number => {
+        const history = priceHistoryMap.get(enrollmentId);
+        if (history && history.length > 0) {
+          const rec = history.find((r: any) => {
+            if (monthEndStr < r.effective_from) return false;
+            if (r.effective_to && monthEndStr >= r.effective_to) return false;
+            return true;
+          });
+          if (rec?.custom_price != null) return Number(rec.custom_price);
+        }
+        if (e.custom_price != null) return Number(e.custom_price);
+        const rate = activity.billing_rules?.present?.rate;
+        if (rate) return Number(rate);
+        return Number(activity.default_price || 0);
+      };
+
+      const rows: ProjectedIncomeBreakdownRow[] = [];
+
+      enrollments.forEach((e: any) => {
+        const activity = e.activities;
+        if (!activity) return;
+        if (isGardenAttendanceController(activity)) return;
+        if (foodTariffIdSet.has(activity.id)) return;
+
+        const resolvedAccountId: string | null = e.account_id || activity.account_id || null;
+        if (!matchesAccount(resolvedAccountId)) return;
+
+        const isSubscription = activity.billing_rules?.present?.type === 'subscription';
+        const studentName = e.students?.full_name || '—';
+        const activityName = activity.name || '—';
+        const accountName = resolvedAccountId
+          ? (accountMap.get(resolvedAccountId) || '—')
+          : '— без рахунку —';
+
+        const history = priceHistoryMap.get(e.id);
+        const hasHistory = history && history.length > 0;
+
+        if (isSubscription) {
+          let total = 0;
+          let monthsCharged = 0;
+
+          for (const { year: yy, month: mm } of months) {
+            const monthEndStr = getMonthEndDate(yy, mm);
+            const monthStartStr = getMonthStartDate(yy, mm);
+
+            if (hasHistory) {
+              // Якщо є history — включати тільки якщо вона покриває місяць (точна логіка головного звіту)
+              if (!historyCoversMonth(history, yy, mm)) continue;
+              // Відрахований в цьому або попередньому місяці
+              const isArchivedInMonth =
+                e.is_active === false &&
+                (!e.unenrolled_at || e.unenrolled_at <= monthEndStr);
+              if (isArchivedInMonth) continue;
+              if (e.unenrolled_at && e.unenrolled_at < monthStartStr) continue;
+            } else {
+              // Без history — по effective_from / enrolled_at (fallback логіка)
+              const effectiveStr = e.effective_from ?? e.enrolled_at ?? null;
+              if (effectiveStr && monthEndStr < effectiveStr) continue;
+              const isArchivedInMonth =
+                e.is_active === false &&
+                (!e.unenrolled_at || e.unenrolled_at <= monthEndStr);
+              if (isArchivedInMonth) continue;
+              if (e.unenrolled_at && e.unenrolled_at < monthStartStr) continue;
+            }
+
+            // Виключено через корзину (month 0-indexed у БД)
+            if (exclusionSet.has(`${e.id}-${yy}-${mm}`)) continue;
+
+            const rate = getRateForMonthEnd(e.id, e, activity, monthEndStr);
+            if (rate <= 0) continue;
+
+            total += rate;
+            monthsCharged++;
+          }
+
+          if (monthsCharged === 0) return;
+          rows.push({ studentName, activityName, accountName, billingType: 'Абонплата', monthsCharged, total });
+        } else {
+          const attTotal = attByEnrollment.get(e.id) || 0;
+          if (attTotal === 0) return;
+          rows.push({ studentName, activityName, accountName, billingType: 'Поурочно', monthsCharged: 0, total: attTotal });
+        }
+
+        // Повернення — окремий рядок (як у головному звіті: refunds = expense з activity_id)
+        const refund = refundByStudentActivity.get(`${e.student_id}-${activity.id}`) || 0;
+        if (refund > 0) {
+          rows.push({ studentName, activityName, accountName, billingType: 'Повернення', monthsCharged: 0, total: -refund });
+        }
+      });
+
+      rows.sort((a, b) =>
+        a.studentName.localeCompare(b.studentName, 'uk') ||
+        a.activityName.localeCompare(b.activityName, 'uk')
+      );
+      return rows;
+    },
+  });
+}
+
 export function useFinancialSummaryReport({
   startYear,
   startMonth,

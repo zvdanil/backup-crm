@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { useFinancialSummaryReport } from '@/hooks/useFinancialSummaryReport';
+import { useFinancialSummaryReport, useProjectedIncomeBreakdown } from '@/hooks/useFinancialSummaryReport';
 import { formatCurrency } from '@/lib/attendance';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -59,6 +59,15 @@ export default function FinancialSummaryReport() {
 
   // Формируем отчёт только при нажатии кнопки "Сформувати звіт"
   const { data: reportData = [], isLoading, refetch } = useFinancialSummaryReport({
+    startYear: reportStartYear,
+    startMonth: reportStartMonth,
+    endYear: reportEndYear,
+    endMonth: reportEndMonth,
+    accountIds: reportAccountIds.length > 0 ? reportAccountIds : undefined,
+    enabled: reportRequested,
+  });
+
+  const { data: breakdownData = [], isLoading: breakdownLoading } = useProjectedIncomeBreakdown({
     startYear: reportStartYear,
     startMonth: reportStartMonth,
     endYear: reportEndYear,
@@ -303,7 +312,10 @@ export default function FinancialSummaryReport() {
                     {!showAllColumns && reportData.length > 0 && reportData[0].initialBalance !== undefined && (
                       <TableHead className="text-right">Залишок на початок періоду</TableHead>
                     )}
-                    {/* Прогноз доходу, Прогноз витрат, Очікуваний баланс — тимчасово приховані */}
+                    {!showAllColumns && (
+                      <TableHead className="text-right">Прогноз дохода</TableHead>
+                    )}
+                    {/* Прогноз витрат, Очікуваний баланс — тимчасово приховані */}
                     <TableHead className="text-right">Реальний дохід</TableHead>
                     <TableHead className="text-right">Оборот по всім витратам</TableHead>
                     {!showAllColumns && (
@@ -336,7 +348,12 @@ export default function FinancialSummaryReport() {
                             {formatCurrency(row.initialBalance ?? 0)}
                           </TableCell>
                         )}
-                      {/* Прогноз доходу, Прогноз витрат, Очікуваний баланс — тимчасово приховані */}
+                        {!showAllColumns && (
+                          <TableCell className="text-right">
+                            {formatCurrency(row.projectedIncome)}
+                          </TableCell>
+                        )}
+                      {/* Прогноз витрат, Очікуваний баланс — тимчасово приховані */}
                       <TableCell className="text-right">
                         {formatCurrency(row.actualIncome)}
                       </TableCell>
@@ -400,6 +417,83 @@ export default function FinancialSummaryReport() {
           )}
         </CardContent>
       </Card>
+
+      {/* Breakdown table */}
+      {reportRequested && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Розшифровка прогнозу доходу</CardTitle>
+            <CardDescription>
+              По кожному учню та активності за {MONTHS[reportStartMonth]} {reportStartYear} — {MONTHS[reportEndMonth]} {reportEndYear}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {breakdownLoading ? (
+              <div className="text-center py-8 text-muted-foreground">Завантаження...</div>
+            ) : breakdownData.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Немає даних</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Учень</TableHead>
+                      <TableHead>Активність</TableHead>
+                      {showAllColumns && <TableHead>Рахунок</TableHead>}
+                      <TableHead>Тип оплати</TableHead>
+                      <TableHead className="text-right">Місяців</TableHead>
+                      <TableHead className="text-right">Нараховано</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {breakdownData.map((row, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-medium">{row.studentName}</TableCell>
+                        <TableCell>{row.activityName}</TableCell>
+                        {showAllColumns && (
+                          <TableCell className="text-muted-foreground">{row.accountName}</TableCell>
+                        )}
+                        <TableCell>
+                          <span className={cn(
+                            'text-xs px-2 py-0.5 rounded-full font-medium',
+                            row.billingType === 'Абонплата'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                              : row.billingType === 'Повернення'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                          )}>
+                            {row.billingType}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {row.billingType === 'Абонплата' ? row.monthsCharged : '—'}
+                        </TableCell>
+                        <TableCell className={cn(
+                          'text-right font-medium',
+                          row.total < 0 && 'text-destructive'
+                        )}>
+                          {formatCurrency(row.total)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-t-2 bg-muted/30">
+                      <TableCell
+                        colSpan={showAllColumns ? 5 : 4}
+                        className="text-right font-semibold"
+                      >
+                        Загалом:
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {formatCurrency(breakdownData.reduce((s, r) => s + r.total, 0))}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
