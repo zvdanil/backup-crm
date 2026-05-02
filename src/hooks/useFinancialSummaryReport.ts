@@ -55,6 +55,31 @@ export interface StudentBreakdownEntry {
   net: number;
 }
 
+export interface ProjectedIncomeBreakdownRow {
+  studentName: string;
+  activityName: string;
+  accountName: string;
+  billingType: 'Абонплата' | 'Поурочно' | 'Повернення';
+  monthsCharged: number;
+  total: number;
+}
+
+const historyCoversMonth = (history: any[], year: number, month: number): boolean => {
+  const monthStart = getMonthStartDate(year, month);
+  const monthEnd = getMonthEndDate(year, month);
+
+  return history.some((record: any) => {
+    const effectiveFrom = record.effective_from as string | undefined;
+    const effectiveTo = record.effective_to as string | null | undefined;
+    if (!effectiveFrom) return false;
+
+    // Price history interval intersects this month.
+    if (effectiveFrom > monthEnd) return false;
+    if (effectiveTo && effectiveTo <= monthStart) return false;
+    return true;
+  });
+};
+
 export function useProjectedIncomeBreakdown({
   startYear,
   startMonth,
@@ -94,10 +119,9 @@ export function useProjectedIncomeBreakdown({
         fetchAllRows<any>((from, to) =>
           supabaseAny
             .from('finance_transactions')
-            .select('student_id, activity_id, amount')
+            .select('student_id, activity_id, amount, account_id, activities(id, name, account_id)')
             .eq('type', 'expense')
             .not('student_id', 'is', null)
-            .not('activity_id', 'is', null)
             .gte('date', reportStart)
             .lte('date', reportEnd)
             .range(from, to)
@@ -108,7 +132,11 @@ export function useProjectedIncomeBreakdown({
       ]);
 
       const enrollments = enrollmentsRaw || [];
-      const accountMap = new Map((accounts || []).map((a: any) => [a.id, a.name as string]));
+      const accountMap = new Map<string, string>(
+        (accounts || []).map((a: any) => [String(a.id), String(a.name || '—')])
+      );
+      const buildRefundKey = (studentId: unknown, activityId: unknown) =>
+        `${String(studentId)}|${activityId == null ? 'null' : String(activityId)}`;
 
       // Food tariff IDs from garden controllers
       const foodTariffIdSet = new Set<string>();
@@ -146,9 +174,12 @@ export function useProjectedIncomeBreakdown({
       // Refund sums by student+activity
       const refundByStudentActivity = new Map<string, number>();
       refundData.forEach((tx: any) => {
-        const key = `${tx.student_id}-${tx.activity_id}`;
+        const key = buildRefundKey(tx.student_id, tx.activity_id);
         refundByStudentActivity.set(key, (refundByStudentActivity.get(key) || 0) + (tx.amount || 0));
       });
+      const addedRefundKeys = new Set<string>();
+      const studentNameById = new Map<string, string>();
+      const activityMetaById = new Map<string, { name: string; accountId: string | null }>();
 
       // Months in period
       const months: Array<{ year: number; month: number }> = [];
@@ -184,18 +215,44 @@ export function useProjectedIncomeBreakdown({
       enrollments.forEach((e: any) => {
         const activity = e.activities;
         if (!activity) return;
+        if (e.student_id) {
+          const name =
+            typeof e.students?.full_name === 'string' ? e.students.full_name : '—';
+          studentNameById.set(String(e.student_id), name);
+        }
+        if (activity.id) {
+          const activityName =
+            typeof activity.name === 'string' ? activity.name : '—';
+          const activityAccountId = activity.account_id ? String(activity.account_id) : null;
+          activityMetaById.set(String(activity.id), { name: activityName, accountId: activityAccountId });
+        }
         if (isGardenAttendanceController(activity)) return;
-        if (foodTariffIdSet.has(activity.id)) return;
 
         const resolvedAccountId: string | null = e.account_id || activity.account_id || null;
+        const studentName: string =
+          typeof e.students?.full_name === 'string' ? e.students.full_name : '—';
+        const activityName: string =
+          typeof activity.name === 'string' ? activity.name : '—';
+        const accountName: string = resolvedAccountId
+          ? (accountMap.get(resolvedAccountId) ?? '—')
+          : '— без рахунку —';
+        const refund = refundByStudentActivity.get(buildRefundKey(e.student_id, activity.id)) || 0;
+        if (refund > 0) {
+          const refundKey = buildRefundKey(e.student_id, activity.id);
+          if (!addedRefundKeys.has(refundKey)) {
+            if (matchesAccount(resolvedAccountId)) {
+              rows.push({ studentName, activityName, accountName, billingType: 'Повернення', monthsCharged: 0, total: -refund });
+            }
+            addedRefundKeys.add(refundKey);
+          }
+        }
+
+        // For food tariffs we show only refunds in breakdown.
+        if (foodTariffIdSet.has(activity.id)) return;
+
         if (!matchesAccount(resolvedAccountId)) return;
 
         const isSubscription = activity.billing_rules?.present?.type === 'subscription';
-        const studentName = e.students?.full_name || '—';
-        const activityName = activity.name || '—';
-        const accountName = resolvedAccountId
-          ? (accountMap.get(resolvedAccountId) || '—')
-          : '— без рахунку —';
 
         const history = priceHistoryMap.get(e.id);
         const hasHistory = history && history.length > 0;
@@ -246,11 +303,51 @@ export function useProjectedIncomeBreakdown({
           rows.push({ studentName, activityName, accountName, billingType: 'Поурочно', monthsCharged: 0, total: attTotal });
         }
 
-        // Повернення — окремий рядок (як у головному звіті: refunds = expense з activity_id)
-        const refund = refundByStudentActivity.get(`${e.student_id}-${activity.id}`) || 0;
-        if (refund > 0) {
-          rows.push({ studentName, activityName, accountName, billingType: 'Повернення', monthsCharged: 0, total: -refund });
-        }
+      });
+
+      // Add refunds that are not represented by non-food enrollments (e.g. food refunds)
+      refundByStudentActivity.forEach((refund, refundKey) => {
+        if (refund <= 0 || addedRefundKeys.has(refundKey)) return;
+
+        const [studentIdRaw, activityIdRaw] = refundKey.split('|');
+        const studentId = studentIdRaw || '';
+        const activityId = activityIdRaw && activityIdRaw !== 'null' ? activityIdRaw : null;
+
+        const txSample = refundData.find(
+          (tx: any) =>
+            String(tx.student_id) === studentId &&
+            ((activityId === null && !tx.activity_id) || String(tx.activity_id) === activityId)
+        );
+
+        const fallbackActivityName =
+          typeof txSample?.activities?.name === 'string'
+            ? txSample.activities.name
+            : activityId
+              ? (activityMetaById.get(activityId)?.name || '—')
+              : 'Харчування';
+        const resolvedAccountId: string | null =
+          txSample?.account_id
+            ? String(txSample.account_id)
+            : txSample?.activities?.account_id
+              ? String(txSample.activities.account_id)
+              : activityId
+                ? (activityMetaById.get(activityId)?.accountId ?? null)
+                : null;
+        if (!matchesAccount(resolvedAccountId)) return;
+
+        const accountName = resolvedAccountId
+          ? (accountMap.get(resolvedAccountId) ?? '—')
+          : '— без рахунку —';
+        const studentName = studentNameById.get(studentId) || '—';
+
+        rows.push({
+          studentName,
+          activityName: fallbackActivityName,
+          accountName,
+          billingType: 'Повернення',
+          monthsCharged: 0,
+          total: -refund,
+        });
       });
 
       rows.sort((a, b) =>
@@ -401,17 +498,20 @@ export function useFinancialSummaryReport({
         }, 0);
 
         // Реальный расход до начала месяца
-        // 1. Выплаты зарплаты (исключаем записи, выведенные как дивиденд)
-        const { data: preMonthSalaryPayouts } = await supabaseAny
-          .from('staff_payouts')
-          .select('amount, account_id, dividend_payout_id')
-          .lt('payout_date', monthStartDate)
-          .or('is_deleted.is.null,is_deleted.eq.false');
+        // 1. Виплати зарплати (джерело істини як у картці рахунку: finance_transactions.type = salary)
+        const preMonthSalaryTransactions = await fetchAllRows<any>((from, to) =>
+          supabaseAny
+            .from('finance_transactions')
+            .select('amount, account_id, dividend_payout_id')
+            .eq('type', 'salary')
+            .lt('date', monthStartDate)
+            .range(from, to)
+        );
 
-        const preMonthSalaryPayoutTotal = (preMonthSalaryPayouts || []).reduce((sum: number, payout: any) => {
-          if (payout.dividend_payout_id) return sum;
-          if (matchesAccount(payout.account_id)) {
-            return sum + (payout.amount || 0);
+        const preMonthSalaryTotal = preMonthSalaryTransactions.reduce((sum: number, tx: any) => {
+          if (tx.dividend_payout_id) return sum;
+          if (matchesAccount(tx.account_id)) {
+            return sum + (tx.amount || 0);
           }
           return sum;
         }, 0);
@@ -484,7 +584,7 @@ export function useFinancialSummaryReport({
           return sum;
         }, 0);
 
-        const preMonthActualExpense = preMonthSalaryPayoutTotal + preMonthActualExpenseTotal + preMonthDirectExpenseTotal + preMonthTransferExpenseTotal + preMonthDividendTotal;
+        const preMonthActualExpense = preMonthSalaryTotal + preMonthActualExpenseTotal + preMonthDirectExpenseTotal + preMonthTransferExpenseTotal + preMonthDividendTotal;
 
         // Додаємо opening_balance_amount для рахунків, чия дата — до початку місяця (або не вказана).
         // Без цього залишок у звіті не збігається з карткою рахунку.
@@ -533,7 +633,7 @@ export function useFinancialSummaryReport({
           actualPayments,
           cashInPayments,
           transferInPayments,
-          { data: salaryPayouts },
+          salaryTransactions,
           { data: actualExpenses },
           directExpenseTransactions,
           transferExpenseTransactions,
@@ -586,13 +686,16 @@ export function useFinancialSummaryReport({
               .range(from, to)
           ),
           // 4. Реальный расход (кассовый метод) - с учетом счетов
-          // 4.1. Выплаты зарплаты (исключаем выведенные как дивиденд)
-          supabaseAny
-            .from('staff_payouts')
-            .select('amount, account_id, dividend_payout_id')
-            .gte('payout_date', startDate)
-            .lte('payout_date', endDate)
-            .or('is_deleted.is.null,is_deleted.eq.false'),
+          // 4.1. Виплати зарплати (джерело істини як у картці рахунку: finance_transactions.type = salary)
+          fetchAllRows<any>((from, to) =>
+            supabaseAny
+              .from('finance_transactions')
+              .select('amount, account_id, dividend_payout_id')
+              .eq('type', 'salary')
+              .gte('date', startDate)
+              .lte('date', endDate)
+              .range(from, to)
+          ),
           // 4.2. Реальные расходы из expense_journal_entries (исключаем выведенные как дивиденд)
           supabaseAny
             .from('expense_journal_entries')
@@ -682,10 +785,10 @@ export function useFinancialSummaryReport({
           return sum;
         }, 0);
 
-        const salaryPayoutTotal = (salaryPayouts || []).reduce((sum: number, payout: any) => {
-          if (payout.dividend_payout_id) return sum;
-          if (matchesAccount(payout.account_id)) {
-            return sum + (payout.amount || 0);
+        const salaryTotal = (salaryTransactions || []).reduce((sum: number, tx: any) => {
+          if (tx.dividend_payout_id) return sum;
+          if (matchesAccount(tx.account_id)) {
+            return sum + (tx.amount || 0);
           }
           return sum;
         }, 0);
@@ -731,7 +834,7 @@ export function useFinancialSummaryReport({
           return sum;
         }, 0);
 
-        const actualExpense = salaryPayoutTotal + actualExpenseTotal + directExpenseTotal + transferExpenseTotal + dividendExpenseTotal;
+        const actualExpense = salaryTotal + actualExpenseTotal + directExpenseTotal + transferExpenseTotal + dividendExpenseTotal;
         const expenseWithoutDividends = actualExpense - dividendExpenseTotal;
 
         // Вивід коштів: сума витрат, що були виведені готівкою
@@ -759,13 +862,13 @@ export function useFinancialSummaryReport({
 
         // Залишок на початок місяця: перенос з попереднього місяця + внесені залишки (payment_accounts)
         let monthInitialBalance: number | undefined;
+        const monthOpening = getOpeningBalanceForMonth(startDate, endDate);
         if (accountIds && accountIds.length > 0) {
           if (monthIndex === 0) {
             const carriedForward = await calculateInitialBalanceForMonth(y, m);
-            const enteredOpening = getOpeningBalanceForMonth(startDate, endDate);
-            // calculateInitialBalanceForMonth вже включає opening_balance_amount до дати місяця,
-            // тому getOpeningBalanceForMonth додає лише ті, що потрапляють саме в цей місяць
-            monthInitialBalance = carriedForward + enteredOpening;
+            // На початок місяця беремо тільки залишок ДО 1 числа.
+            // opening_balance з датою всередині місяця додається як рух місяця, а не стартовий залишок.
+            monthInitialBalance = carriedForward;
           } else {
             monthInitialBalance = accountBalance;
           }
@@ -774,11 +877,10 @@ export function useFinancialSummaryReport({
         }
 
         if (monthInitialBalance !== undefined) {
-          accountBalance = monthInitialBalance + actualBalance + cashInTotal + transferInTotal;
-          accountBalanceWithoutDividends = monthInitialBalance + (actualIncome + cashInTotal + transferInTotal - expenseWithoutDividends);
+          accountBalance = monthInitialBalance + actualBalance + cashInTotal + transferInTotal + monthOpening;
+          accountBalanceWithoutDividends = monthInitialBalance + (actualIncome + cashInTotal + transferInTotal - expenseWithoutDividends) + monthOpening;
         } else {
           // Для режиму "всі рахунки": додаємо opening_balance_amount, якщо їх дата потрапляє в цей місяць
-          const monthOpening = getOpeningBalanceForMonth(startDate, endDate);
           accountBalance += actualBalance + cashInTotal + transferInTotal + monthOpening;
           accountBalanceWithoutDividends += (actualIncome + cashInTotal + transferInTotal - expenseWithoutDividends) + monthOpening;
         }
