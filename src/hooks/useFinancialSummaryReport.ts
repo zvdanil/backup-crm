@@ -30,6 +30,8 @@ export interface MonthlyFinancialData {
   accountBalance: number; // Залишок на рахунку (накопичений, з opening_balance)
   accountBalanceWithoutDividends: number; // Баланс без дивідендів (накопичений)
   initialBalance?: number; // Залишок на початок місяця (тільки для окремих рахунків)
+  /** Вкладка «Фінансовий прогноз»: нарахована зарплата (staff_journal) + (Реальні витрати − виплачена зарплата) */
+  financialForecastExpense: number;
 }
 
 interface UseFinancialSummaryReportParams {
@@ -853,6 +855,7 @@ export function useFinancialSummaryReport({
         // - виводу коштів (готівкове зняття)
         const businessExpense = actualExpense - transferExpenseTotal - dividendExpenseTotal - cashWithdrawalTotal;
         const delta = actualIncome - businessExpense;
+        const financialForecastExpense = salaryProjectionTotal + (businessExpense - salaryTotal);
 
         // Расчетные показатели
         const expectedBalance = projectedIncome - projectedExpense;
@@ -905,6 +908,7 @@ export function useFinancialSummaryReport({
           accountBalance,
           accountBalanceWithoutDividends,
           initialBalance: monthInitialBalance,
+          financialForecastExpense,
         });
       }
 

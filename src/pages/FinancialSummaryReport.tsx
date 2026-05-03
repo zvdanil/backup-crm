@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const MONTHS = [
   'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
@@ -34,6 +35,17 @@ export default function FinancialSummaryReport() {
   const [reportAccountIds, setReportAccountIds] = useState<string[]>([]);
   const [reportRequested, setReportRequested] = useState(false); // Не завантажувати автоматично при відкритті
 
+  const [forecastFilterStartYear, setForecastFilterStartYear] = useState(now.getFullYear());
+  const [forecastFilterStartMonth, setForecastFilterStartMonth] = useState(0);
+  const [forecastFilterEndYear, setForecastFilterEndYear] = useState(now.getFullYear());
+  const [forecastFilterEndMonth, setForecastFilterEndMonth] = useState(now.getMonth());
+
+  const [forecastReportStartYear, setForecastReportStartYear] = useState(now.getFullYear());
+  const [forecastReportStartMonth, setForecastReportStartMonth] = useState(0);
+  const [forecastReportEndYear, setForecastReportEndYear] = useState(now.getFullYear());
+  const [forecastReportEndMonth, setForecastReportEndMonth] = useState(now.getMonth());
+  const [forecastReportRequested, setForecastReportRequested] = useState(false);
+
   const { data: accounts = [] } = usePaymentAccounts();
 
   // Получаем годы для фильтра
@@ -57,6 +69,24 @@ export default function FinancialSummaryReport() {
     );
   }, [filterStartYear, filterStartMonth, filterEndYear, filterEndMonth, filterAccountIds, reportStartYear, reportStartMonth, reportEndYear, reportEndMonth, reportAccountIds]);
 
+  const forecastFiltersChanged = useMemo(() => {
+    return (
+      forecastFilterStartYear !== forecastReportStartYear ||
+      forecastFilterStartMonth !== forecastReportStartMonth ||
+      forecastFilterEndYear !== forecastReportEndYear ||
+      forecastFilterEndMonth !== forecastReportEndMonth
+    );
+  }, [
+    forecastFilterStartYear,
+    forecastFilterStartMonth,
+    forecastFilterEndYear,
+    forecastFilterEndMonth,
+    forecastReportStartYear,
+    forecastReportStartMonth,
+    forecastReportEndYear,
+    forecastReportEndMonth,
+  ]);
+
   // Формируем отчёт только при нажатии кнопки "Сформувати звіт"
   const { data: reportData = [], isLoading, refetch } = useFinancialSummaryReport({
     startYear: reportStartYear,
@@ -74,6 +104,20 @@ export default function FinancialSummaryReport() {
     endMonth: reportEndMonth,
     accountIds: reportAccountIds.length > 0 ? reportAccountIds : undefined,
     enabled: reportRequested,
+  });
+
+  /** Усі рахунки системи; та сама логіка, що окремих рахунків у сумі */
+  const {
+    data: forecastData = [],
+    isLoading: forecastLoading,
+    refetch: refetchForecast,
+  } = useFinancialSummaryReport({
+    startYear: forecastReportStartYear,
+    startMonth: forecastReportStartMonth,
+    endYear: forecastReportEndYear,
+    endMonth: forecastReportEndMonth,
+    accountIds: undefined,
+    enabled: forecastReportRequested,
   });
 
   const handleGenerateReport = () => {
@@ -94,6 +138,23 @@ export default function FinancialSummaryReport() {
       exact: false,
     });
     await refetch({ cancelRefetch: true });
+  };
+
+  const handleGenerateForecast = () => {
+    setForecastReportRequested(true);
+    setForecastReportStartYear(forecastFilterStartYear);
+    setForecastReportStartMonth(forecastFilterStartMonth);
+    setForecastReportEndYear(forecastFilterEndYear);
+    setForecastReportEndMonth(forecastFilterEndMonth);
+  };
+
+  const handleRefreshForecast = async () => {
+    setForecastReportRequested(true);
+    await queryClient.invalidateQueries({
+      queryKey: ['financial-summary-report'],
+      exact: false,
+    });
+    await refetchForecast({ cancelRefetch: true });
   };
 
   // showAllColumns — тільки для режиму "всі рахунки" (без фільтру).
@@ -121,6 +182,16 @@ export default function FinancialSummaryReport() {
     return filterAccountIds.includes(accountIdStr);
   };
 
+  const forecastTotals = useMemo(() => {
+    return forecastData.reduce(
+      (acc, row) => ({
+        projectedIncome: acc.projectedIncome + row.projectedIncome,
+        financialForecastExpense: acc.financialForecastExpense + row.financialForecastExpense,
+      }),
+      { projectedIncome: 0, financialForecastExpense: 0 }
+    );
+  }, [forecastData]);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -128,6 +199,13 @@ export default function FinancialSummaryReport() {
         description="Моніторинг планових та реальних грошових потоків для запобігання касовим розривам"
       />
 
+      <Tabs defaultValue="report" className="w-full">
+        <TabsList>
+          <TabsTrigger value="report">Фінансовий звіт</TabsTrigger>
+          <TabsTrigger value="forecast">Фінансовий прогноз</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="report" className="mt-4 space-y-6">
       {/* Filters */}
       <Card>
         <CardHeader>
@@ -494,6 +572,182 @@ export default function FinancialSummaryReport() {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+
+        <TabsContent value="forecast" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Фільтри прогнозу</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Рік початку</label>
+                  <Select
+                    value={forecastFilterStartYear.toString()}
+                    onValueChange={(value) => setForecastFilterStartYear(parseInt(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {years.map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Місяць початку</label>
+                  <Select
+                    value={forecastFilterStartMonth.toString()}
+                    onValueChange={(value) => setForecastFilterStartMonth(parseInt(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTHS.map((month, index) => (
+                        <SelectItem key={index} value={index.toString()}>
+                          {month}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Рік кінця</label>
+                  <Select
+                    value={forecastFilterEndYear.toString()}
+                    onValueChange={(value) => setForecastFilterEndYear(parseInt(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {years.map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Місяць кінця</label>
+                  <Select
+                    value={forecastFilterEndMonth.toString()}
+                    onValueChange={(value) => setForecastFilterEndMonth(parseInt(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTHS.map((month, index) => (
+                        <SelectItem key={index} value={index.toString()}>
+                          {month}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="md:col-span-4 flex flex-wrap items-end gap-2">
+                  <Button
+                    onClick={forecastFiltersChanged ? handleGenerateForecast : handleRefreshForecast}
+                    disabled={forecastLoading}
+                  >
+                    <RefreshCw className={cn('mr-2 h-4 w-4', forecastLoading && 'animate-spin')} />
+                    Сформувати прогноз
+                  </Button>
+                  {forecastFiltersChanged && (
+                    <p className="text-sm text-muted-foreground">
+                      Фільтри змінено. Натисніть кнопку для формування прогнозу.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Сумарний фінансовий прогноз</CardTitle>
+              <CardDescription>
+                Показники агреговані по всіх рахунках платежів. Прогноз доходу — як у звіті для режиму
+                «усі рахунки». Прогноз витрат — нарахована зарплата за період докупи з операційними
+                реальними витратами без суми фактичних виплат зарплати з рахунків («Реальні витрати» мінус
+                виплачена зарплата).
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!forecastReportRequested ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  Виберіть період і натисніть «Сформувати прогноз»
+                </div>
+              ) : forecastLoading ? (
+                <div className="text-center py-8 text-muted-foreground">Завантаження даних...</div>
+              ) : forecastData.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">Немає даних для відображення</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="sticky left-0 bg-card z-10">Місяць</TableHead>
+                        <TableHead className="text-right">Прогноз доходу</TableHead>
+                        <TableHead className="text-right">Прогноз витрат</TableHead>
+                        <TableHead className="text-right">Прогноз прибутку</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {forecastData.map((row) => {
+                        const forecastProfit = row.projectedIncome - row.financialForecastExpense;
+                        return (
+                        <TableRow key={row.month}>
+                          <TableCell className="font-medium sticky left-0 bg-card z-10">
+                            {row.monthLabel}
+                          </TableCell>
+                          <TableCell className="text-right">{formatCurrency(row.projectedIncome)}</TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(row.financialForecastExpense)}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              'text-right font-medium',
+                              forecastProfit < 0 && 'text-destructive bg-destructive/10'
+                            )}
+                          >
+                            {formatCurrency(forecastProfit)}
+                          </TableCell>
+                        </TableRow>
+                        );
+                      })}
+                      <TableRow className="border-t-2 bg-muted/30 font-semibold">
+                        <TableCell className="sticky left-0 bg-muted/30 z-10">Загалом за період</TableCell>
+                        <TableCell className="text-right">{formatCurrency(forecastTotals.projectedIncome)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(forecastTotals.financialForecastExpense)}</TableCell>
+                        <TableCell
+                          className={cn(
+                            'text-right',
+                            forecastTotals.projectedIncome - forecastTotals.financialForecastExpense < 0 &&
+                              'text-destructive bg-destructive/10'
+                          )}
+                        >
+                          {formatCurrency(
+                            forecastTotals.projectedIncome - forecastTotals.financialForecastExpense
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
