@@ -564,6 +564,8 @@ export default function EnhancedDashboard() {
         if (trans.type === 'income') {
           totals[category][trans.date] = (totals[category][trans.date] || 0) + (trans.amount || 0);
         } else if (trans.type === 'expense' || trans.type === 'salary' || trans.type === 'household') {
+          // Виключаємо дивіденди та вивід коштів — вони не є оперативними витратами
+          if (trans.dividend_payout_id || trans.cash_withdrawal_id) return;
           totals[category][trans.date] = (totals[category][trans.date] || 0) - (trans.amount || 0);
         }
       }
@@ -821,8 +823,10 @@ export default function EnhancedDashboard() {
   };
 
   const totalIncome = summaryByCategory.income + summaryByCategory.additional_income;
-  const totalExpense = summaryByCategory.expense + summaryByCategory.household_expense + summaryByCategory.salary;
-  const profit = totalIncome - totalExpense;
+  const totalExpense =
+    Object.values(dailyDisplayTotals.expense).reduce((sum, val) => sum + val, 0) +
+    Object.values(dailyDisplayTotals.salary).reduce((sum, val) => sum + val, 0);
+  const profit = Object.values(dailyDisplayTotals.net).reduce((sum, val) => sum + val, 0);
 
   if (isLoading) {
     return (

@@ -51,6 +51,8 @@ export interface DashboardFinanceTransaction {
   date: string;
   amount: number;
   type: string;
+  dividend_payout_id: string | null;
+  cash_withdrawal_id: string | null;
   students?: {
     id: string;
     full_name: string;
@@ -174,6 +176,8 @@ export function useDashboardData(year: number, month: number) {
                 date,
                 amount,
                 type,
+                dividend_payout_id,
+                cash_withdrawal_id,
                 students (id, full_name),
                 activities (id, name, color, category)
               `, { count: 'exact' })
