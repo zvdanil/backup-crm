@@ -2686,14 +2686,14 @@ export async function fetchPaymentAllocation(params: {
     const d = new Date(att.date);
     const m = d.getMonth();
     const y = d.getFullYear();
-    const activity = (activities || []).find((a: any) => a.id === enrollment.activity_id);
-    const history = priceHistoryMap.get(enrollment.id);
-    if (!enrollmentInScopeForMonth(enrollment, activity ?? null, history, y, m)) return;
     const activityId = enrollToActivity.get(att.enrollment_id);
     const accountId = enrollToAccount.get(att.enrollment_id) ?? null;
     if (!activityId) return;
     const amt = att.charged_amount ?? 0;
     if (amt <= 0) return;
+    // Don't apply enrollmentInScopeForMonth here: it checks enrollment.enrolled_at vs monthEnd
+    // and incorrectly excludes retroactive attendance (enrollment created in a later month
+    // but attendance explicitly recorded for an earlier month with charged_amount > 0).
     const key = `${activityId}|${accountId ?? "none"}|${y}|${m}`;
     const cur = attendanceByKey.get(key);
     attendanceByKey.set(key, {
@@ -2718,12 +2718,11 @@ export async function fetchPaymentAllocation(params: {
     const d = new Date(inc.date);
     const m = d.getMonth();
     const y = d.getFullYear();
+    // Skip if no enrollment exists for this activity at all (student was never enrolled)
     const list = enrollmentsByActivity.get(activityId) || [];
-    if (!list.some((e: any) => {
-      const act = (activities || []).find((a: any) => a.id === e.activity_id);
-      const hist = priceHistoryMap.get(e.id);
-      return enrollmentInScopeForMonth(e, act ?? null, hist, y, m);
-    })) return;
+    if (list.length === 0) return;
+    // Don't apply enrollmentInScopeForMonth: it excludes retroactive income transactions
+    // when the enrollment was created after the transaction date (e.g. backdated attendance).
     const amt = inc.amount ?? 0;
     if (amt <= 0) return;
     const accountId =
@@ -2763,15 +2762,15 @@ export async function fetchPaymentAllocation(params: {
       const y = Number(parts[2]);
       const m = Number(parts[3]);
       const acc = accountId ?? null;
-      const hasInScopeEnrollment = filteredEnrollments.some((e: any) => {
+      // Only require that an enrollment for this activity/account exists —
+      // don't apply enrollmentInScopeForMonth, which would filter out retroactive
+      // charges (enrollment created in a later month, attendance backdated).
+      const hasEnrollment = filteredEnrollments.some((e: any) => {
         if (e.activity_id !== activityId) return false;
         const eAcc = e.account_id ?? activityAccountMap.get(e.activity_id) ?? null;
-        if ((eAcc ?? "none") !== (acc ?? "none")) return false;
-        const activity = (activities || []).find((a: any) => a.id === e.activity_id);
-        const history = priceHistoryMap.get(e.id);
-        return enrollmentInScopeForMonth(e, activity ?? null, history, y, m);
+        return (eAcc ?? "none") === (acc ?? "none");
       });
-      return hasInScopeEnrollment;
+      return hasEnrollment;
     })
     .map(([key, { activityId, accountId, amount }]) => {
       const parts = key.split("|");

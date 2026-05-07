@@ -526,9 +526,9 @@ export function useUpdateEnrollment() {
   return useMutation({
     mutationFn: async ({ id, refresh_student_id: _refreshStudentId, recalc_from: _recalcFrom, recalc_to: _recalcTo, ...enrollment }: UpdateEnrollmentMutationInput) => {
       const { effective_from, ...enrollmentPatch } = enrollment;
-      const effectiveFromDate = effective_from
-        ? formatLocalDate(new Date(effective_from))
-        : formatLocalDate(new Date());
+      // Use the YYYY-MM-DD string directly — converting through new Date() triggers UTC parse
+      // and shifts the date by one day in UTC+N timezones (project rule 2).
+      const effectiveFromDate = effective_from ?? formatLocalDate(new Date());
 
       const { data: enrollmentMeta, error: enrollmentMetaError } = await supabaseAny
         .from('enrollments')
@@ -557,6 +557,11 @@ export function useUpdateEnrollment() {
         enrollmentMeta.enrolled_at ??
         formatLocalDate(new Date());
       const effectiveFromChanged = Boolean(effective_from) && effectiveFromDate !== currentEffectiveFrom;
+      // Persist effective_from to the enrollments table so enrollmentInScopeForMonth
+      // respects the backdated start when there is no price-history entry yet.
+      if (effectiveFromChanged) {
+        enrollmentPatch.effective_from = effectiveFromDate;
+      }
       const accountChanged =
         enrollmentPatch.account_id !== undefined &&
         enrollmentPatch.account_id !== (enrollmentMeta.account_id ?? null);
