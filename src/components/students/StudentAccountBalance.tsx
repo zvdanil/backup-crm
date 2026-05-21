@@ -7,6 +7,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/attendance";
 import { cn } from "@/lib/utils";
 import { StudentActivityBalanceRow } from "./StudentActivityBalanceRow";
@@ -19,6 +31,10 @@ import {
 } from "@/hooks/useEnrollments";
 import { ACTIVITY_GROUP_LABELS } from "@/lib/activityGroups";
 import type { ActivityGroup } from "@/hooks/useActivities";
+import { isGardenAttendanceController } from "@/lib/gardenAttendance";
+import { useDeleteStrayCharges } from "@/hooks/useFinanceTransactions";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "@/hooks/use-toast";
 
 /** Обгортка з стабільним onChargeCalculated, щоб уникнути циклу re-render */
 function GroupEnrollmentRow({
@@ -103,6 +119,12 @@ export function StudentAccountBalance({
   onMonthChange,
   onYearChange,
 }: StudentAccountBalanceProps) {
+  const { role } = useAuth();
+  const canDelete = role === "owner" || role === "admin";
+  const deleteStray = useDeleteStrayCharges();
+  const [strayDialogOpen, setStrayDialogOpen] = useState(false);
+  const [strayReason, setStrayReason] = useState("");
+
   const enrollmentIds = useMemo(
     () => enrollments.map((e) => e.id),
     [enrollments],
@@ -120,6 +142,13 @@ export function StudentAccountBalance({
       const activity = allActivities.find(
         (a) => a.id === enrollment.activity_id,
       );
+      // Archived enrollments: always include so StudentActivityBalanceRow can show
+      // the delete button if a stray income transaction exists. The row self-hides
+      // when there are no charges (balance=0, no incomeTransaction).
+      if (!enrollment.is_active) {
+        if (activity && isGardenAttendanceController(activity)) return false;
+        return !!enrollment.unenrolled_at;
+      }
       const history = priceHistoryMap.get(enrollment.id);
       return enrollmentInScopeForMonth(
         enrollment,
@@ -242,11 +271,39 @@ export function StudentAccountBalance({
     [getGroupTotal]
   );
 
+  const handleDeleteStray = async () => {
+    const count = await deleteStray.mutateAsync({
+      studentId,
+      month,
+      year,
+      reason: strayReason,
+    });
+    setStrayDialogOpen(false);
+    setStrayReason("");
+    toast({
+      title: count > 0 ? "Успішно" : "Нічого не знайдено",
+      description:
+        count > 0
+          ? `Видалено ${count} зайв${count === 1 ? "е нарахування" : "их нарахувань"}`
+          : "Зайвих нарахувань по відписаних активностях не знайдено",
+    });
+  };
+
   return (
     <div className="rounded-xl bg-card border border-border p-4 sm:p-6 shadow-soft mt-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <h3 className="text-lg font-semibold">Баланс по рахунках</h3>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+          {canDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setStrayDialogOpen(true)}
+              disabled={deleteStray.isPending}
+            >
+              Прибрати зайві нарахування
+            </Button>
+          )}
           <Select
             value={month.toString()}
             onValueChange={(value) => onMonthChange(parseInt(value))}
@@ -270,6 +327,38 @@ export function StudentAccountBalance({
           />
         </div>
       </div>
+
+      <AlertDialog open={strayDialogOpen} onOpenChange={setStrayDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Прибрати зайві нарахування</AlertDialogTitle>
+            <AlertDialogDescription>
+              Видалити всі нарахування за {MONTHS[month]} {year} по активностях,
+              від яких дитина вже відписана до початку цього місяця?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <Textarea
+              placeholder="Причина (обов'язково)"
+              value={strayReason}
+              onChange={(e) => setStrayReason(e.target.value)}
+              rows={2}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setStrayReason("")}>
+              Скасувати
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteStray}
+              disabled={!strayReason.trim() || deleteStray.isPending}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Видалити
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="space-y-4">
         {accountBalancesLoading ? (

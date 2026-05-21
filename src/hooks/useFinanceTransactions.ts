@@ -3022,3 +3022,90 @@ export function useDeleteIncomeTransaction() {
     },
   });
 }
+
+// Delete all stray income transactions for a student/month that belong to
+// enrollments already archived before the start of that month.
+export function useDeleteStrayCharges() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      studentId,
+      month,
+      year,
+    }: {
+      studentId: string;
+      month: number;
+      year: number;
+      reason: string;
+    }) => {
+      const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+      // Fetch all income transactions for this student in this month
+      const { data: txs, error: txErr } = await supabaseAny
+        .from("finance_transactions")
+        .select("id, activity_id")
+        .eq("student_id", studentId)
+        .eq("type", "income")
+        .gte("date", monthStart)
+        .lte("date", monthEnd);
+      if (txErr) throw txErr;
+      if (!txs?.length) return 0;
+
+      // Fetch archived enrollments for this student unenrolled before monthStart
+      const { data: archivedEnrollments, error: eErr } = await supabaseAny
+        .from("enrollments")
+        .select("id, activity_id, unenrolled_at")
+        .eq("student_id", studentId)
+        .eq("is_active", false)
+        .lt("unenrolled_at", monthStart);
+      if (eErr) throw eErr;
+
+      const strayMap = new Map<string, string>(); // activity_id → enrollment_id
+      (archivedEnrollments ?? []).forEach((e: { id: string; activity_id: string; unenrolled_at: string }) => {
+        strayMap.set(e.activity_id, e.id);
+      });
+
+      const strayTxs = txs.filter(
+        (t: { id: string; activity_id: string | null }) =>
+          t.activity_id && strayMap.has(t.activity_id),
+      );
+      if (!strayTxs.length) return 0;
+
+      for (const tx of strayTxs) {
+        const enrollmentId = strayMap.get(tx.activity_id!)!;
+
+        // Add exclusion so «Нараховано на початок» won't include this enrollment
+        const { error: exErr } = await supabaseAny
+          .from("subscription_charge_exclusions")
+          .upsert(
+            { enrollment_id: enrollmentId, year, month },
+            { onConflict: "enrollment_id,year,month" },
+          );
+        if (exErr) throw exErr;
+
+        // Delete the income transaction
+        const { error: delErr } = await supabaseAny
+          .from("finance_transactions")
+          .delete()
+          .eq("id", tx.id);
+        if (delErr) throw delErr;
+      }
+
+      return strayTxs.length;
+    },
+    onSuccess: (_count, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["finance_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["activity_income_transaction"] });
+      queryClient.invalidateQueries({ queryKey: ["student_activity_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["student_activity_monthly_balance"] });
+      queryClient.invalidateQueries({
+        queryKey: ["student_account_balances", vars.studentId, vars.month, vars.year],
+      });
+      queryClient.invalidateQueries({ queryKey: ["student_total_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"], exact: false });
+    },
+  });
+}

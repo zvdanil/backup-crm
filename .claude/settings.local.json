@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep -l \"mutation.*transaction\\\\|createTransaction\\\\|updateTransaction\\\\|deleteTransaction\")",
+      "Bash(xargs grep -l \"finance_transactions\\\\|charges\")",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
