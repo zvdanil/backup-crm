@@ -1832,7 +1832,6 @@ function calculateMonthlyBalanceFromData(
     let baseMonthlyCharge = 0;
 
     if (isMonthlyBilling) {
-      // Абонплата — тільки повна ставка, без перерахунків та знижок
       const priceHistory = enrollmentPriceHistoryMap.get(enrollmentId);
       const priceForDate = getEnrollmentPriceForDate(
         enrollment,
@@ -1843,7 +1842,8 @@ function calculateMonthlyBalanceFromData(
         priceForDate.custom_price !== null &&
         priceForDate.custom_price !== undefined
       ) {
-        baseMonthlyCharge = priceForDate.custom_price;
+        const discountMultiplier = 1 - (priceForDate.discount_percent || 0) / 100;
+        baseMonthlyCharge = Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
       } else if (presentRule?.rate && presentRule.rate > 0) {
         baseMonthlyCharge = presentRule.rate;
       } else {
@@ -3161,7 +3161,24 @@ export function useRecalculateMonthlyCharges() {
             correctAmount = activity.default_price || 0;
           }
 
-          if (correctAmount <= 0) continue;
+          if (correctAmount <= 0) {
+            // Tariff is 0: delete any existing income tx and mark as excluded
+            if (existingTx) {
+              const { error: delErr } = await supabaseAny
+                .from("finance_transactions")
+                .delete()
+                .eq("id", existingTx.id);
+              if (delErr) throw delErr;
+              changedCount++;
+            }
+            await supabaseAny
+              .from("subscription_charge_exclusions")
+              .upsert(
+                { enrollment_id: enrollment.id, year, month },
+                { onConflict: "enrollment_id,year,month" },
+              );
+            continue;
+          }
 
           // Resolve account_id for this enrollment at month-end
           const resolvedAccountId =
