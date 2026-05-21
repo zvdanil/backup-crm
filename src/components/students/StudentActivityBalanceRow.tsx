@@ -73,6 +73,21 @@ export function StudentActivityBalanceRow({
     !isFoodActivity &&
     (presentRule?.type === "fixed" || presentRule?.type === "subscription");
 
+  // Max rate from custom_statuses with subscription/subscription_with_logic type.
+  // These also contribute to «Нараховано на початок» even when isMonthlyBilling = false.
+  const customSubscriptionRate = useMemo(() => {
+    if (isFoodActivity || !activities?.billing_rules?.custom_statuses) return 0;
+    const subs = (activities.billing_rules.custom_statuses as any[]).filter(
+      (cs: any) =>
+        cs.is_active !== false &&
+        (cs.type === "subscription" || cs.type === "subscription_with_logic") &&
+        cs.rate != null &&
+        Number(cs.rate) > 0,
+    );
+    if (!subs.length) return 0;
+    return Math.max(...subs.map((cs: any) => Number(cs.rate)));
+  }, [isFoodActivity, activities?.billing_rules?.custom_statuses]);
+
   // Для помесячного отображения используем конец месяца как якорную дату
   // (чтобы запись, начавшаяся внутри месяца, корректно применялась к этому месяцу).
   const monthEndDateStr = getMonthEndDate(year, month);
@@ -337,15 +352,13 @@ export function StudentActivityBalanceRow({
       : balance >= 0
     : balance >= 0;
 
-  // Check if we can show delete button for subscription charges
-  // For subscription billing, show delete button if:
-  // 1. It's monthly billing (fixed or subscription type)
-  // 2. There are charges (monthlyCharges > 0) OR there's an income transaction - this means subscription is active
-  // We show button even if incomeTransaction doesn't exist - we'll create it on delete
-  // This works even for archived enrollments
-  // Note: After deletion, monthlyCharges will be 0, so button will disappear
+  // Show delete button if this enrollment contributes to «Нараховано на початок місяця».
+  // Two sources match the backend subscription_charges calculation:
+  // 1. presentRule.type === "subscription" | "fixed"  (isMonthlyBilling)
+  // 2. custom_statuses with subscription/subscription_with_logic type  (customSubscriptionRate)
   const hasSubscriptionCharge =
-    isMonthlyBilling && (monthlyCharges > 0 || !!incomeTransaction);
+    (isMonthlyBilling && (monthlyCharges > 0 || !!incomeTransaction)) ||
+    (customSubscriptionRate > 0 && !isFoodActivity);
 
   const handleDeleteClick = () => {
     // Allow deletion for subscription charges even if transaction doesn't exist
@@ -451,7 +464,7 @@ export function StudentActivityBalanceRow({
           onOpenChange={setDeleteDialogOpen}
           onConfirm={handleDeleteConfirm}
           transactionType="income"
-          amount={incomeTransaction?.amount || baseMonthlyCharge}
+          amount={incomeTransaction?.amount || baseMonthlyCharge || customSubscriptionRate}
           isLoading={addExclusion.isPending || deleteIncome.isPending}
         />
       )}
