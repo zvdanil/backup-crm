@@ -32,7 +32,7 @@ import {
 import { ACTIVITY_GROUP_LABELS } from "@/lib/activityGroups";
 import type { ActivityGroup } from "@/hooks/useActivities";
 import { isGardenAttendanceController } from "@/lib/gardenAttendance";
-import { useDeleteStrayCharges } from "@/hooks/useFinanceTransactions";
+import { useRecalculateMonthlyCharges } from "@/hooks/useFinanceTransactions";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
 
@@ -121,7 +121,7 @@ export function StudentAccountBalance({
 }: StudentAccountBalanceProps) {
   const { role } = useAuth();
   const canDelete = role === "owner" || role === "admin";
-  const deleteStray = useDeleteStrayCharges();
+  const recalculate = useRecalculateMonthlyCharges();
   const [strayDialogOpen, setStrayDialogOpen] = useState(false);
   const [strayReason, setStrayReason] = useState("");
 
@@ -271,8 +271,8 @@ export function StudentAccountBalance({
     [getGroupTotal]
   );
 
-  const handleDeleteStray = async () => {
-    const count = await deleteStray.mutateAsync({
+  const handleRecalculate = async () => {
+    const count = await recalculate.mutateAsync({
       studentId,
       month,
       year,
@@ -281,11 +281,11 @@ export function StudentAccountBalance({
     setStrayDialogOpen(false);
     setStrayReason("");
     toast({
-      title: count > 0 ? "Успішно" : "Нічого не знайдено",
+      title: "Успішно",
       description:
         count > 0
-          ? `Видалено ${count} зайв${count === 1 ? "е нарахування" : "их нарахувань"}`
-          : "Зайвих нарахувань по відписаних активностях не знайдено",
+          ? `Перенараховано: змінено ${count} нарахуван${count === 1 ? "ня" : "ь"}`
+          : "Всі нарахування вже відповідають поточним цінам",
     });
   };
 
@@ -299,9 +299,9 @@ export function StudentAccountBalance({
               variant="outline"
               size="sm"
               onClick={() => setStrayDialogOpen(true)}
-              disabled={deleteStray.isPending}
+              disabled={recalculate.isPending}
             >
-              Прибрати зайві нарахування
+              Перенарахувати за місяць
             </Button>
           )}
           <Select
@@ -331,10 +331,11 @@ export function StudentAccountBalance({
       <AlertDialog open={strayDialogOpen} onOpenChange={setStrayDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Прибрати зайві нарахування</AlertDialogTitle>
+            <AlertDialogTitle>Перенарахувати за місяць</AlertDialogTitle>
             <AlertDialogDescription>
-              Видалити всі нарахування за {MONTHS[month]} {year} по активностях,
-              від яких дитина вже відписана до початку цього місяця?
+              Перерахувати всі абонплатні нарахування за {MONTHS[month]} {year}:
+              виправити суми відповідно до поточних цін, видалити зайві нарахування
+              по відписаних активностях, створити відсутні.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-2">
@@ -350,8 +351,8 @@ export function StudentAccountBalance({
               Скасувати
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleDeleteStray}
-              disabled={!strayReason.trim() || deleteStray.isPending}
+              onClick={handleRecalculate}
+              disabled={!strayReason.trim() || recalculate.isPending}
               className="bg-destructive hover:bg-destructive/90"
             >
               Видалити
