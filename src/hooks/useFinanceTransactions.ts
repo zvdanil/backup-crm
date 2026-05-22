@@ -3097,23 +3097,10 @@ export function useRecalculateMonthlyCharges() {
       });
       const activityMap = new Map<string, any>((activities ?? []).map((a: any) => [a.id, a]));
 
-      // Garden-related activity IDs — managed by Attendance Journal, must not be touched
-      const gardenActivityIdsToSkip = new Set<string>();
-      (activities ?? []).forEach((act: any) => {
-        if (isGardenAttendanceController(act)) {
-          gardenActivityIdsToSkip.add(act.id);
-          const config = getGardenAttendanceConfig(act);
-          (config.base_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
-          (config.food_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
-        }
-      });
-
       const monthStartDate = new Date(year, month, 1);
       let changedCount = 0;
 
       for (const enrollment of (enrollments as any[])) {
-        if (gardenActivityIdsToSkip.has(enrollment.activity_id)) continue;
-
         const activity = activityMap.get(enrollment.activity_id);
         if (!activity) continue;
 
