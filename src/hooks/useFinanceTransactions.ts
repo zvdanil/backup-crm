@@ -3211,6 +3211,14 @@ export function useRecalculateMonthlyCharges() {
         } else {
           // ── Attendance-based billing (per_visit, custom_statuses) ──
 
+          // Clear any stale exclusion — attendance-based activities are never excluded
+          await supabaseAny
+            .from("subscription_charge_exclusions")
+            .delete()
+            .eq("enrollment_id", enrollment.id)
+            .eq("year", year)
+            .eq("month", month);
+
           if (!isActiveInMonth) {
             changedCount++;
             continue;
