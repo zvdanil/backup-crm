@@ -386,12 +386,11 @@ export function getBillingRulesForDate(
     });
     
     if (applicableHistory && applicableHistory.billing_rules) {
-      // ВАЖНО: Сохраняем custom_statuses из исходной активности, 
-      // так как они не должны меняться в истории цен
       const historyRules = applicableHistory.billing_rules;
       return {
         ...historyRules,
-        custom_statuses: activity.billing_rules?.custom_statuses || historyRules.custom_statuses,
+        // Используем исторические custom_statuses; для старых записей без них — текущие
+        custom_statuses: historyRules.custom_statuses ?? activity.billing_rules?.custom_statuses,
       };
     }
   }

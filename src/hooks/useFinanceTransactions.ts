@@ -3060,11 +3060,12 @@ export function useRecalculateMonthlyCharges() {
       const enrollmentIds = enrollments.map((e: any) => e.id);
       const activityIds = [...new Set(enrollments.map((e: any) => e.activity_id as string))];
 
-      // 2. Fetch price history, account history, activities in parallel
+      // 2. Fetch price history, account history, activities, activity price history in parallel
       const [
         { data: priceHistoryRows, error: phErr },
         { data: accountHistoryRows, error: ahErr },
         { data: activities, error: actErr },
+        { data: activityPriceHistoryRows, error: aphErr },
       ] = await Promise.all([
         supabaseAny
           .from("enrollment_price_history")
@@ -3080,10 +3081,16 @@ export function useRecalculateMonthlyCharges() {
           .from("activities")
           .select("id, account_id, billing_rules, default_price, config")
           .in("id", activityIds),
+        supabaseAny
+          .from("activity_price_history")
+          .select("*")
+          .in("activity_id", activityIds)
+          .order("effective_from", { ascending: false }),
       ]);
       if (phErr) throw phErr;
       if (ahErr) throw ahErr;
       if (actErr) throw actErr;
+      if (aphErr) throw aphErr;
 
       // Build lookup maps
       const priceHistoryMap = new Map<string, any[]>();
@@ -3097,6 +3104,11 @@ export function useRecalculateMonthlyCharges() {
         accountHistoryMap.get(ah.enrollment_id)!.push(ah);
       });
       const activityMap = new Map<string, any>((activities ?? []).map((a: any) => [a.id, a]));
+      const activityPriceHistoryMap = new Map<string, any[]>();
+      (activityPriceHistoryRows ?? []).forEach((aph: any) => {
+        if (!activityPriceHistoryMap.has(aph.activity_id)) activityPriceHistoryMap.set(aph.activity_id, []);
+        activityPriceHistoryMap.get(aph.activity_id)!.push(aph);
+      });
 
       const monthStartDate = new Date(year, month, 1);
       let changedCount = 0;
@@ -3253,6 +3265,7 @@ export function useRecalculateMonthlyCharges() {
                   discount_percent: enrollment.discount_percent,
                 },
                 activity,
+                activityPriceHistory: activityPriceHistoryMap.get(enrollment.activity_id),
                 enrollmentPriceHistory: priceHistoryMap.get(enrollment.id),
                 visitCountBefore,
               });
