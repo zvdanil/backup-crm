@@ -30,14 +30,36 @@
 
 ## Типи активностей та спосіб їх обробки
 
-### 1. Garden (Дитсадок) — **пропускаємо повністю**
+### 1. Garden controller + base tariff — **пропускаємо повністю**
 
-Визначення: `isGardenAttendanceController(activity) === true`.
+Визначення: `isGardenAttendanceController(activity) === true` (є `config.base_tariff_ids`).
 
-Перерахунок не торкається ні контролер-активності, ні її base_tariff та food_tariff активностей.
-Їхні income-транзакції керуються окремою garden-логікою.
+До `gardenSkipIds` потрапляють:
+- ID контролер-активності
+- Усі `base_tariff_ids` з конфігу контролера
 
-### 2. Subscription (`payment_type === 'subscription'`) — **одна income tx на місяць**
+Ці активності **пропускаються повністю** (`continue`): їхні income-транзакції керуються
+безпосередньо в `GardenAttendanceJournal` при кожній відмітці.
+
+### 2. Garden food tariff — **чистимо зайві income tx, потім пропускаємо**
+
+До `gardenFoodIds` потрапляють: усі `food_tariff_ids` з конфігу контролера.
+
+Логіка:
+1. **Видалити** всі income-транзакції food-активності за місяць (cleanup spurious txs).
+2. **Не створювати** нових транзакцій (`continue`).
+
+Food-активності отримують лише **expense**-транзакції (повернення за харчування при
+відсутності) — їх створює `GardenAttendanceJournal`. Income-транзакцій у food-активностей
+бути не повинно.
+
+> **Чому потрібне видалення?** Якщо попередній запуск «Перенарахувати» (до виправлення)
+> не мав garden-skip, він міг створити зайву income-транзакцію для food-активності
+> (через `payment_type = 'subscription'`). Ця транзакція зменшувала баланс: наприклад,
+> при 5 пропусках × 420 відображалося +1680 (2100 − 420) замість +2100.
+> Cleanup видаляє таку транзакцію при першому ж запуску «Перенарахувати».
+
+### 3. Subscription (`payment_type === 'subscription'`) — **одна income tx на місяць**
 
 Приклади: «Дитсадок повний день», «Щомісячна абонплата».
 
@@ -51,7 +73,7 @@
 
 Дата income tx = `monthStart` (перший день місяця), незалежно від кількості відвідувань.
 
-### 3. Per-session (`payment_type === 'per_session'`) — **income tx на кожне відвідування**
+### 4. Per-session (`payment_type === 'per_session'`) — **income tx на кожне відвідування**
 
 Приклади: «Хореографія», «Футбол», будь-яка активність з погодинною або поштучною оплатою.
 
@@ -99,7 +121,9 @@
 - Візит `threshold`: решта суми = `rate - minAmount`
 - Інші візити: 0
 
-`visitCountBefore` = скільки записів із цим самим статусом вже було до поточного в місяці. Відстежується в `Map<status_id, count>` і збільшується **перед** будь-якою перевіркою manual_value_edit — так manual-записи теж враховуються у лічильнику для подальших записів.
+`visitCountBefore` = скільки записів із цим самим статусом вже було до поточного в місяці.
+Відстежується в `Map<status_id, count>` і збільшується **перед** будь-якою перевіркою
+`manual_value_edit` — так manual-записи теж враховуються у лічильнику для подальших записів.
 
 ---
 
@@ -135,6 +159,22 @@ enrollment_account_history для enrollment.id на дату monthEnd
 
 ---
 
+## Як «Харчування» відображається в картці дитини
+
+Для food-активності (`isFoodActivity = true`) рядок у `StudentActivityBalanceRow` показує:
+
+| Елемент UI | Джерело | Що означає |
+|------------|---------|------------|
+| `+N грн` (основна сума) | `balance = payments − charges + refunds` | Фактично повернуто батькам |
+| `Пропусків: K` | count expense-транзакцій за місяць | Кількість днів відсутності |
+| `Переплата в поточному місяці: M` | sum expense-транзакцій за місяць | Загальна сума повернень |
+
+**Якщо `+N грн` ≠ `Переплата: M`** — значить у food-активності є зайва **income**-транзакція
+(`charges > 0`), яка зменшує баланс: `balance = 0 − charges + refunds`.
+Запустіть «Перенарахувати» — функція видалить зайву income tx і баланс вирівняється.
+
+---
+
 ## Що відбувається з «Нараховано на початок місяця» (subscriptionOnlyChargesByActivity)
 
 Це значення в `calculateMonthlyBalanceFromData` (`useFinanceTransactions.ts`) береться з фактичних income tx (не з тарифу), якщо вони є. Таким чином після перерахунку UI одразу показує актуальну суму без перезавантаження.
@@ -145,16 +185,28 @@ enrollment_account_history для enrollment.id на дату monthEnd
 
 ## Ключові правила (не порушувати при модифікації)
 
-1. **Garden-активності завжди пропускати** — не видаляти їхні income tx.
+1. **Garden-активності: три різні категорії з різною логікою**
+   - Контролер + base tariff → `gardenSkipIds` → пропустити повністю
+   - Food tariff → `gardenFoodIds` → видалити income tx (cleanup) + пропустити створення
+   - Решта → обробляти стандартно
+
 2. **isMonthlyBilling визначається через `payment_type`, а не тип правила білінгу**:
    ```ts
    const isMonthlyBilling = activity.payment_type === "subscription";
    ```
+
 3. **visitCountBefore відстежувати до перевірки manual_value_edit** — інакше manual-записи ламають тарифну сітку subscription_with_logic.
+
 4. **manual_value_edit = true** → не перераховувати суму, але income tx відтворити.
+
 5. **Спочатку видалити ВСІ income tx, потім відтворити** — не порівнювати, не патчити. Це запобігає дублюванню при повторних натисканнях.
+
 6. **Exclusion для per-session активностей** — завжди видаляти (вони ніколи не повинні мати exclusion).
+
 7. **Дата parsing** — `YYYY-MM-DD` через `.split('-').map(Number)` + `new Date(y, m-1, d)`, не `new Date(str)` (зсув UTC).
+
+8. **Food-активності не повинні мати income tx** — лише expense tx (повернення за харчування).
+   Якщо income tx з'явилася (баг попередньої версії) — вона видаляється при наступному «Перенарахувати».
 
 ---
 
@@ -164,12 +216,63 @@ enrollment_account_history для enrollment.id на дату monthEnd
 StudentAccountBalance.tsx
   → useRecalculateMonthlyCharges().mutate({ studentId, month, year, reason })
     → Завантажити enrollments, priceHistory, accountHistory, activities, activityPriceHistory
-    → Побудувати gardenActivityIdsToSkip
+    → Побудувати gardenSkipIds (controller + base tariff)
+    → Побудувати gardenFoodIds (food tariff)
     → Для кожного enrollment:
-        якщо garden → skip
-        якщо subscription → delete txs → create 1 tx / exclusion
-        якщо per_session → delete txs → delete exclusion → for each attendance → create tx
+        якщо gardenSkipIds    → skip повністю
+        якщо gardenFoodIds    → delete income txs (cleanup) → skip
+        якщо subscription     → delete income txs → create 1 tx / exclusion
+        якщо per_session      → delete income txs → delete exclusion → for each attendance → create tx
     → Повернути changedCount
   → onSuccess → invalidateQueries (finance_transactions, attendance, student_account_balances, ...)
   → React Query перезавантажує дані → UI оновлюється
+```
+
+---
+
+## GardenAttendanceJournal — надійність відмітки
+
+Відмітки в журналі v1 ненадійні при швидкому кліканні. Зафіксовані проблеми та виправлення:
+
+### Архітектура запису відмітки
+
+При кліку на клітинку журналу запускається `handleStatusChange` (fire-and-forget):
+1. `calculateDailyAccrual()` — синхронний розрахунок денної суми
+2. `await setAttendance.mutateAsync()` — upsert запису attendance
+3. `await upsertTransaction.mutateAsync()` — income tx для кожної base-tariff активності
+4. `await upsertTransaction.mutateAsync()` — expense tx для food-tariff (якщо статус = absent)
+5. `scheduleDebouncedSync()` — синхронізація журналу педагога (fire-and-forget, 400ms debounce)
+
+### Виправлені проблеми
+
+**Проблема 1: зайва legacy TX для garden-контролера**
+`useSetAttendance.onSuccess` (загальний хук) після будь-якої відмітки створював income-транзакцію
+для активності enrollment. Для garden-контролера це зайво — журнал сам керує транзакціями.
+При 5 швидких кліках = 5 × (3 SELECT + 1 INSERT) = 15 зайвих DB-операцій конкурентно.
+
+**Виправлення** (`useAttendance.ts`, `useSetAttendance.onSuccess`):
+```ts
+const isGardenController = !!(activityConfig?.base_tariff_ids?.length);
+if (isGardenController) return; // Пропустити legacy TX для garden
+```
+
+**Проблема 2: подвійний клік = конкурентна обробка тієї самої клітинки**
+`handleCellChange` запускав `handleStatusChange` fire-and-forget без будь-якого lock.
+Два кліки на одну клітинку → два конкурентних SELECT+INSERT для однієї дати.
+
+**Виправлення** (`GardenAttendanceJournal.tsx`):
+```ts
+const processingCells = useRef(new Set<string>()); // key = enrollmentId-date
+// При кліку: if (processingCells.current.has(key)) return;
+```
+
+**Проблема 3: помилки відмітки ховалися мовчки**
+`handleCellChange` не мав `.catch()`. Якщо `handleStatusChange` падав (timeout, DB error) —
+attendance записувався (перший await), але TX — ні. Користувач не знав про помилку.
+
+**Виправлення** (`GardenAttendanceJournal.tsx`):
+```ts
+handleStatusChange(...).catch(error => {
+  toast({ title: 'Помилка відмітки', description: 'Спробуйте ще раз.', variant: 'destructive' });
+}).finally(() => { ... });
 ```
