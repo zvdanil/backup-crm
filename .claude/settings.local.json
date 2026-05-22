@@ -3,7 +3,9 @@
     "allow": [
       "Bash(xargs grep -l \"mutation.*transaction\\\\|createTransaction\\\\|updateTransaction\\\\|deleteTransaction\")",
       "Bash(xargs grep -l \"finance_transactions\\\\|charges\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(xargs grep -l \"Дитсадок повний\")",
+      "Bash(xargs grep -l \"base_tariff_ids\\\\|food_tariff_ids\")"
     ]
   }
 }

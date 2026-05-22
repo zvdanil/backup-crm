@@ -1849,17 +1849,17 @@ function calculateMonthlyBalanceFromData(
       } else {
         baseMonthlyCharge = activity.default_price || 0;
       }
-      // «Нараховано на початок» — тільки present subscription, НЕ fixed. Значення з білінгових правил.
-      // Виключаємо, якщо користувач натиснув корзину (запис у subscription_charge_exclusions).
-      if (
-        presentRule?.type === "subscription" &&
-        baseMonthlyCharge > 0 &&
-        !isArchivedInViewedMonth
-      ) {
+      // «Нараховано на початок» — subscription only (not fixed).
+      // Use actual income tx amount when available; fall back to billing rule for future months.
+      if (presentRule?.type === "subscription" && !isArchivedInViewedMonth) {
         const exclusionKey = `${enrollmentId}-${year}-${month}`;
         if (!subscriptionChargeExclusions.has(exclusionKey)) {
-          subscriptionOnlyChargesByActivity[enrollment.activity_id] =
-            (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + baseMonthlyCharge;
+          const actualIncome = incomeByActivity[enrollment.activity_id] || 0;
+          const chargeAmount = actualIncome > 0 ? actualIncome : baseMonthlyCharge;
+          if (chargeAmount > 0) {
+            subscriptionOnlyChargesByActivity[enrollment.activity_id] =
+              (subscriptionOnlyChargesByActivity[enrollment.activity_id] || 0) + chargeAmount;
+          }
         }
       }
     } else {
@@ -1883,10 +1883,13 @@ function calculateMonthlyBalanceFromData(
       }
     }
 
-    if (baseMonthlyCharge > 0 && !isArchivedInViewedMonth) {
-      monthlyChargesByActivity[enrollment.activity_id] =
-        (monthlyChargesByActivity[enrollment.activity_id] || 0) +
-        baseMonthlyCharge;
+    if (!isArchivedInViewedMonth) {
+      const actualIncome = incomeByActivity[enrollment.activity_id] || 0;
+      const chargeAmount = actualIncome > 0 ? actualIncome : baseMonthlyCharge;
+      if (chargeAmount > 0) {
+        monthlyChargesByActivity[enrollment.activity_id] =
+          (monthlyChargesByActivity[enrollment.activity_id] || 0) + chargeAmount;
+      }
     }
   });
 
@@ -3061,7 +3064,6 @@ export function useRecalculateMonthlyCharges() {
         { data: priceHistoryRows, error: phErr },
         { data: accountHistoryRows, error: ahErr },
         { data: activities, error: actErr },
-        { data: incomeTxs, error: txErr },
       ] = await Promise.all([
         supabaseAny
           .from("enrollment_price_history")
@@ -3075,20 +3077,12 @@ export function useRecalculateMonthlyCharges() {
           .order("effective_from", { ascending: false }),
         supabaseAny
           .from("activities")
-          .select("id, account_id, billing_rules, default_price")
+          .select("id, account_id, billing_rules, default_price, config")
           .in("id", activityIds),
-        supabaseAny
-          .from("finance_transactions")
-          .select("id, activity_id, amount")
-          .eq("student_id", studentId)
-          .eq("type", "income")
-          .gte("date", monthStart)
-          .lte("date", monthEnd),
       ]);
       if (phErr) throw phErr;
       if (ahErr) throw ahErr;
       if (actErr) throw actErr;
-      if (txErr) throw txErr;
 
       // Build lookup maps
       const priceHistoryMap = new Map<string, any[]>();
@@ -3102,11 +3096,15 @@ export function useRecalculateMonthlyCharges() {
         accountHistoryMap.get(ah.enrollment_id)!.push(ah);
       });
       const activityMap = new Map<string, any>((activities ?? []).map((a: any) => [a.id, a]));
-      // activity_id → first income transaction (there should be at most one per activity per month)
-      const incomeTxByActivity = new Map<string, any>();
-      (incomeTxs ?? []).forEach((t: any) => {
-        if (t.activity_id && !incomeTxByActivity.has(t.activity_id)) {
-          incomeTxByActivity.set(t.activity_id, t);
+
+      // Garden-related activity IDs — managed by Attendance Journal, must not be touched
+      const gardenActivityIdsToSkip = new Set<string>();
+      (activities ?? []).forEach((act: any) => {
+        if (isGardenAttendanceController(act)) {
+          gardenActivityIdsToSkip.add(act.id);
+          const config = getGardenAttendanceConfig(act);
+          (config.base_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
+          (config.food_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
         }
       });
 
@@ -3114,31 +3112,32 @@ export function useRecalculateMonthlyCharges() {
       let changedCount = 0;
 
       for (const enrollment of (enrollments as any[])) {
+        if (gardenActivityIdsToSkip.has(enrollment.activity_id)) continue;
+
         const activity = activityMap.get(enrollment.activity_id);
         if (!activity) continue;
 
         const presentRule = activity.billing_rules?.present;
         const isMonthlyBilling =
           presentRule?.type === "subscription" || presentRule?.type === "fixed";
-
-        // Only process subscription/fixed billing activities
-        // (custom_statuses subscription don't create income transactions)
         if (!isMonthlyBilling) continue;
+
+        // Step 1: delete ALL existing income transactions for this activity this month
+        const { error: delAllErr } = await supabaseAny
+          .from("finance_transactions")
+          .delete()
+          .eq("student_id", studentId)
+          .eq("activity_id", enrollment.activity_id)
+          .eq("type", "income")
+          .gte("date", monthStart)
+          .lte("date", monthEnd);
+        if (delAllErr) throw delAllErr;
 
         const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
         const isActiveInMonth = !unenrolledDate || unenrolledDate >= monthStartDate;
-        const existingTx = incomeTxByActivity.get(enrollment.activity_id);
 
         if (!isActiveInMonth) {
-          // Archived before month: delete income tx + add exclusion
-          if (existingTx) {
-            const { error: delErr } = await supabaseAny
-              .from("finance_transactions")
-              .delete()
-              .eq("id", existingTx.id);
-            if (delErr) throw delErr;
-            changedCount++;
-          }
+          // Inactive before month start: add exclusion, no new tx
           const { error: exErr } = await supabaseAny
             .from("subscription_charge_exclusions")
             .upsert(
@@ -3146,100 +3145,71 @@ export function useRecalculateMonthlyCharges() {
               { onConflict: "enrollment_id,year,month" },
             );
           if (exErr) throw exErr;
-        } else {
-          // Active in month: calculate correct amount
-          const priceHistory = priceHistoryMap.get(enrollment.id);
-          const priceForDate = getEnrollmentPriceForDate(enrollment, priceHistory, monthEndDateStr);
-
-          let correctAmount = 0;
-          if (priceForDate.custom_price !== null && priceForDate.custom_price !== undefined) {
-            const discountMultiplier = 1 - (priceForDate.discount_percent || 0) / 100;
-            correctAmount = Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
-          } else if (presentRule?.rate && presentRule.rate > 0) {
-            correctAmount = presentRule.rate;
-          } else {
-            correctAmount = activity.default_price || 0;
-          }
-
-          if (correctAmount <= 0) {
-            // Tariff is 0: delete any existing income tx and mark as excluded
-            if (existingTx) {
-              const { error: delErr } = await supabaseAny
-                .from("finance_transactions")
-                .delete()
-                .eq("id", existingTx.id);
-              if (delErr) throw delErr;
-              changedCount++;
-            }
-            await supabaseAny
-              .from("subscription_charge_exclusions")
-              .upsert(
-                { enrollment_id: enrollment.id, year, month },
-                { onConflict: "enrollment_id,year,month" },
-              );
-            continue;
-          }
-
-          // Resolve account_id for this enrollment at month-end
-          const resolvedAccountId =
-            getEnrollmentAccountForDate(
-              { account_id: enrollment.account_id ?? null },
-              accountHistoryMap.get(enrollment.id),
-              monthEndDateStr,
-            ) ?? activity.account_id ?? null;
-
-          // Remove exclusion if present (we're recalculating)
-          await supabaseAny
-            .from("subscription_charge_exclusions")
-            .delete()
-            .eq("enrollment_id", enrollment.id)
-            .eq("year", year)
-            .eq("month", month);
-
-          if (existingTx) {
-            if (Math.abs(existingTx.amount - correctAmount) > 0.005) {
-              // Wrong amount: delete old, create new
-              const { error: delErr } = await supabaseAny
-                .from("finance_transactions")
-                .delete()
-                .eq("id", existingTx.id);
-              if (delErr) throw delErr;
-              const { error: insErr } = await supabaseAny
-                .from("finance_transactions")
-                .insert({
-                  type: "income",
-                  student_id: studentId,
-                  activity_id: enrollment.activity_id,
-                  account_id: resolvedAccountId,
-                  amount: correctAmount,
-                  date: monthStart,
-                  description: null,
-                  category: null,
-                  staff_id: null,
-                });
-              if (insErr) throw insErr;
-              changedCount++;
-            }
-            // Correct amount: leave as is
-          } else {
-            // No income transaction: create one
-            const { error: insErr } = await supabaseAny
-              .from("finance_transactions")
-              .insert({
-                type: "income",
-                student_id: studentId,
-                activity_id: enrollment.activity_id,
-                account_id: resolvedAccountId,
-                amount: correctAmount,
-                date: monthStart,
-                description: null,
-                category: null,
-                staff_id: null,
-              });
-            if (insErr) throw insErr;
-            changedCount++;
-          }
+          changedCount++;
+          continue;
         }
+
+        // Step 2: calculate correct amount for active enrollment
+        const priceForDate = getEnrollmentPriceForDate(
+          enrollment,
+          priceHistoryMap.get(enrollment.id),
+          monthEndDateStr,
+        );
+
+        let correctAmount = 0;
+        if (priceForDate.custom_price !== null && priceForDate.custom_price !== undefined) {
+          const discountMultiplier = 1 - (priceForDate.discount_percent || 0) / 100;
+          correctAmount = Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
+        } else if (presentRule?.rate && presentRule.rate > 0) {
+          correctAmount = presentRule.rate;
+        } else {
+          correctAmount = activity.default_price || 0;
+        }
+
+        // Remove exclusion — enrollment is active, we will (re)create the tx
+        await supabaseAny
+          .from("subscription_charge_exclusions")
+          .delete()
+          .eq("enrollment_id", enrollment.id)
+          .eq("year", year)
+          .eq("month", month);
+
+        if (correctAmount <= 0) {
+          // Tariff is 0: mark as excluded, no tx
+          const { error: exErr } = await supabaseAny
+            .from("subscription_charge_exclusions")
+            .upsert(
+              { enrollment_id: enrollment.id, year, month },
+              { onConflict: "enrollment_id,year,month" },
+            );
+          if (exErr) throw exErr;
+          changedCount++;
+          continue;
+        }
+
+        // Step 3: create fresh income tx
+        const resolvedAccountId =
+          getEnrollmentAccountForDate(
+            { account_id: enrollment.account_id ?? null },
+            accountHistoryMap.get(enrollment.id),
+            monthEndDateStr,
+          ) ?? activity.account_id ?? null;
+
+        const { error: insErr } = await supabaseAny
+          .from("finance_transactions")
+          .insert({
+            type: "income",
+            student_id: studentId,
+            activity_id: enrollment.activity_id,
+            account_id: resolvedAccountId,
+            amount: correctAmount,
+            date: monthStart,
+            description: null,
+            category: null,
+            staff_id: null,
+          });
+        if (insErr) throw insErr;
+        changedCount++;
       }
 
       return changedCount;
