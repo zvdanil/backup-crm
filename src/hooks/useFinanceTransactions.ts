@@ -3079,7 +3079,7 @@ export function useRecalculateMonthlyCharges() {
           .order("effective_from", { ascending: false }),
         supabaseAny
           .from("activities")
-          .select("id, account_id, billing_rules, default_price, config")
+          .select("id, account_id, billing_rules, default_price, config, payment_type")
           .in("id", activityIds),
         supabaseAny
           .from("activity_price_history")
@@ -3113,13 +3113,27 @@ export function useRecalculateMonthlyCharges() {
       const monthStartDate = new Date(year, month, 1);
       let changedCount = 0;
 
+      // Build set of garden activity IDs to skip (controller + its tariff activities)
+      const gardenActivityIdsToSkip = new Set<string>();
+      (activities ?? []).forEach((act: any) => {
+        if (isGardenAttendanceController(act)) {
+          gardenActivityIdsToSkip.add(act.id);
+          const config = getGardenAttendanceConfig(act);
+          (config.base_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
+          (config.food_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
+        }
+      });
+
       for (const enrollment of (enrollments as any[])) {
+        if (gardenActivityIdsToSkip.has(enrollment.activity_id)) continue;
+
         const activity = activityMap.get(enrollment.activity_id);
         if (!activity) continue;
 
-        const presentRule = activity.billing_rules?.present;
-        const isMonthlyBilling =
-          presentRule?.type === "subscription" || presentRule?.type === "fixed";
+        // Monthly billing = subscription payment type (one income tx per month).
+        // Per-visit activities (payment_type = 'per_session') use attendance-based logic
+        // regardless of what billing rule type their present rule uses.
+        const isMonthlyBilling = activity.payment_type === "subscription";
 
         const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
         const isActiveInMonth = !unenrolledDate || unenrolledDate >= monthStartDate;
@@ -3244,27 +3258,35 @@ export function useRecalculateMonthlyCharges() {
           const visitCountByStatus = new Map<string, number>();
 
           for (const record of attendanceRows as any[]) {
-            if (record.manual_value_edit) continue;
-
-            let newValue: number | null = null;
-            let chargedAmount = 0;
-
-            if (record.status === null) {
-              newValue = record.value ?? null;
-              chargedAmount = newValue !== null ? newValue : 0;
-            } else {
-              const customStatus = activity.billing_rules?.custom_statuses?.find(
+            // Track visitCountBefore for subscription_with_logic BEFORE any skip —
+            // manually edited records still count as visits for subsequent records
+            let visitCountBefore = 0;
+            if (record.status !== null) {
+              const csForCount = activity.billing_rules?.custom_statuses?.find(
                 (cs: any) =>
                   cs.id === record.status &&
                   cs.is_active !== false &&
                   cs.type === "subscription_with_logic",
               );
-              let visitCountBefore = 0;
-              if (customStatus) {
+              if (csForCount) {
                 visitCountBefore = visitCountByStatus.get(record.status) || 0;
                 visitCountByStatus.set(record.status, visitCountBefore + 1);
               }
+            }
 
+            let newValue: number | null = null;
+            let chargedAmount = 0;
+            let recalculated = false;
+
+            if (record.manual_value_edit) {
+              // Preserve manually edited amount — recreate income tx with existing value
+              chargedAmount = record.charged_amount ?? 0;
+              newValue = record.value ?? null;
+            } else if (record.status === null) {
+              newValue = record.value ?? null;
+              chargedAmount = newValue !== null ? newValue : 0;
+              recalculated = true;
+            } else {
               const result = calculateAttendanceChargeForRecalc({
                 date: record.date,
                 status: record.status,
@@ -3279,10 +3301,11 @@ export function useRecalculateMonthlyCharges() {
               });
               newValue = result.value;
               chargedAmount = result.chargedAmount;
+              recalculated = true;
             }
 
-            // Update attendance.charged_amount if changed
-            if ((record.charged_amount ?? 0) !== chargedAmount || record.value !== newValue) {
+            // Update attendance.charged_amount only for recalculated records
+            if (recalculated && ((record.charged_amount ?? 0) !== chargedAmount || record.value !== newValue)) {
               await supabaseAny
                 .from("attendance")
                 .update({ charged_amount: chargedAmount, value: newValue, manual_value_edit: false })
@@ -3290,7 +3313,7 @@ export function useRecalculateMonthlyCharges() {
                 .eq("date", record.date);
             }
 
-            // Create fresh income tx
+            // Always recreate income tx if charged (covers manual + recalculated)
             if (chargedAmount > 0) {
               const { error: insErr } = await supabaseAny.from("finance_transactions").insert({
                 type: "income",
