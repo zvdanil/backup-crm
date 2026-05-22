@@ -3113,19 +3113,36 @@ export function useRecalculateMonthlyCharges() {
       const monthStartDate = new Date(year, month, 1);
       let changedCount = 0;
 
-      // Build set of garden activity IDs to skip (controller + its tariff activities)
-      const gardenActivityIdsToSkip = new Set<string>();
+      // Build sets of garden activity IDs:
+      // - gardenSkipIds: controller + base tariff → skip entirely (managed by garden journal)
+      // - gardenFoodIds: food tariff → delete any spurious income txs, but don't create new ones
+      const gardenSkipIds = new Set<string>();
+      const gardenFoodIds = new Set<string>();
       (activities ?? []).forEach((act: any) => {
         if (isGardenAttendanceController(act)) {
-          gardenActivityIdsToSkip.add(act.id);
+          gardenSkipIds.add(act.id);
           const config = getGardenAttendanceConfig(act);
-          (config.base_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
-          (config.food_tariff_ids || []).forEach((id: string) => gardenActivityIdsToSkip.add(id));
+          (config.base_tariff_ids || []).forEach((id: string) => gardenSkipIds.add(id));
+          (config.food_tariff_ids || []).forEach((id: string) => gardenFoodIds.add(id));
         }
       });
 
       for (const enrollment of (enrollments as any[])) {
-        if (gardenActivityIdsToSkip.has(enrollment.activity_id)) continue;
+        if (gardenSkipIds.has(enrollment.activity_id)) continue;
+
+        // Food tariff activities: clean up any spurious income txs left by previous bugs, then skip.
+        // Their expense txs (food returns for absences) are managed by GardenAttendanceJournal.
+        if (gardenFoodIds.has(enrollment.activity_id)) {
+          await supabaseAny
+            .from("finance_transactions")
+            .delete()
+            .eq("student_id", studentId)
+            .eq("activity_id", enrollment.activity_id)
+            .eq("type", "income")
+            .gte("date", monthStart)
+            .lte("date", monthEnd);
+          continue;
+        }
 
         const activity = activityMap.get(enrollment.activity_id);
         if (!activity) continue;

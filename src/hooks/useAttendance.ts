@@ -167,15 +167,21 @@ export function useSetAttendance() {
               account_id,
               activities (
                 id,
-                account_id
+                account_id,
+                config
               )
             `)
             .eq('id', data.enrollment_id)
             .single();
-          
+
           if (enrollmentError) {
             console.error('[Dashboard Debug] Error fetching enrollment:', enrollmentError);
           } else if (enrollment) {
+            // Skip legacy TX creation for garden controller activities —
+            // GardenAttendanceJournal creates its own base/food transactions.
+            const activityConfig = (enrollment.activities as any)?.config;
+            const isGardenController = !!(activityConfig?.base_tariff_ids?.length);
+            if (isGardenController) return;
             const { data: accountHistoryRow, error: accountHistoryError } = await supabaseAny
               .from('enrollment_account_history')
               .select('account_id')

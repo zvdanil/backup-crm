@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { toast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -388,6 +389,8 @@ export default function GardenAttendanceJournal() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSyncRunningRef = useRef(false);
   const pendingSyncRef = useRef(false);
+  // Tracks cells currently being processed to prevent concurrent re-entry for the same cell
+  const processingCells = useRef(new Set<string>());
 
   // Sync staff journal entries for all base tariff activities
   const syncStaffJournalEntriesForBaseTariffs = useCallback(async () => {
@@ -923,26 +926,40 @@ export default function GardenAttendanceJournal() {
     ]);
   }, [controllerActivityId, controllerActivity, allEnrollments, activitiesMap, setAttendance, deleteAttendance, upsertTransaction, deleteTransaction, queryClient, scheduleDebouncedSync]);
 
-  // Wrapper for instant optimistic UI: update display immediately, run mutations in background
+  // Wrapper for instant optimistic UI: update display immediately, run mutations in background.
+  // processingCells lock prevents concurrent re-entry for the same cell (double-click protection).
   const handleCellChange = useCallback((
     enrollmentId: string,
     studentId: string,
     date: string,
   ) => (status: AttendanceStatus | null, _value: number | null) => {
     const key = `${enrollmentId}-${date}`;
-    const amount = 0;
+    if (processingCells.current.has(key)) return;
+    processingCells.current.add(key);
+
     setOptimisticOverrides((prev) => {
       const next = new Map(prev);
-      next.set(key, { status, amount });
+      next.set(key, { status, amount: 0 });
       return next;
     });
-    handleStatusChange(enrollmentId, studentId, date, status, null).finally(() => {
-      setOptimisticOverrides((prev) => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
+
+    handleStatusChange(enrollmentId, studentId, date, status, null)
+      .catch((error) => {
+        console.error('[Garden] Cell marking failed:', error);
+        toast({
+          title: 'Помилка відмітки',
+          description: 'Не вдалося зберегти відмітку. Спробуйте ще раз.',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        processingCells.current.delete(key);
+        setOptimisticOverrides((prev) => {
+          const next = new Map(prev);
+          next.delete(key);
+          return next;
+        });
       });
-    });
   }, [handleStatusChange]);
 
   const handlePrevMonth = () => {
