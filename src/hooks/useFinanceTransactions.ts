@@ -21,6 +21,7 @@ import {
   getEnrollmentAccountForDate,
   enrollmentHistoryCoversMonth,
   enrollmentInScopeForMonth,
+  calculateAttendanceChargeForRecalc,
   type EnrollmentPriceHistory,
   type EnrollmentAccountHistory,
 } from "./useEnrollments";
@@ -3107,9 +3108,11 @@ export function useRecalculateMonthlyCharges() {
         const presentRule = activity.billing_rules?.present;
         const isMonthlyBilling =
           presentRule?.type === "subscription" || presentRule?.type === "fixed";
-        if (!isMonthlyBilling) continue;
 
-        // Step 1: delete ALL existing income transactions for this activity this month
+        const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
+        const isActiveInMonth = !unenrolledDate || unenrolledDate >= monthStartDate;
+
+        // Delete ALL income txs for this activity this month (always, for all billing types)
         const { error: delAllErr } = await supabaseAny
           .from("finance_transactions")
           .delete()
@@ -3120,83 +3123,169 @@ export function useRecalculateMonthlyCharges() {
           .lte("date", monthEnd);
         if (delAllErr) throw delAllErr;
 
-        const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
-        const isActiveInMonth = !unenrolledDate || unenrolledDate >= monthStartDate;
+        if (isMonthlyBilling) {
+          // ── Subscription / fixed: one income tx per month ──
 
-        if (!isActiveInMonth) {
-          // Inactive before month start: add exclusion, no new tx
-          const { error: exErr } = await supabaseAny
-            .from("subscription_charge_exclusions")
-            .upsert(
-              { enrollment_id: enrollment.id, year, month },
-              { onConflict: "enrollment_id,year,month" },
-            );
-          if (exErr) throw exErr;
-          changedCount++;
-          continue;
-        }
+          if (!isActiveInMonth) {
+            const { error: exErr } = await supabaseAny
+              .from("subscription_charge_exclusions")
+              .upsert(
+                { enrollment_id: enrollment.id, year, month },
+                { onConflict: "enrollment_id,year,month" },
+              );
+            if (exErr) throw exErr;
+            changedCount++;
+            continue;
+          }
 
-        // Step 2: calculate correct amount for active enrollment
-        const priceForDate = getEnrollmentPriceForDate(
-          enrollment,
-          priceHistoryMap.get(enrollment.id),
-          monthEndDateStr,
-        );
-
-        let correctAmount = 0;
-        if (priceForDate.custom_price !== null && priceForDate.custom_price !== undefined) {
-          const discountMultiplier = 1 - (priceForDate.discount_percent || 0) / 100;
-          correctAmount = Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
-        } else if (presentRule?.rate && presentRule.rate > 0) {
-          correctAmount = presentRule.rate;
-        } else {
-          correctAmount = activity.default_price || 0;
-        }
-
-        // Remove exclusion — enrollment is active, we will (re)create the tx
-        await supabaseAny
-          .from("subscription_charge_exclusions")
-          .delete()
-          .eq("enrollment_id", enrollment.id)
-          .eq("year", year)
-          .eq("month", month);
-
-        if (correctAmount <= 0) {
-          // Tariff is 0: mark as excluded, no tx
-          const { error: exErr } = await supabaseAny
-            .from("subscription_charge_exclusions")
-            .upsert(
-              { enrollment_id: enrollment.id, year, month },
-              { onConflict: "enrollment_id,year,month" },
-            );
-          if (exErr) throw exErr;
-          changedCount++;
-          continue;
-        }
-
-        // Step 3: create fresh income tx
-        const resolvedAccountId =
-          getEnrollmentAccountForDate(
-            { account_id: enrollment.account_id ?? null },
-            accountHistoryMap.get(enrollment.id),
+          const priceForDate = getEnrollmentPriceForDate(
+            enrollment,
+            priceHistoryMap.get(enrollment.id),
             monthEndDateStr,
-          ) ?? activity.account_id ?? null;
+          );
 
-        const { error: insErr } = await supabaseAny
-          .from("finance_transactions")
-          .insert({
-            type: "income",
-            student_id: studentId,
-            activity_id: enrollment.activity_id,
-            account_id: resolvedAccountId,
-            amount: correctAmount,
-            date: monthStart,
-            description: null,
-            category: null,
-            staff_id: null,
-          });
-        if (insErr) throw insErr;
-        changedCount++;
+          let correctAmount = 0;
+          if (priceForDate.custom_price !== null && priceForDate.custom_price !== undefined) {
+            const discountMultiplier = 1 - (priceForDate.discount_percent || 0) / 100;
+            correctAmount = Math.round(priceForDate.custom_price * discountMultiplier * 100) / 100;
+          } else if (presentRule?.rate && presentRule.rate > 0) {
+            correctAmount = presentRule.rate;
+          } else {
+            correctAmount = activity.default_price || 0;
+          }
+
+          // Remove exclusion — enrollment is active, we will (re)create the tx
+          await supabaseAny
+            .from("subscription_charge_exclusions")
+            .delete()
+            .eq("enrollment_id", enrollment.id)
+            .eq("year", year)
+            .eq("month", month);
+
+          if (correctAmount <= 0) {
+            const { error: exErr } = await supabaseAny
+              .from("subscription_charge_exclusions")
+              .upsert(
+                { enrollment_id: enrollment.id, year, month },
+                { onConflict: "enrollment_id,year,month" },
+              );
+            if (exErr) throw exErr;
+            changedCount++;
+            continue;
+          }
+
+          const resolvedAccountId =
+            getEnrollmentAccountForDate(
+              { account_id: enrollment.account_id ?? null },
+              accountHistoryMap.get(enrollment.id),
+              monthEndDateStr,
+            ) ?? activity.account_id ?? null;
+
+          const { error: insErr } = await supabaseAny
+            .from("finance_transactions")
+            .insert({
+              type: "income",
+              student_id: studentId,
+              activity_id: enrollment.activity_id,
+              account_id: resolvedAccountId,
+              amount: correctAmount,
+              date: monthStart,
+              description: null,
+              category: null,
+              staff_id: null,
+            });
+          if (insErr) throw insErr;
+          changedCount++;
+        } else {
+          // ── Attendance-based billing (per_visit, custom_statuses) ──
+
+          if (!isActiveInMonth) {
+            changedCount++;
+            continue;
+          }
+
+          const { data: attendanceRows, error: attErr } = await supabaseAny
+            .from("attendance")
+            .select("id, enrollment_id, date, status, charged_amount, value, notes, manual_value_edit")
+            .eq("enrollment_id", enrollment.id)
+            .gte("date", monthStart)
+            .lte("date", monthEnd)
+            .order("date", { ascending: true });
+          if (attErr) throw attErr;
+          if (!attendanceRows?.length) continue;
+
+          const resolvedAccountId =
+            getEnrollmentAccountForDate(
+              { account_id: enrollment.account_id ?? null },
+              accountHistoryMap.get(enrollment.id),
+              monthEndDateStr,
+            ) ?? activity.account_id ?? null;
+
+          const visitCountByStatus = new Map<string, number>();
+
+          for (const record of attendanceRows as any[]) {
+            if (record.manual_value_edit) continue;
+
+            let newValue: number | null = null;
+            let chargedAmount = 0;
+
+            if (record.status === null) {
+              newValue = record.value ?? null;
+              chargedAmount = newValue !== null ? newValue : 0;
+            } else {
+              const customStatus = activity.billing_rules?.custom_statuses?.find(
+                (cs: any) =>
+                  cs.id === record.status &&
+                  cs.is_active !== false &&
+                  cs.type === "subscription_with_logic",
+              );
+              let visitCountBefore = 0;
+              if (customStatus) {
+                visitCountBefore = visitCountByStatus.get(record.status) || 0;
+                visitCountByStatus.set(record.status, visitCountBefore + 1);
+              }
+
+              const result = calculateAttendanceChargeForRecalc({
+                date: record.date,
+                status: record.status,
+                enrollment: {
+                  custom_price: enrollment.custom_price,
+                  discount_percent: enrollment.discount_percent,
+                },
+                activity,
+                enrollmentPriceHistory: priceHistoryMap.get(enrollment.id),
+                visitCountBefore,
+              });
+              newValue = result.value;
+              chargedAmount = result.chargedAmount;
+            }
+
+            // Update attendance.charged_amount if changed
+            if ((record.charged_amount ?? 0) !== chargedAmount || record.value !== newValue) {
+              await supabaseAny
+                .from("attendance")
+                .update({ charged_amount: chargedAmount, value: newValue, manual_value_edit: false })
+                .eq("enrollment_id", enrollment.id)
+                .eq("date", record.date);
+            }
+
+            // Create fresh income tx
+            if (chargedAmount > 0) {
+              const { error: insErr } = await supabaseAny.from("finance_transactions").insert({
+                type: "income",
+                student_id: studentId,
+                activity_id: enrollment.activity_id,
+                account_id: resolvedAccountId,
+                amount: chargedAmount,
+                date: record.date,
+                description: "Нарахування за відвідування",
+                attendance_id: record.id,
+              });
+              if (insErr) throw insErr;
+            }
+            changedCount++;
+          }
+        }
       }
 
       return changedCount;
@@ -3211,6 +3300,7 @@ export function useRecalculateMonthlyCharges() {
       });
       queryClient.invalidateQueries({ queryKey: ["student_total_balance"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
     },
   });
 }
