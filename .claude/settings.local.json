@@ -10,7 +10,9 @@
       "Bash(Select-Object -First 20)",
       "Bash(Find-ChildItem -Path \"c:\\\\Users\\\\User\\\\Downloads\\\\crmbackup-cursor\\\\supabase\" -Type f -Name \"*.sql\")",
       "Bash(Select-Object -First 10)",
-      "Bash(Get-ChildItem -Path . -Directory)"
+      "Bash(Get-ChildItem -Path . -Directory)",
+      "Bash(xargs grep -l \"EditEnrollmentForm\")",
+      "Bash(xargs -I {} basename {})"
     ]
   }
 }

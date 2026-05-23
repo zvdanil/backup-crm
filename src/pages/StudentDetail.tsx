@@ -12,6 +12,7 @@ import {
   BadgeDollarSign,
   Wallet,
   History,
+  Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -29,6 +30,7 @@ import {
   type EnrollmentWithRelations,
 } from "@/hooks/useEnrollments";
 import { EnrollmentPriceHistoryDialog } from "@/components/enrollments/EnrollmentPriceHistoryDialog";
+import { EnrollmentAccountHistoryDialog } from "@/components/enrollments/EnrollmentAccountHistoryDialog";
 import {
   useCreateFinanceTransaction,
   useStudentAccountBalances,
@@ -108,6 +110,7 @@ export default function StudentDetail() {
     useState<EnrollmentWithRelations | null>(null);
   const [unenrollingId, setUnenrollingId] = useState<string | null>(null);
   const [priceHistoryEnrollmentId, setPriceHistoryEnrollmentId] = useState<string | null>(null);
+  const [accountHistoryEnrollmentId, setAccountHistoryEnrollmentId] = useState<string | null>(null);
   const [changePriceEnrollment, setChangePriceEnrollment] =
     useState<EnrollmentWithRelations | null>(null);
   const [balanceMonth, setBalanceMonth] = useState(now.getMonth());
@@ -601,6 +604,16 @@ export default function StudentDetail() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                onClick={() =>
+                                  setAccountHistoryEnrollmentId(enrollment.id)
+                                }
+                                title="Історія прив'язки до рахунку"
+                              >
+                                <Landmark className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => setUnenrollingId(enrollment.id)}
                                 title="Відписати"
                               >
@@ -690,6 +703,16 @@ export default function StudentDetail() {
                                     title="Історія зміни ціни"
                                   >
                                     <History className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() =>
+                                      setAccountHistoryEnrollmentId(enrollment.id)
+                                    }
+                                    title="Історія прив'язки до рахунку"
+                                  >
+                                    <Landmark className="h-4 w-4" />
                                   </Button>
                                   <Button
                                     variant="ghost"
@@ -860,6 +883,18 @@ export default function StudentDetail() {
             open={!!priceHistoryEnrollmentId}
             onOpenChange={(open) => !open && setPriceHistoryEnrollmentId(null)}
             enrollmentId={priceHistoryEnrollmentId}
+            activityName={enrollment.activities?.name || ''}
+          />
+        ) : null;
+      })()}
+
+      {accountHistoryEnrollmentId && (() => {
+        const enrollment = enrollments.find(e => e.id === accountHistoryEnrollmentId);
+        return enrollment ? (
+          <EnrollmentAccountHistoryDialog
+            open={!!accountHistoryEnrollmentId}
+            onOpenChange={(open) => !open && setAccountHistoryEnrollmentId(null)}
+            enrollmentId={accountHistoryEnrollmentId}
             activityName={enrollment.activities?.name || ''}
           />
         ) : null;
