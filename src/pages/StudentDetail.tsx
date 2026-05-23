@@ -27,6 +27,7 @@ import {
   useUnenrollStudent,
   useUpdateEnrollment,
   useEnrollmentAccountHistory,
+  getEnrollmentAccountForDate,
   type EnrollmentWithRelations,
 } from "@/hooks/useEnrollments";
 import { EnrollmentPriceHistoryDialog } from "@/components/enrollments/EnrollmentPriceHistoryDialog";
@@ -36,7 +37,7 @@ import {
   useStudentAccountBalances,
   useStudentTotalBalance,
 } from "@/hooks/useFinanceTransactions";
-import { formatCurrency, formatDate } from "@/lib/attendance";
+import { formatCurrency, formatDate, formatLocalDate } from "@/lib/attendance";
 import { StudentActivityBalanceRow } from "@/components/students/StudentActivityBalanceRow";
 import { StudentPaymentHistory } from "@/components/students/StudentPaymentHistory";
 import { StudentAccountBalance } from "@/components/students/StudentAccountBalance";
@@ -122,6 +123,17 @@ export default function StudentDetail() {
   const { data: student, isLoading: studentLoading } = useStudent(id!);
   const { data: editingEnrollmentAccountHistory = [] } =
     useEnrollmentAccountHistory(editingEnrollment?.id || "");
+  const oldAccountForEditing = useMemo(() => {
+    if (!editingEnrollment) return null;
+    const todayStr = formatLocalDate(new Date());
+    const currentAccountId = getEnrollmentAccountForDate(
+      editingEnrollment,
+      editingEnrollmentAccountHistory,
+      todayStr,
+    );
+    if (!currentAccountId) return null;
+    return accounts.find((a) => a.id === currentAccountId) ?? null;
+  }, [editingEnrollment, editingEnrollmentAccountHistory, accounts]);
   const { data: enrollments = [], isLoading: enrollmentsLoading } =
     useEnrollments({
       studentId: id,
@@ -218,6 +230,7 @@ export default function StudentDetail() {
     discount_percent: number;
     effective_from: string | null;
     account_id: string | null;
+    backfill_old_account: boolean;
   }): Promise<boolean> => {
     if (editingEnrollment) {
       const newAccountId = data.account_id;
@@ -247,6 +260,7 @@ export default function StudentDetail() {
         effective_from: effectiveFrom,
         account_id: newAccountId,
         refresh_student_id: id!,
+        backfill_old_account: data.backfill_old_account,
       });
 
       setEditingEnrollment(null);
@@ -837,6 +851,8 @@ export default function StudentDetail() {
           initialEffectiveFrom={editingEnrollment.effective_from}
           initialAccountId={editingEnrollment.account_id}
           isLoading={updateEnrollment.isPending}
+          oldAccountId={oldAccountForEditing?.id ?? null}
+          oldAccountName={oldAccountForEditing?.name ?? null}
         />
       )}
 

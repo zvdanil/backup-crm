@@ -20,12 +20,14 @@ import {
 } from '@/components/ui/select';
 import { usePaymentAccounts } from '@/hooks/usePaymentAccounts';
 import { formatCurrency, formatLocalDate } from '@/lib/attendance';
+import { Checkbox } from '@/components/ui/checkbox';
 
 const editEnrollmentSchema = z.object({
   custom_price: z.string().optional(),
   discount_percent: z.string().optional(),
   effective_from: z.string().optional(),
   account_id: z.string().optional(),
+  backfill_old_account: z.boolean().optional(),
 });
 
 type EditEnrollmentFormData = z.infer<typeof editEnrollmentSchema>;
@@ -33,25 +35,29 @@ type EditEnrollmentFormData = z.infer<typeof editEnrollmentSchema>;
 interface EditEnrollmentFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { custom_price: number | null; discount_percent: number; effective_from: string | null; account_id: string | null }) => void | Promise<boolean | void> | boolean;
+  onSubmit: (data: { custom_price: number | null; discount_percent: number; effective_from: string | null; account_id: string | null; backfill_old_account: boolean }) => void | Promise<boolean | void> | boolean;
   activityName: string;
   initialCustomPrice: number | null;
   initialDiscount: number | null;
   initialEffectiveFrom: string | null;
   initialAccountId: string | null;
   isLoading?: boolean;
+  oldAccountId: string | null;
+  oldAccountName: string | null;
 }
 
-export function EditEnrollmentForm({ 
-  open, 
-  onOpenChange, 
-  onSubmit, 
+export function EditEnrollmentForm({
+  open,
+  onOpenChange,
+  onSubmit,
   activityName,
   initialCustomPrice,
   initialDiscount,
   initialEffectiveFrom,
   initialAccountId,
   isLoading,
+  oldAccountId,
+  oldAccountName,
 }: EditEnrollmentFormProps) {
   const { data: accounts = [] } = usePaymentAccounts();
   const { register, handleSubmit, reset, watch, setValue } = useForm<EditEnrollmentFormData>({
@@ -61,6 +67,7 @@ export function EditEnrollmentForm({
       discount_percent: '0',
       effective_from: '',
       account_id: 'none',
+      backfill_old_account: true,
     },
   });
 
@@ -71,6 +78,7 @@ export function EditEnrollmentForm({
         discount_percent: initialDiscount?.toString() || '0',
         effective_from: initialEffectiveFrom || formatLocalDate(new Date()),
         account_id: initialAccountId || 'none',
+        backfill_old_account: true,
       });
     }
   }, [open, initialCustomPrice, initialDiscount, initialEffectiveFrom, initialAccountId, reset]);
@@ -81,6 +89,7 @@ export function EditEnrollmentForm({
       discount_percent: data.discount_percent ? parseFloat(data.discount_percent) : 0,
       effective_from: data.effective_from || null,
       account_id: data.account_id === 'none' ? null : data.account_id,
+      backfill_old_account: data.backfill_old_account ?? true,
     });
     if (result !== false) {
       onOpenChange(false);
@@ -143,6 +152,20 @@ export function EditEnrollmentForm({
               Якщо не вказано, використовується рахунок з налаштувань активності. При зміні рахунку буде виконано перерахунок нарахувань.
             </p>
           </div>
+
+          {oldAccountId && watch('account_id') !== (oldAccountId ?? 'none') && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/50">
+              <Checkbox
+                id="backfill_old_account"
+                checked={watch('backfill_old_account') ?? true}
+                onCheckedChange={(v) => setValue('backfill_old_account', Boolean(v))}
+                className="mt-0.5"
+              />
+              <Label htmlFor="backfill_old_account" className="text-sm leading-snug cursor-pointer">
+                Прив'язати нарахування до дати зміни до рахунку «{oldAccountName}»
+              </Label>
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

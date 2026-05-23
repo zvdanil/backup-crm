@@ -39,6 +39,7 @@ type UpdateEnrollmentMutationInput = { id: string } &
     refresh_student_id?: string;
     recalc_from?: string;
     recalc_to?: string;
+    backfill_old_account?: boolean;
   };
 
 export function useEnrollments(filters?: { studentId?: string; activityId?: string; activeOnly?: boolean }) {
@@ -524,7 +525,7 @@ export function useUpdateEnrollment() {
   };
   
   return useMutation({
-    mutationFn: async ({ id, refresh_student_id: _refreshStudentId, recalc_from: _recalcFrom, recalc_to: _recalcTo, ...enrollment }: UpdateEnrollmentMutationInput) => {
+    mutationFn: async ({ id, refresh_student_id: _refreshStudentId, recalc_from: _recalcFrom, recalc_to: _recalcTo, backfill_old_account: _backfillOldAccount, ...enrollment }: UpdateEnrollmentMutationInput) => {
       const { effective_from, ...enrollmentPatch } = enrollment;
       // Use the YYYY-MM-DD string directly — converting through new Date() triggers UTC parse
       // and shifts the date by one day in UTC+N timezones (project rule 2).
@@ -624,6 +625,33 @@ export function useUpdateEnrollment() {
 
         const { error: txUpdateError } = await txUpdateQuery;
         if (txUpdateError) throw txUpdateError;
+
+        if (_backfillOldAccount) {
+          const { data: prevHistoryRow } = await supabaseAny
+            .from('enrollment_account_history')
+            .select('account_id, effective_from')
+            .eq('enrollment_id', id)
+            .lt('effective_from', effectiveFromDate)
+            .order('effective_from', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const oldAccountId = prevHistoryRow?.account_id ?? null;
+          if (oldAccountId) {
+            let backfillQuery = supabaseAny
+              .from('finance_transactions')
+              .update({ account_id: oldAccountId })
+              .eq('student_id', enrollmentMeta.student_id)
+              .eq('activity_id', enrollmentMeta.activity_id)
+              .eq('type', 'income')
+              .lt('date', effectiveFromDate);
+            if (prevHistoryRow?.effective_from) {
+              backfillQuery = backfillQuery.gte('date', prevHistoryRow.effective_from);
+            }
+            const { error: backfillError } = await backfillQuery;
+            if (backfillError) throw backfillError;
+          }
+        }
 
         const today = formatLocalDate(new Date());
         const { data: currentAccountRow, error: currentAccountError } = await supabaseAny
