@@ -123,6 +123,13 @@ export default function StudentDetail() {
   const { data: student, isLoading: studentLoading } = useStudent(id!);
   const { data: editingEnrollmentAccountHistory = [] } =
     useEnrollmentAccountHistory(editingEnrollment?.id || "");
+  const { data: enrollments = [], isLoading: enrollmentsLoading } =
+    useEnrollments({
+      studentId: id,
+      activeOnly: false,
+    });
+  const { data: allActivities = [] } = useActivities();
+  const { data: accounts = [] } = usePaymentAccounts();
   const oldAccountForEditing = useMemo(() => {
     if (!editingEnrollment) return null;
     const todayStr = formatLocalDate(new Date());
@@ -134,13 +141,6 @@ export default function StudentDetail() {
     if (!currentAccountId) return null;
     return accounts.find((a) => a.id === currentAccountId) ?? null;
   }, [editingEnrollment, editingEnrollmentAccountHistory, accounts]);
-  const { data: enrollments = [], isLoading: enrollmentsLoading } =
-    useEnrollments({
-      studentId: id,
-      activeOnly: false,
-    });
-  const { data: allActivities = [] } = useActivities();
-  const { data: accounts = [] } = usePaymentAccounts();
   const { data: userProfiles = [] } = useUserProfiles();
   const { data: parentLinks = [] } = useParentLinks(id);
   const addParentLink = useAddParentLink();
