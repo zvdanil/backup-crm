@@ -246,8 +246,13 @@ export default function StudentDetail() {
         });
 
         if (covering && (covering.account_id ?? null) !== (newAccountId ?? null)) {
+          const coveringAccount = accounts.find((a) => a.id === covering.account_id);
+          const coveringName = coveringAccount?.name ?? ‘поточний рахунок’;
+          const backfillNote = data.backfill_old_account
+            ? `\nНарахування до ${effectiveFrom} залишаться на рахунку «${coveringName}».`
+            : ‘’;
           const confirmed = window.confirm(
-            "На вибрану дату вже є інша прив’язка рахунку. Якщо продовжити, усі нарахування в цьому періоді будуть перенесені на новий рахунок. Продовжити?",
+            `На вибрану дату вже є прив’язка до рахунку «${coveringName}». Нарахування починаючи з ${effectiveFrom} будуть перенесені на новий рахунок.${backfillNote}\nПродовжити?`,
           );
           if (!confirmed) return false;
         }
