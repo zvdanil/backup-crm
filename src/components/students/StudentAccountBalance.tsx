@@ -138,6 +138,11 @@ export function StudentAccountBalance({
   );
 
   const balanceEnrollments = useMemo(() => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const firstDay = `${year}-${pad(month + 1)}-01`;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const lastDay = `${year}-${pad(month + 1)}-${pad(daysInMonth)}`;
+
     return enrollments.filter((enrollment) => {
       const activity = allActivities.find(
         (a) => a.id === enrollment.activity_id,
@@ -150,15 +155,22 @@ export function StudentAccountBalance({
         return !!enrollment.unenrolled_at;
       }
       const history = priceHistoryMap.get(enrollment.id);
-      return enrollmentInScopeForMonth(
-        enrollment,
-        activity ?? null,
-        history,
-        year,
-        month,
-      );
+      if (enrollmentInScopeForMonth(enrollment, activity ?? null, history, year, month)) {
+        return true;
+      }
+      // Account history is authoritative: if a binding covers this month the
+      // enrollment was active then, regardless of price history or effective_from.
+      const accountHistory = accountHistoryMap.get(enrollment.id);
+      if (accountHistory && accountHistory.length > 0) {
+        return accountHistory.some((record) => {
+          if (record.effective_from > lastDay) return false;
+          if (record.effective_to != null && record.effective_to <= firstDay) return false;
+          return true;
+        });
+      }
+      return false;
     });
-  }, [enrollments, allActivities, month, year, priceHistoryMap]);
+  }, [enrollments, allActivities, month, year, priceHistoryMap, accountHistoryMap]);
 
   const accountLabelMap = useMemo(() => {
     const map = new Map<string, string>();
