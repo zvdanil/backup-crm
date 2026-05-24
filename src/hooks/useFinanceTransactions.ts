@@ -1409,41 +1409,40 @@ export function computeStudentAccountBalancesFromData(
       const unenrolledDate = e.unenrolled_at ? new Date(e.unenrolled_at) : null;
       if (unenrolledDate && unenrolledDate < monthStart) return false;
 
-      const history = enrollmentPriceHistoryMap.get(e.id);
-      const coversByHistory = enrollmentHistoryCoversMonth(history, y, m);
+      const firstDay = getMonthStartDate(y, m);
+      const lastDay = getMonthEndDate(y, m);
 
-      if (history && history.length > 0) {
-        // Визначаємо видимість по історії цін
-        if (!coversByHistory) return false;
+      const priceHistory = enrollmentPriceHistoryMap.get(e.id);
+      const coversByPriceHistory = enrollmentHistoryCoversMonth(priceHistory, y, m);
+
+      // Account history is the authoritative source: if an account binding existed for
+      // this month the enrollment was active then, regardless of price history or
+      // effective_from (which may have been corrupted by a prior account rebind).
+      const accountHistory = enrollmentAccountHistoryMap.get(e.id);
+      const coversByAccountHistory = accountHistory && accountHistory.length > 0
+        ? accountHistory.some((record) => {
+            if (record.effective_from > lastDay) return false;
+            if (record.effective_to != null && record.effective_to <= firstDay) return false;
+            return true;
+          })
+        : false;
+
+      const inScopeByHistory = coversByPriceHistory || coversByAccountHistory;
+      const hasAnyHistory =
+        (priceHistory && priceHistory.length > 0) ||
+        (accountHistory && accountHistory.length > 0);
+
+      if (hasAnyHistory) {
+        if (!inScopeByHistory) return false;
         if (isFutureMonth) return e.is_active === true;
         if (e.is_active === true) return true;
         if (e.is_active === false && unenrolledDate) {
-          // Архив: показувати в місяцях до та в місяці відписання (без нарахувань приховає рядок)
           return unenrolledDate >= monthStart;
         }
         return false;
       }
 
-      // If account history covers this month the enrollment was active then —
-      // this recovers from corrupted effective_from after an account rebind.
-      const accountHistory = enrollmentAccountHistoryMap.get(e.id);
-      if (accountHistory && accountHistory.length > 0) {
-        const firstDay = getMonthStartDate(y, m);
-        const lastDay = getMonthEndDate(y, m);
-        const coversByAccountHistory = accountHistory.some((record) => {
-          if (record.effective_from > lastDay) return false;
-          if (record.effective_to != null && record.effective_to <= firstDay) return false;
-          return true;
-        });
-        if (coversByAccountHistory) {
-          if (isFutureMonth) return e.is_active === true;
-          if (e.is_active === true) return true;
-          if (e.is_active === false && unenrolledDate) return unenrolledDate >= monthStart;
-          return false;
-        }
-      }
-
-      // Fallback: без історії — по effective_from / enrolled_at
+      // Fallback: без будь-якої історії — по effective_from / enrolled_at
       const effectiveDate = (e.effective_from ?? e.enrolled_at)
         ? new Date(e.effective_from ?? e.enrolled_at)
         : null;
@@ -1453,7 +1452,6 @@ export function computeStudentAccountBalancesFromData(
       }
       if (e.is_active === true) return true;
       if (e.is_active === false && unenrolledDate) {
-        // Архив: показувати в місяцях до та в місяці відписання
         return unenrolledDate >= monthStart;
       }
       return false;
