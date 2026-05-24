@@ -553,14 +553,19 @@ export function useUpdateEnrollment() {
       const priceChanged =
         enrollmentPatch.custom_price !== undefined ||
         enrollmentPatch.discount_percent !== undefined;
+      const oldPrice = enrollmentMeta.custom_price;
+      const oldDiscount = enrollmentMeta.discount_percent ?? 0;
+      const newPrice = enrollmentPatch.custom_price ?? oldPrice;
+      const newDiscount = enrollmentPatch.discount_percent ?? oldDiscount;
+      const priceActuallyChanged = priceChanged && (oldPrice !== newPrice || oldDiscount !== newDiscount);
       const currentEffectiveFrom =
         enrollmentMeta.effective_from ??
         enrollmentMeta.enrolled_at ??
         formatLocalDate(new Date());
       const effectiveFromChanged = Boolean(effective_from) && effectiveFromDate !== currentEffectiveFrom;
-      // Persist effective_from to the enrollments table so enrollmentInScopeForMonth
-      // respects the backdated start when there is no price-history entry yet.
-      if (effectiveFromChanged) {
+      // Only update enrollment.effective_from when price actually changed — this field
+      // drives enrollmentInScopeForMonth and must not shift when rebinding account only.
+      if (effectiveFromChanged && priceActuallyChanged) {
         enrollmentPatch.effective_from = effectiveFromDate;
       }
       const accountChanged =
@@ -570,22 +575,14 @@ export function useUpdateEnrollment() {
         enrollmentPatch.account_id !== undefined &&
         (accountChanged || effectiveFromChanged);
 
-      if (priceChanged) {
-        const oldPrice = enrollmentMeta.custom_price;
-        const oldDiscount = enrollmentMeta.discount_percent ?? 0;
-        const newPrice = enrollmentPatch.custom_price ?? oldPrice;
-        const newDiscount = enrollmentPatch.discount_percent ?? oldDiscount;
-        const priceActuallyChanged = oldPrice !== newPrice || oldDiscount !== newDiscount;
-
-        if (priceActuallyChanged) {
-          const { error: rpcError } = await supabaseAny.rpc('set_enrollment_price', {
-            p_enrollment_id: id,
-            p_custom_price: newPrice,
-            p_discount_percent: newDiscount,
-            p_effective_from: effectiveFromDate,
-          });
-          if (rpcError) throw rpcError;
-        }
+      if (priceActuallyChanged) {
+        const { error: rpcError } = await supabaseAny.rpc('set_enrollment_price', {
+          p_enrollment_id: id,
+          p_custom_price: newPrice,
+          p_discount_percent: newDiscount,
+          p_effective_from: effectiveFromDate,
+        });
+        if (rpcError) throw rpcError;
       }
 
       if (accountRebindRequested) {
