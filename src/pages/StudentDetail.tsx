@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+﻿import { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -247,12 +247,12 @@ export default function StudentDetail() {
 
         if (covering && (covering.account_id ?? null) !== (newAccountId ?? null)) {
           const coveringAccount = accounts.find((a) => a.id === covering.account_id);
-          const coveringName = coveringAccount?.name ?? ‘поточний рахунок’;
+          const coveringName = coveringAccount?.name ?? 'поточний рахунок';
           const backfillNote = data.backfill_old_account
             ? `\nНарахування до ${effectiveFrom} залишаться на рахунку «${coveringName}».`
-            : ‘’;
+            : '';
           const confirmed = window.confirm(
-            `На вибрану дату вже є прив’язка до рахунку «${coveringName}». Нарахування починаючи з ${effectiveFrom} будуть перенесені на новий рахунок.${backfillNote}\nПродовжити?`,
+            `На вибрану дату вже є прив'язка до рахунку «${coveringName}». Нарахування починаючи з ${effectiveFrom} будуть перенесені на новий рахунок.${backfillNote}\nПродовжити?`,
           );
           if (!confirmed) return false;
         }

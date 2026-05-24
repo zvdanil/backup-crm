@@ -12,7 +12,9 @@
       "Bash(Select-Object -First 10)",
       "Bash(Get-ChildItem -Path . -Directory)",
       "Bash(xargs grep -l \"EditEnrollmentForm\")",
-      "Bash(xargs -I {} basename {})"
+      "Bash(xargs -I {} basename {})",
+      "Bash(python3 -c ' *)",
+      "PowerShell($file = Get-Content \"c:\\\\Users\\\\User\\\\Downloads\\\\crmbackup-cursor\\\\src\\\\pages\\\\StudentDetail.tsx\" -Raw -Encoding UTF8; $lines = $file -split \"`n\"; for \\($i=0; $i -lt $lines.Length; $i++\\) { if \\($lines[$i] -match 'поточний'\\) { $line = $lines[$i]; $bytes = [System.Text.Encoding]::UTF8.GetBytes\\($line.Substring\\(0, [Math]::Min\\(80, $line.Length\\)\\)\\); Write-Host \"Line $\\($i+1\\): $\\($bytes | ForEach-Object { $_.ToString\\('X2'\\) } | Select-Object -First 60\\)\" } })"
     ]
   }
 }
