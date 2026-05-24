@@ -1,6 +1,12 @@
 # Правила проекта
 
-## Стек
+## Язык общения
+
+Всегда отвечай на **русском языке**, независимо от языка запроса.
+
+---
+
+## Стек.
 React 18 + TypeScript + Vite, Supabase (PostgreSQL / PostgREST), TanStack React Query v5.
 
 ---
