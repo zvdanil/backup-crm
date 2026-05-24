@@ -627,17 +627,34 @@ export function useUpdateEnrollment() {
         if (txUpdateError) throw txUpdateError;
 
         if (_backfillOldAccount) {
-          const { data: prevHistoryRow } = await supabaseAny
-            .from('enrollment_account_history')
-            .select('account_id, effective_from')
-            .eq('enrollment_id', id)
-            .lt('effective_from', effectiveFromDate)
-            .order('effective_from', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+          const resolvedOldAccountId =
+            enrollmentMeta.account_id ??
+            (enrollmentMeta.activities as any)?.account_id ??
+            null;
 
-          const oldAccountId = prevHistoryRow?.account_id ?? null;
-          if (oldAccountId) {
+          if (resolvedOldAccountId) {
+            // Fix null account_id in old history entries so they no longer depend on
+            // enrollment.account_id (which changes after this rebind)
+            const { error: nullFixError } = await supabaseAny
+              .from('enrollment_account_history')
+              .update({ account_id: resolvedOldAccountId })
+              .eq('enrollment_id', id)
+              .lt('effective_from', effectiveFromDate)
+              .is('account_id', null);
+            if (nullFixError) throw nullFixError;
+
+            // Backfill income TXs for the old period to the old account
+            // (useAccountBalance queries finance_transactions.account_id directly)
+            const { data: prevHistoryRow } = await supabaseAny
+              .from('enrollment_account_history')
+              .select('account_id, effective_from')
+              .eq('enrollment_id', id)
+              .lt('effective_from', effectiveFromDate)
+              .order('effective_from', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            const oldAccountId = prevHistoryRow?.account_id ?? resolvedOldAccountId;
             let backfillQuery = supabaseAny
               .from('finance_transactions')
               .update({ account_id: oldAccountId })
