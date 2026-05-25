@@ -558,7 +558,14 @@ export function useUpdateEnrollment() {
       // Use !== undefined (not ??) so that explicit null clears the custom price
       const newPrice = enrollmentPatch.custom_price !== undefined ? enrollmentPatch.custom_price : oldPrice;
       const newDiscount = enrollmentPatch.discount_percent !== undefined ? enrollmentPatch.discount_percent : oldDiscount;
-      const priceActuallyChanged = priceChanged && (oldPrice !== newPrice || oldDiscount !== newDiscount);
+      // newPrice === null always triggers RPC even when enrollments.custom_price already shows null —
+      // the DB and enrollment_price_history can be out of sync if a prior attempt set the table
+      // but failed to update history (old ?? bug). The RPC upsert is idempotent.
+      const priceActuallyChanged = priceChanged && (
+        oldPrice !== newPrice ||
+        oldDiscount !== newDiscount ||
+        newPrice === null
+      );
       const currentEffectiveFrom =
         enrollmentMeta.effective_from ??
         enrollmentMeta.enrolled_at ??
