@@ -380,7 +380,7 @@ export function useCreateActivityPriceHistory() {
   });
 }
 
-// Get billing rules for a specific date
+// Get billing rules for a specific date (string comparison, UTC-safe; effective_to is INCLUSIVE)
 export function getBillingRulesForDate(
   activity: Activity | null,
   priceHistory: ActivityPriceHistory[] | undefined,
@@ -388,26 +388,21 @@ export function getBillingRulesForDate(
 ): BillingRules | null {
   if (!activity) return null;
 
-  const dateObj = new Date(date);
-  
-  // Find applicable history entry
   if (priceHistory && priceHistory.length > 0) {
     const applicableHistory = priceHistory.find(h => {
-      const fromDate = new Date(h.effective_from);
-      const toDate = h.effective_to ? new Date(h.effective_to) : null;
-      return dateObj >= fromDate && (!toDate || dateObj < toDate);
+      if (h.effective_from > date) return false;
+      if (h.effective_to != null && h.effective_to < date) return false;
+      return true;
     });
-    
+
     if (applicableHistory && applicableHistory.billing_rules) {
       const historyRules = applicableHistory.billing_rules;
       return {
         ...historyRules,
-        // Используем исторические custom_statuses; для старых записей без них — текущие
         custom_statuses: historyRules.custom_statuses ?? activity.billing_rules?.custom_statuses,
       };
     }
   }
 
-  // Fallback to current activity billing_rules
   return activity.billing_rules;
 }
