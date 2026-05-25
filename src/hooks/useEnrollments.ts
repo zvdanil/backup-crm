@@ -555,8 +555,9 @@ export function useUpdateEnrollment() {
         enrollmentPatch.discount_percent !== undefined;
       const oldPrice = enrollmentMeta.custom_price;
       const oldDiscount = enrollmentMeta.discount_percent ?? 0;
-      const newPrice = enrollmentPatch.custom_price ?? oldPrice;
-      const newDiscount = enrollmentPatch.discount_percent ?? oldDiscount;
+      // Use !== undefined (not ??) so that explicit null clears the custom price
+      const newPrice = enrollmentPatch.custom_price !== undefined ? enrollmentPatch.custom_price : oldPrice;
+      const newDiscount = enrollmentPatch.discount_percent !== undefined ? enrollmentPatch.discount_percent : oldDiscount;
       const priceActuallyChanged = priceChanged && (oldPrice !== newPrice || oldDiscount !== newDiscount);
       const currentEffectiveFrom =
         enrollmentMeta.effective_from ??
@@ -721,8 +722,8 @@ export function useUpdateEnrollment() {
             student_id: enrollmentMeta.student_id,
             activity_id: enrollmentMeta.activity_id,
             account_id: enrollmentMeta.account_id ?? null,
-            custom_price: enrollmentPatch.custom_price ?? enrollmentMeta.custom_price ?? null,
-            discount_percent: enrollmentPatch.discount_percent ?? enrollmentMeta.discount_percent ?? null,
+            custom_price: enrollmentPatch.custom_price !== undefined ? enrollmentPatch.custom_price : (enrollmentMeta.custom_price ?? null),
+            discount_percent: enrollmentPatch.discount_percent !== undefined ? enrollmentPatch.discount_percent : (enrollmentMeta.discount_percent ?? null),
           },
           activity: activityRow,
           activityPriceHistory: (activityPriceHistory || []) as ActivityPriceHistory[],

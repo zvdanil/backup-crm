@@ -2973,6 +2973,8 @@ export function useAddSubscriptionChargeExclusion() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["student_account_balances"] });
+      queryClient.invalidateQueries({ queryKey: ["student_activity_balance"] });
+      queryClient.invalidateQueries({ queryKey: ["student_activity_monthly_balance"] });
       queryClient.invalidateQueries({ queryKey: ["student_total_balance"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"], exact: false });
     },
@@ -3413,14 +3415,18 @@ export function useRecalculateMonthlyCharges() {
 
       return changedCount;
     },
-    onSuccess: (_count, vars) => {
+    onSuccess: async (_count, vars) => {
+      // Refetch строк "Додаткові заняття" и итогов счёта немедленно (не просто stale)
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["student_activity_balance"] }),
+        queryClient.refetchQueries({ queryKey: ["student_activity_monthly_balance"] }),
+        queryClient.refetchQueries({
+          queryKey: ["student_account_balances", vars.studentId, vars.month, vars.year],
+        }),
+      ]);
+      // Остальные инвалидируем (фоновый рефетч)
       queryClient.invalidateQueries({ queryKey: ["finance_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["activity_income_transaction"] });
-      queryClient.invalidateQueries({ queryKey: ["student_activity_balance"] });
-      queryClient.invalidateQueries({ queryKey: ["student_activity_monthly_balance"] });
-      queryClient.invalidateQueries({
-        queryKey: ["student_account_balances", vars.studentId, vars.month, vars.year],
-      });
       queryClient.invalidateQueries({ queryKey: ["student_total_balance"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"], exact: false });
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
