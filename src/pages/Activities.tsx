@@ -88,6 +88,7 @@ export default function Activities() {
           activity_id: editingActivity.id,
           billing_rules: data.billing_rules,
           effective_from: effective_from,
+          old_billing_rules: editingActivity.billing_rules,
         });
       }
     } else {

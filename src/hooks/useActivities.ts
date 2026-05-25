@@ -311,7 +311,7 @@ export function useCreateActivityPriceHistory() {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async (history: { activity_id: string; billing_rules: BillingRules; effective_from: string }) => {
+    mutationFn: async (history: { activity_id: string; billing_rules: BillingRules; effective_from: string; old_billing_rules?: BillingRules | null }) => {
       // Закриваємо попередній запис історії (якщо він є), встановлюючи effective_to
       const { data: previousHistory, error: findError } = await supabase
         .from('activity_price_history')
@@ -322,22 +322,35 @@ export function useCreateActivityPriceHistory() {
 
       if (findError) throw findError;
 
-      // Якщо знайдено попередній запис без effective_to - оновлюємо його, встановлюючи effective_to
-      // Встановлюємо effective_to на день раніше, ніж effective_from нового запису,
-      // щоб періоди не перетиналися (попередній період закривається до початку нового)
+      // Вычисляем effective_to для закрытия предыдущего периода (inclusive end = новый effective_from - 1 день)
+      const [ey, em, ed] = history.effective_from.split('-').map(Number);
+      const effectiveToDate = new Date(ey, em - 1, ed);
+      effectiveToDate.setDate(effectiveToDate.getDate() - 1);
+      const effectiveToStr = formatLocalDate(effectiveToDate);
+
       if (previousHistory) {
-        // Віднімаємо 1 день від effective_from нового запису для effective_to попереднього
-        const effectiveToDate = new Date(history.effective_from);
-        effectiveToDate.setDate(effectiveToDate.getDate() - 1);
-        const effectiveToStr = formatLocalDate(effectiveToDate);
-        
+        // Закрываем существующий открытый entry
         const { error: updateError } = await supabase
           .from('activity_price_history')
           .update({ effective_to: effectiveToStr })
           .eq('id', previousHistory.id);
-        
+
         if (updateError) {
           throw new Error(`Помилка оновлення попереднього запису історії: ${updateError.message}`);
+        }
+      } else if (history.old_billing_rules) {
+        // Первое изменение цены: создаём bootstrap-запись для всего предыдущего периода
+        const { error: bootstrapError } = await supabase
+          .from('activity_price_history')
+          .insert({
+            activity_id: history.activity_id,
+            billing_rules: history.old_billing_rules,
+            effective_from: '2000-01-01',
+            effective_to: effectiveToStr,
+          });
+
+        if (bootstrapError) {
+          throw new Error(`Помилка створення початкового запису історії: ${bootstrapError.message}`);
         }
       }
 
@@ -348,11 +361,11 @@ export function useCreateActivityPriceHistory() {
           activity_id: history.activity_id,
           billing_rules: history.billing_rules,
           effective_from: history.effective_from,
-          effective_to: null, // Новий запис має effective_to = null (поточний)
+          effective_to: null,
         })
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     },

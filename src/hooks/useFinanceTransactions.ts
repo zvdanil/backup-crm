@@ -1904,12 +1904,14 @@ function calculateMonthlyBalanceFromData(
       }
     } else {
       // Resolve billing_rules for this month via activity price history (string comparison, UTC-safe)
+      const firstDayOfMonth = `${year}-${String(month + 1).padStart(2, "0")}-01`;
       const actPriceHistory = activityPriceHistoryMap.get(enrollment.activity_id);
       const historicalBillingRules: any = (() => {
         if (actPriceHistory && actPriceHistory.length > 0) {
           const applicable = actPriceHistory.find((h) => {
             if (h.effective_from > monthEndDateStr) return false;
-            if (h.effective_to != null && h.effective_to <= monthEndDateStr) return false;
+            // effective_to is INCLUSIVE — exclude entry only if it ended before this month started
+            if (h.effective_to != null && h.effective_to < firstDayOfMonth) return false;
             return true;
           });
           if (applicable?.billing_rules) {
