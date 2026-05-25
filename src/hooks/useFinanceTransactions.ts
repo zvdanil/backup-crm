@@ -25,6 +25,7 @@ import {
   type EnrollmentPriceHistory,
   type EnrollmentAccountHistory,
 } from "./useEnrollments";
+import { type ActivityPriceHistory } from "./useActivities";
 import {
   createPayrollPayoutWithDerivedTransaction,
   deletePayrollPayoutWithDerivedTransaction,
@@ -1279,6 +1280,7 @@ export type StudentAccountBalancesInput = {
   excludeActivityIds: string[];
   foodTariffIds: string[];
   enrollmentAccountHistoryMap?: Map<string, EnrollmentAccountHistory[]>;
+  activityPriceHistoryMap?: Map<string, ActivityPriceHistory[]>;
   /** Внесені залишки (тільки для місяця внесення). Додається лише в previous_balance («баланс на початок»); при підсумовуванні попередніх місяців — для коректного переносу закриття. */
   openingBalances?: { balance_date: string; account_id: string; amount: number }[];
   /** Виключені абонплатні нарахування (корзина): не включати в subscription_charges. Ключі: "enrollmentId-year-month". */
@@ -1305,6 +1307,7 @@ export function computeStudentAccountBalancesFromData(
     excludeActivityIds,
     foodTariffIds,
     enrollmentAccountHistoryMap = new Map(),
+    activityPriceHistoryMap = new Map<string, ActivityPriceHistory[]>(),
     enrollmentPriceHistoryMap = new Map(),
     openingBalances = [],
     subscriptionChargeExclusions = new Set<string>(),
@@ -1477,6 +1480,7 @@ export function computeStudentAccountBalancesFromData(
       enrollmentAccountHistoryMap,
       enrollmentPriceHistoryMap,
       subscriptionChargeExclusions,
+      activityPriceHistoryMap,
     );
     monthlyBalancesMap.set(monthKey, monthlyBalances);
   }
@@ -1723,6 +1727,22 @@ export async function fetchStudentAccountBalances({
     exclusionSet.add(`${ex.enrollment_id}-${ex.year}-${ex.month}`);
   });
 
+  const activityPriceHistoryMap = new Map<string, ActivityPriceHistory[]>();
+  if (activityIds.length > 0) {
+    const { data: aphRows, error: aphError } = await supabaseAny
+      .from('activity_price_history')
+      .select('*')
+      .in('activity_id', activityIds)
+      .order('effective_from', { ascending: false });
+    if (aphError) throw aphError;
+    (aphRows || []).forEach((row: ActivityPriceHistory) => {
+      if (!activityPriceHistoryMap.has(row.activity_id)) {
+        activityPriceHistoryMap.set(row.activity_id, []);
+      }
+      activityPriceHistoryMap.get(row.activity_id)!.push(row);
+    });
+  }
+
   return computeStudentAccountBalancesFromData({
     enrollments: allFilteredEnrollments,
     transactions: transactions || [],
@@ -1737,6 +1757,7 @@ export async function fetchStudentAccountBalances({
     foodTariffIds,
     enrollmentAccountHistoryMap,
     enrollmentPriceHistoryMap,
+    activityPriceHistoryMap,
     openingBalances: (openingBalances || []).map((ob: any) => ({
       balance_date: ob.balance_date,
       account_id: ob.account_id,
@@ -1781,6 +1802,7 @@ function calculateMonthlyBalanceFromData(
   enrollmentAccountHistoryMap: Map<string, EnrollmentAccountHistory[]> = new Map(),
   enrollmentPriceHistoryMap: Map<string, EnrollmentPriceHistory[]> = new Map(),
   subscriptionChargeExclusions: Set<string> = new Set(),
+  activityPriceHistoryMap: Map<string, ActivityPriceHistory[]> = new Map(),
 ): StudentAccountBalance[] {
   const enrollmentIds = filteredEnrollments.map((e: any) => e.id);
   const activityIds = new Set(
@@ -1881,7 +1903,28 @@ function calculateMonthlyBalanceFromData(
         }
       }
     } else {
-      const customStatuses = activity.billing_rules?.custom_statuses || [];
+      // Resolve billing_rules for this month via activity price history (string comparison, UTC-safe)
+      const actPriceHistory = activityPriceHistoryMap.get(enrollment.activity_id);
+      const historicalBillingRules: any = (() => {
+        if (actPriceHistory && actPriceHistory.length > 0) {
+          const applicable = actPriceHistory.find((h) => {
+            if (h.effective_from > monthEndDateStr) return false;
+            if (h.effective_to != null && h.effective_to <= monthEndDateStr) return false;
+            return true;
+          });
+          if (applicable?.billing_rules) {
+            return {
+              ...applicable.billing_rules,
+              custom_statuses:
+                applicable.billing_rules.custom_statuses ??
+                activity.billing_rules?.custom_statuses,
+            };
+          }
+        }
+        return activity.billing_rules;
+      })();
+
+      const customStatuses = historicalBillingRules?.custom_statuses || [];
       const subscriptionCustom = customStatuses.filter(
         (cs: any) =>
           cs.is_active !== false &&
