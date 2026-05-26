@@ -3178,21 +3178,31 @@ export function useRecalculateMonthlyCharges() {
       let changedCount = 0;
 
       // Build sets of garden activity IDs:
-      // - gardenSkipIds: controller + base tariff → skip entirely (managed by garden journal)
+      // - gardenControllerIds: controller activity only → skip (config marker, no income txs of its own)
       // - gardenFoodIds: food tariff → delete any spurious income txs, but don't create new ones
-      const gardenSkipIds = new Set<string>();
+      // NOTE: base tariff activities are NOT skipped — they're recalculated like any other activity
+      // based on their payment_type (subscription → one monthly tx, per_session → per-visit txs).
+      const gardenControllerIds = new Set<string>();
       const gardenFoodIds = new Set<string>();
       (activities ?? []).forEach((act: any) => {
         if (isGardenAttendanceController(act)) {
-          gardenSkipIds.add(act.id);
+          gardenControllerIds.add(act.id);
           const config = getGardenAttendanceConfig(act);
-          (config.base_tariff_ids || []).forEach((id: string) => gardenSkipIds.add(id));
           (config.food_tariff_ids || []).forEach((id: string) => gardenFoodIds.add(id));
         }
       });
 
       for (const enrollment of (enrollments as any[])) {
-        if (gardenSkipIds.has(enrollment.activity_id)) continue;
+        if (gardenControllerIds.has(enrollment.activity_id)) {
+          // Garden controller: just a config marker, no income txs — remove stale exclusion and skip.
+          await supabaseAny
+            .from("subscription_charge_exclusions")
+            .delete()
+            .eq("enrollment_id", enrollment.id)
+            .eq("year", year)
+            .eq("month", month);
+          continue;
+        }
 
         // Food tariff activities: clean up any spurious income txs left by previous bugs, then skip.
         // Their expense txs (food returns for absences) are managed by GardenAttendanceJournal.
@@ -3210,6 +3220,28 @@ export function useRecalculateMonthlyCharges() {
 
         const activity = activityMap.get(enrollment.activity_id);
         if (!activity) continue;
+
+        // Resolve historical billing rules for monthEndDateStr (activity_price_history effective_to is INCLUSIVE)
+        const actPriceHistory = activityPriceHistoryMap.get(activity.id);
+        const historicalBillingRules: any = (() => {
+          if (actPriceHistory && actPriceHistory.length > 0) {
+            const applicable = actPriceHistory.find((h: any) => {
+              if (h.effective_from > monthEndDateStr) return false;
+              if (h.effective_to != null && h.effective_to < monthEndDateStr) return false;
+              return true;
+            });
+            if (applicable?.billing_rules) {
+              return {
+                ...applicable.billing_rules,
+                custom_statuses:
+                  applicable.billing_rules.custom_statuses ??
+                  activity.billing_rules?.custom_statuses,
+              };
+            }
+          }
+          return activity.billing_rules;
+        })();
+        const presentRule = historicalBillingRules?.present;
 
         // Monthly billing = subscription payment type (one income tx per month).
         // Per-visit activities (payment_type = 'per_session') use attendance-based logic
