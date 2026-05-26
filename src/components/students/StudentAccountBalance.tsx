@@ -380,7 +380,7 @@ export function StudentAccountBalance({
           <div className="text-sm text-muted-foreground">Немає нарахувань</div>
         ) : (
           <div className="space-y-4">
-            {accountGroups.map((group) => {
+            {accountGroups.filter((group) => group.id !== "none").map((group) => {
               const accountBalance = accountBalanceMap.get(group.id);
               // previous_balance і balance з API вже враховують opening (тільки в місяці внесення)
               const prev = accountBalance?.previous_balance ?? 0;
