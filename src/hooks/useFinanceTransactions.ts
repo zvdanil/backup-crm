@@ -3243,10 +3243,10 @@ export function useRecalculateMonthlyCharges() {
         })();
         const presentRule = historicalBillingRules?.present;
 
-        // Monthly billing = subscription payment type (one income tx per month).
-        // Per-visit activities (payment_type = 'per_session') use attendance-based logic
-        // regardless of what billing rule type their present rule uses.
-        const isMonthlyBilling = activity.payment_type === "subscription";
+        // Monthly billing = billing_rules.present.type is subscription or fixed.
+        // Matches the same check used by StudentActivityBalanceRow for display.
+        const isMonthlyBilling =
+          presentRule?.type === "subscription" || presentRule?.type === "fixed";
 
         const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
         const isActiveInMonth = !unenrolledDate || unenrolledDate >= monthStartDate;
@@ -3452,6 +3452,7 @@ export function useRecalculateMonthlyCharges() {
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["student_activity_balance"] }),
         queryClient.refetchQueries({ queryKey: ["student_activity_monthly_balance"] }),
+        queryClient.refetchQueries({ queryKey: ["activity_income_transaction"] }),
         queryClient.refetchQueries({
           queryKey: ["student_account_balances", vars.studentId, vars.month, vars.year],
         }),
