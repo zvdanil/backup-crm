@@ -1988,11 +1988,16 @@ function calculateMonthlyBalanceFromData(
         filteredEnrollments.find((e: any) => e.id === eId),
     );
 
-    let charges = attendanceTotal;
+    // For "recalculation" mode: mirror useStudentActivityBalance — prefer income transactions,
+    // fall back to attendance.charged_amount only when no income transactions exist.
+    // Using attendanceTotal here instead diverges from the row display and breaks
+    // the opening-balance carry-forward to the next month.
+    const recalcCharges = income > 0 ? income : attendanceTotal;
+    let charges = recalcCharges;
     if (displayMode === "subscription") {
       charges = monthlyCharges;
     } else if (displayMode === "subscription_and_recalculation") {
-      charges = monthlyCharges + attendanceTotal;
+      charges = monthlyCharges + recalcCharges;
     }
     const refunds = expense;
     const balance = payments - charges + refunds;
@@ -3143,7 +3148,7 @@ export function useRecalculateMonthlyCharges() {
           .order("effective_from", { ascending: false }),
         supabaseAny
           .from("activities")
-          .select("id, account_id, billing_rules, default_price, config, payment_type")
+          .select("id, account_id, billing_rules, default_price, config, payment_type, balance_display_mode")
           .in("id", activityIds),
         supabaseAny
           .from("activity_price_history")
@@ -3244,9 +3249,12 @@ export function useRecalculateMonthlyCharges() {
         const presentRule = historicalBillingRules?.present;
 
         // Monthly billing = billing_rules.present.type is subscription or fixed.
-        // Matches the same check used by StudentActivityBalanceRow for display.
+        // Exception: if activity.balance_display_mode === "recalculation", the activity
+        // is explicitly configured as per-visit — "fixed" here means a fixed per-session price,
+        // not a flat monthly fee. Treat it as attendance-based billing.
         const isMonthlyBilling =
-          presentRule?.type === "subscription" || presentRule?.type === "fixed";
+          (presentRule?.type === "subscription" || presentRule?.type === "fixed") &&
+          activity.balance_display_mode !== "recalculation";
 
         const unenrolledDate = enrollment.unenrolled_at ? new Date(enrollment.unenrolled_at) : null;
         const isActiveInMonth = !unenrolledDate || unenrolledDate >= monthStartDate;
