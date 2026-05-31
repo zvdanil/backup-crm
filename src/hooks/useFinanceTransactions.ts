@@ -1280,6 +1280,7 @@ export type StudentAccountBalancesInput = {
   excludeActivityIds: string[];
   foodTariffIds: string[];
   enrollmentAccountHistoryMap?: Map<string, EnrollmentAccountHistory[]>;
+  enrollmentPriceHistoryMap?: Map<string, EnrollmentPriceHistory[]>;
   activityPriceHistoryMap?: Map<string, ActivityPriceHistory[]>;
   /** Внесені залишки (тільки для місяця внесення). Додається лише в previous_balance («баланс на початок»); при підсумовуванні попередніх місяців — для коректного переносу закриття. */
   openingBalances?: { balance_date: string; account_id: string; amount: number }[];
@@ -1805,9 +1806,7 @@ function calculateMonthlyBalanceFromData(
   activityPriceHistoryMap: Map<string, ActivityPriceHistory[]> = new Map(),
 ): StudentAccountBalance[] {
   const enrollmentIds = filteredEnrollments.map((e: any) => e.id);
-  const activityIds = new Set(
-    filteredEnrollments.map((e: any) => e.activity_id),
-  );
+  const activityIds = new Set(enrollmentActivityMap.values());
 
   const paymentsByActivity: Record<string, number> = {};
   const incomeByActivity: Record<string, number> = {};
@@ -2006,9 +2005,40 @@ function calculateMonthlyBalanceFromData(
     const balance = payments - charges + refunds;
     // «Нараховано на початок» — з вартості абонплати (billing rules). На 1 число ще не може бути income-транзакцій.
     const subscriptionCharges = subscriptionOnlyChargesByActivity[activityId] ?? 0;
+    const monthEndDateStr = getMonthEndDate(year, month);
 
     if (enrollmentsForActivity.length === 0) {
-      const accountId = activityAccountMap[activityId] ?? null;
+      const anyEnrollmentEntry = Array.from(enrollmentDataMap.entries())
+        .filter(([eId, data]) => data.activity_id === activityId)
+        .sort((a, b) => {
+          const dateA = a[1].unenrolled_at || a[1].enrolled_at || "";
+          const dateB = b[1].unenrolled_at || b[1].enrolled_at || "";
+          return dateB.localeCompare(dateA);
+        })[0];
+
+      let accountId = activityAccountMap[activityId] ?? null;
+      if (anyEnrollmentEntry) {
+        const [eId, data] = anyEnrollmentEntry;
+        const history = enrollmentAccountHistoryMap.get(eId);
+        const mostRecentAccount = history && history.length > 0 ? history[0].account_id : null;
+        
+        const resolvedAccount = getEnrollmentAccountForDate(
+          { account_id: data.account_id ?? null },
+          history,
+          monthEndDateStr,
+        );
+        
+        accountId = resolvedAccount ?? data.account_id ?? mostRecentAccount ?? accountId;
+        
+        if (!accountId && data.unenrolled_at) {
+          const lastAccount = getEnrollmentAccountForDate(
+            { account_id: data.account_id ?? null },
+            history,
+            data.unenrolled_at,
+          );
+          accountId = lastAccount ?? accountId;
+        }
+      }
       const existing = balancesByAccount.get(accountId) || {
         account_id: accountId,
         balance: 0,
@@ -2031,10 +2061,9 @@ function calculateMonthlyBalanceFromData(
       const perEnrollmentPayments = payments / perEnrollment;
       const perEnrollmentCharges = charges / perEnrollment;
       const perEnrollmentRefunds = refunds / perEnrollment;
-      const perEnrollmentSubscriptionCharges = subscriptionCharges / perEnrollment;
-      const monthEndDateStr = getMonthEndDate(year, month);
+       const perEnrollmentSubscriptionCharges = subscriptionCharges / perEnrollment;
 
-      enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
+       enrollmentsForActivity.forEach(([enrollmentId, enrollmentData]) => {
         const resolvedEnrollmentAccountId = getEnrollmentAccountForDate(
           { account_id: enrollmentData.account_id ?? null },
           enrollmentAccountHistoryMap.get(enrollmentId),
@@ -2042,6 +2071,7 @@ function calculateMonthlyBalanceFromData(
         );
         const accountId =
           resolvedEnrollmentAccountId ??
+          enrollmentData.account_id ??
           activityAccountMap[enrollmentData.activity_id] ??
           null;
         const existing = balancesByAccount.get(accountId) || {
@@ -2566,7 +2596,7 @@ export function useDeletePaymentTransaction() {
       }
 
       try {
-        const { data, error } = await supabase.rpc(
+        const { data, error } = await supabaseAny.rpc(
           "delete_payment_transaction",
           {
             p_transaction_id: transactionId,
