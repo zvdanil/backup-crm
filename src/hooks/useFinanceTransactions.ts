@@ -1995,7 +1995,10 @@ function calculateMonthlyBalanceFromData(
     const recalcCharges = income > 0 ? income : attendanceTotal;
     let charges = recalcCharges;
     if (displayMode === "subscription") {
-      charges = monthlyCharges;
+      // Use income transactions directly — monthlyCharges is 0 for enrollments that were
+      // unenrolled in this month (isArchivedInViewedMonth), but their income transactions
+      // are real charges that must be carried forward to the next month's opening balance.
+      charges = income > 0 ? income : monthlyCharges;
     } else if (displayMode === "subscription_and_recalculation") {
       charges = monthlyCharges + recalcCharges;
     }
