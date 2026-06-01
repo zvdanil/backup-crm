@@ -1321,10 +1321,16 @@ export function computeStudentAccountBalancesFromData(
   if (allFilteredEnrollments.length === 0) return [];
 
   const earliestEnrolled = allFilteredEnrollments.reduce((min: string | null, e: any) => {
+<<<<<<< HEAD
     // Мінімум з enrolled_at і effective_from: після перепривязки рахунку effective_from
     // може бути пізнішим за enrolled_at, що обрізає історію транзакцій попередніх місяців.
     const candidates = ([e.enrolled_at, e.effective_from] as (string | null | undefined)[])
       .filter((d): d is string => !!d);
+=======
+    // Беремо мінімум enrolled_at і effective_from: effective_from може бути пізнішим за
+    // enrolled_at після перепривязки рахунку, що призводить до втрати історії транзакцій.
+    const candidates = [e.enrolled_at, e.effective_from].filter(Boolean) as string[];
+>>>>>>> 6175dda73c05b69f3ce03fcc635efd6150623636
     const at = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : null;
     if (!at) return min;
     return !min || at < min ? at : min;
@@ -1493,53 +1499,73 @@ export function computeStudentAccountBalancesFromData(
   if (!cumulative && month !== undefined && year !== undefined) {
     const monthKey = `${year}-${month}`;
     const monthlyBalances = monthlyBalancesMap.get(monthKey) || [];
+
+    const currentMonthStart = getMonthStartDate(year, month);
+
+    // Checkpoint-модель: для кожного рахунку знаходимо найпізніший account_opening_balances
+    // із balance_date < початку поточного місяця. Він слугує базою; місяці до нього ігноруються.
+    const accountCheckpoints = new Map<string | null, { date: string; amount: number }>();
+    openingBalances
+      .filter((ob) => (ob.balance_date?.split?.("T")[0] ?? ob.balance_date) < currentMonthStart)
+      .forEach((ob) => {
+        const aid = ob.account_id || null;
+        const d = ob.balance_date?.split?.("T")[0] ?? ob.balance_date;
+        const existing = accountCheckpoints.get(aid);
+        if (!existing || d > existing.date) {
+          accountCheckpoints.set(aid, { date: d, amount: ob.amount ?? 0 });
+        }
+      });
+
+    // Ініціалізуємо накопичувач значеннями checkpoint
     const previousBalancesMap = new Map<string | null, number>();
+    accountCheckpoints.forEach((ck, accountId) => {
+      previousBalancesMap.set(accountId, ck.amount);
+    });
+
+    // Накопичуємо баланс за попередніми місяцями (пропускаємо місяці до checkpoint рахунку)
     for (const { month: m, year: y } of previousMonthsToCalculate) {
       const key = `${y}-${m}`;
-      const monthStartStr = getMonthStartDate(y, m);
-      const openingForMonth = new Map<string | null, number>();
-      openingBalances
-        .filter(
-          (ob) => (ob.balance_date?.split?.("T")[0] ?? ob.balance_date) === monthStartStr
-        )
-        .forEach((ob) => {
-          const aid = ob.account_id || null;
-          openingForMonth.set(aid, (openingForMonth.get(aid) || 0) + (ob.amount ?? 0));
-        });
+      const thisMonthStart = getMonthStartDate(y, m);
       const balances = monthlyBalancesMap.get(key) || [];
       balances.forEach((balance) => {
-        const cur = previousBalancesMap.get(balance.account_id) || 0;
-        const opening = openingForMonth.get(balance.account_id ?? null) ?? 0;
-        previousBalancesMap.set(balance.account_id, cur + balance.balance + opening);
+        const accountId = balance.account_id;
+        const ck = accountCheckpoints.get(accountId ?? null);
+        // Пропускаємо місяці, що передують checkpoint цього рахунку
+        if (ck && thisMonthStart < ck.date) return;
+        const cur = previousBalancesMap.get(accountId) ?? 0;
+        previousBalancesMap.set(accountId, cur + balance.balance);
       });
     }
+
+    // Якщо є снапшот для ПОТОЧНОГО місяця (записаний перерахунком попереднього місяця),
+    // використовуємо його напряму як previous_balance — без складання з кумулятивом.
+    const currentMonthSnapshotByAccount = new Map<string | null, number>();
+    openingBalances
+      .filter((ob) => (ob.balance_date?.split?.("T")[0] ?? ob.balance_date) === currentMonthStart)
+      .forEach((ob) => {
+        const aid = ob.account_id || null;
+        currentMonthSnapshotByAccount.set(aid, ob.amount ?? 0);
+      });
+
     const monthlyByAccount = new Map<string | null, StudentAccountBalance>();
     monthlyBalances.forEach((balance) => {
       monthlyByAccount.set(balance.account_id ?? null, balance);
     });
 
-    const currentMonthStart = getMonthStartDate(year, month);
-    const openingByAccount = new Map<string | null, number>();
-    openingBalances
-      .filter(
-        (ob) =>
-          (ob.balance_date?.split?.("T")[0] ?? ob.balance_date) === currentMonthStart,
-      )
-      .forEach((ob) => {
-        const aid = ob.account_id || null;
-        openingByAccount.set(aid, (openingByAccount.get(aid) || 0) + (ob.amount ?? 0));
-      });
-
     const result: StudentAccountBalance[] = [];
     const accountIds = new Set<string | null>([
       ...Array.from(monthlyByAccount.keys()),
       ...Array.from(previousBalancesMap.keys()),
-      ...Array.from(openingByAccount.keys()),
+      ...Array.from(currentMonthSnapshotByAccount.keys()),
     ]);
 
     accountIds.forEach((accountId) => {
       const balance = monthlyByAccount.get(accountId);
-      const opening = openingByAccount.get(accountId) || 0;
+      const snapshot = currentMonthSnapshotByAccount.get(accountId);
+      // Снапшот (записаний перерахунком) має пріоритет над кумулятивним розрахунком
+      const previous_balance = snapshot !== undefined
+        ? snapshot
+        : (previousBalancesMap.get(accountId) ?? 0);
       result.push({
         account_id: accountId,
         balance: balance?.balance ?? 0,
@@ -1548,8 +1574,7 @@ export function computeStudentAccountBalancesFromData(
         refunds: balance?.refunds ?? 0,
         subscription_charges: balance?.subscription_charges ?? 0,
         unassigned_payments: balance?.unassigned_payments ?? 0,
-        // «На початок» = сальдо попереднього місяця + внесений залишок поточного місяця.
-        previous_balance: (previousBalancesMap.get(accountId) || 0) + opening,
+        previous_balance,
       });
     });
 
@@ -1613,8 +1638,14 @@ export async function fetchStudentAccountBalances({
 
   const earliestEnrolled = allFilteredEnrollments.reduce(
     (min: string | null, e: any) => {
+<<<<<<< HEAD
       const candidates = ([e.enrolled_at, e.effective_from] as (string | null | undefined)[])
         .filter((d): d is string => !!d);
+=======
+      // Беремо мінімум enrolled_at і effective_from: effective_from може бути пізнішим за
+      // enrolled_at після перепривязки рахунку, що призводить до втрати історії транзакцій.
+      const candidates = [e.enrolled_at, e.effective_from].filter(Boolean) as string[];
+>>>>>>> 6175dda73c05b69f3ce03fcc635efd6150623636
       const at = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : null;
       if (!at) return min;
       return !min || at < min ? at : min;
@@ -3494,6 +3525,40 @@ export function useRecalculateMonthlyCharges() {
         }
       }
 
+      // Зберігаємо баланс на кінець місяця як "баланс на початок" наступного місяця
+      try {
+        const balancesForMonth = await fetchStudentAccountBalances({
+          studentId,
+          month,
+          year,
+          excludeActivityIds: Array.from(gardenControllerIds),
+          foodTariffIds: Array.from(gardenFoodIds),
+        });
+        const [nextYear, nextMonth] = month === 11 ? [year + 1, 0] : [year, month + 1];
+        const nextMonthStart = getMonthStartDate(nextYear, nextMonth);
+        for (const bal of balancesForMonth) {
+          if (!bal.account_id) continue;
+          const endBalance = (bal.previous_balance ?? 0) + (bal.balance ?? 0);
+          const { error: upsertErr } = await supabaseAny
+            .from("account_opening_balances")
+            .upsert(
+              {
+                student_id: studentId,
+                account_id: bal.account_id,
+                balance_date: nextMonthStart,
+                amount: endBalance,
+                notes: `Автоматично встановлено при перерахунку за ${year}-${String(month + 1).padStart(2, "0")}`,
+              },
+              { onConflict: "student_id,account_id,balance_date", ignoreDuplicates: false },
+            );
+          if (upsertErr) {
+            console.error("[useRecalculateMonthlyCharges] upsert opening balance error:", upsertErr);
+          }
+        }
+      } catch (err) {
+        console.error("[useRecalculateMonthlyCharges] failed to save opening balance for next month:", err);
+      }
+
       return changedCount;
     },
     onSuccess: async (_count, vars) => {
@@ -3506,8 +3571,15 @@ export function useRecalculateMonthlyCharges() {
           queryKey: ["student_account_balances", vars.studentId, vars.month, vars.year],
         }),
       ]);
+<<<<<<< HEAD
       // Інвалідуємо всі місяці балансу студента: previous_balance наступних місяців теж змінився
       queryClient.invalidateQueries({ queryKey: ["student_account_balances", vars.studentId] });
+=======
+      // Інвалідуємо всі місяці балансу цього студента (previous_balance наступних місяців змінився)
+      queryClient.invalidateQueries({ queryKey: ["student_account_balances", vars.studentId] });
+      queryClient.invalidateQueries({ queryKey: ["account_opening_balances", vars.studentId] });
+      queryClient.invalidateQueries({ queryKey: ["account_opening_balances_cumulative", vars.studentId] });
+>>>>>>> 6175dda73c05b69f3ce03fcc635efd6150623636
       // Остальные инвалидируем (фоновый рефетч)
       queryClient.invalidateQueries({ queryKey: ["finance_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["activity_income_transaction"] });
