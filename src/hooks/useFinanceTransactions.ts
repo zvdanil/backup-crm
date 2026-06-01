@@ -1321,16 +1321,10 @@ export function computeStudentAccountBalancesFromData(
   if (allFilteredEnrollments.length === 0) return [];
 
   const earliestEnrolled = allFilteredEnrollments.reduce((min: string | null, e: any) => {
-<<<<<<< HEAD
     // Мінімум з enrolled_at і effective_from: після перепривязки рахунку effective_from
     // може бути пізнішим за enrolled_at, що обрізає історію транзакцій попередніх місяців.
     const candidates = ([e.enrolled_at, e.effective_from] as (string | null | undefined)[])
       .filter((d): d is string => !!d);
-=======
-    // Беремо мінімум enrolled_at і effective_from: effective_from може бути пізнішим за
-    // enrolled_at після перепривязки рахунку, що призводить до втрати історії транзакцій.
-    const candidates = [e.enrolled_at, e.effective_from].filter(Boolean) as string[];
->>>>>>> 6175dda73c05b69f3ce03fcc635efd6150623636
     const at = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : null;
     if (!at) return min;
     return !min || at < min ? at : min;
@@ -1638,14 +1632,8 @@ export async function fetchStudentAccountBalances({
 
   const earliestEnrolled = allFilteredEnrollments.reduce(
     (min: string | null, e: any) => {
-<<<<<<< HEAD
       const candidates = ([e.enrolled_at, e.effective_from] as (string | null | undefined)[])
         .filter((d): d is string => !!d);
-=======
-      // Беремо мінімум enrolled_at і effective_from: effective_from може бути пізнішим за
-      // enrolled_at після перепривязки рахунку, що призводить до втрати історії транзакцій.
-      const candidates = [e.enrolled_at, e.effective_from].filter(Boolean) as string[];
->>>>>>> 6175dda73c05b69f3ce03fcc635efd6150623636
       const at = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : null;
       if (!at) return min;
       return !min || at < min ? at : min;
@@ -3571,15 +3559,8 @@ export function useRecalculateMonthlyCharges() {
           queryKey: ["student_account_balances", vars.studentId, vars.month, vars.year],
         }),
       ]);
-<<<<<<< HEAD
       // Інвалідуємо всі місяці балансу студента: previous_balance наступних місяців теж змінився
       queryClient.invalidateQueries({ queryKey: ["student_account_balances", vars.studentId] });
-=======
-      // Інвалідуємо всі місяці балансу цього студента (previous_balance наступних місяців змінився)
-      queryClient.invalidateQueries({ queryKey: ["student_account_balances", vars.studentId] });
-      queryClient.invalidateQueries({ queryKey: ["account_opening_balances", vars.studentId] });
-      queryClient.invalidateQueries({ queryKey: ["account_opening_balances_cumulative", vars.studentId] });
->>>>>>> 6175dda73c05b69f3ce03fcc635efd6150623636
       // Остальные инвалидируем (фоновый рефетч)
       queryClient.invalidateQueries({ queryKey: ["finance_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["activity_income_transaction"] });
