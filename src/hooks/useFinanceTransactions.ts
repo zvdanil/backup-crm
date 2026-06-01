@@ -1321,7 +1321,10 @@ export function computeStudentAccountBalancesFromData(
   if (allFilteredEnrollments.length === 0) return [];
 
   const earliestEnrolled = allFilteredEnrollments.reduce((min: string | null, e: any) => {
-    const at = e.effective_from ?? e.enrolled_at ?? null;
+    // Беремо мінімум enrolled_at і effective_from: effective_from може бути пізнішим за
+    // enrolled_at після перепривязки рахунку, що призводить до втрати історії транзакцій.
+    const candidates = [e.enrolled_at, e.effective_from].filter(Boolean) as string[];
+    const at = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : null;
     if (!at) return min;
     return !min || at < min ? at : min;
   }, null as string | null);
@@ -1628,7 +1631,10 @@ export async function fetchStudentAccountBalances({
 
   const earliestEnrolled = allFilteredEnrollments.reduce(
     (min: string | null, e: any) => {
-      const at = e.effective_from ?? e.enrolled_at ?? null;
+      // Беремо мінімум enrolled_at і effective_from: effective_from може бути пізнішим за
+      // enrolled_at після перепривязки рахунку, що призводить до втрати історії транзакцій.
+      const candidates = [e.enrolled_at, e.effective_from].filter(Boolean) as string[];
+      const at = candidates.length > 0 ? candidates.reduce((a, b) => (a < b ? a : b)) : null;
       if (!at) return min;
       return !min || at < min ? at : min;
     },
