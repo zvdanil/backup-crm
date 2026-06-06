@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, ArrowRightLeft, X, PlusCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, ArrowRightLeft, X, PlusCircle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -42,7 +42,13 @@ import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AccountTransferDialog } from '@/components/accounts/AccountTransferDialog';
 import { AccountIncomeDialog, ACCOUNT_INCOME_CATEGORY } from '@/components/accounts/AccountIncomeDialog';
-import type { FinanceTransaction } from '@/hooks/useFinanceTransactions';
+import {
+  useDeletePaymentTransaction,
+  useDeleteFinanceTransaction,
+  type FinanceTransaction,
+} from '@/hooks/useFinanceTransactions';
+import { DeleteTransactionDialog } from '@/components/students/DeleteTransactionDialog';
+import { toast } from '@/hooks/use-toast';
 import { RecordInfoContextMenu } from '@/components/shared/RecordInfoContextMenu';
 
 // Тільки реальні операції (income виключено — це прогноз)
@@ -250,6 +256,63 @@ export default function AccountDetail() {
   const [editingAdjustment, setEditingAdjustment] = useState<PaymentAccountAdjustment | null>(null);
   const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
   const [editingIncome, setEditingIncome] = useState<FinanceTransaction | null>(null);
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<{
+    id: string;
+    amount: number;
+  } | null>(null);
+
+  const [confirmDeleteDialogOpen, setConfirmDeleteDialogOpen] = useState(false);
+  const [deletingTransaction, setDeletingTransaction] = useState<{
+    id: string;
+    amount: number;
+    type: string;
+  } | null>(null);
+
+  const deletePayment = useDeletePaymentTransaction();
+  const deleteTransaction = useDeleteFinanceTransaction();
+
+  const handleDeletePaymentConfirm = async (reason: string) => {
+    if (!selectedPayment) return;
+    try {
+      await deletePayment.mutateAsync({
+        transactionId: selectedPayment.id,
+        reason,
+      });
+      toast({
+        title: 'Успішно',
+        description: 'Платіж видалено',
+      });
+      setDeleteDialogOpen(false);
+      setSelectedPayment(null);
+    } catch (error: any) {
+      toast({
+        title: 'Помилка',
+        description: error.message || 'Не вдалося видалити платіж',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDeleteTransactionConfirm = async () => {
+    if (!deletingTransaction) return;
+    try {
+      await deleteTransaction.mutateAsync(deletingTransaction.id);
+      toast({
+        title: 'Успішно',
+        description: 'Транзакцію видалено',
+      });
+      setConfirmDeleteDialogOpen(false);
+      setDeletingTransaction(null);
+    } catch (error: any) {
+      toast({
+        title: 'Помилка',
+        description: error.message || 'Не вдалося видалити транзакцію',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const { data: accounts = [] } = usePaymentAccounts();
   const account = accounts.find((a) => a.id === id);
@@ -949,7 +1012,7 @@ export default function AccountDetail() {
                     <TableHead>Платник</TableHead>
                     <TableHead>Опис</TableHead>
                     <TableHead className="text-right">Сума</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead className="w-[100px] text-right">Дії</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1022,42 +1085,77 @@ export default function AccountDetail() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          {isAccountIncome && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => {
-                                setEditingIncome({
-                                  id: transaction.id,
-                                  type: 'payment',
-                                  date: transaction.date,
-                                  amount: transaction.amount,
-                                  description: transaction.description,
-                                  category: (transaction as any).category,
-                                  account_id: id ?? null,
-                                  student_id: null,
-                                  activity_id: null,
-                                  staff_id: null,
-                                  created_at: '',
-                                  updated_at: '',
-                                } as FinanceTransaction);
-                                setIncomeDialogOpen(true);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4 text-muted-foreground" />
-                            </Button>
-                          )}
-                          {canCancel && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setCancellingTransferId((transaction as any).transfer_id)}
-                              className="h-8 w-8"
-                            >
-                              <X className="h-4 w-4 text-destructive" />
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-1 justify-end">
+                            {isAccountIncome && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setEditingIncome({
+                                    id: transaction.id,
+                                    type: 'payment',
+                                    date: transaction.date,
+                                    amount: transaction.amount,
+                                    description: transaction.description,
+                                    category: (transaction as any).category,
+                                    account_id: id ?? null,
+                                    student_id: null,
+                                    activity_id: null,
+                                    staff_id: null,
+                                    created_at: '',
+                                    updated_at: '',
+                                  } as FinanceTransaction);
+                                  setIncomeDialogOpen(true);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            )}
+                            {canCancel && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setCancellingTransferId((transaction as any).transfer_id)}
+                                className="h-8 w-8"
+                              >
+                                <X className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                            {transaction.type === 'payment' && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => {
+                                  setSelectedPayment({
+                                    id: transaction.id,
+                                    amount: Math.abs(transaction.amount),
+                                  });
+                                  setDeleteDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {transaction.type !== 'payment' && transaction.type !== 'transfer' && transaction.type !== 'dividend' && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => {
+                                  setDeletingTransaction({
+                                    id: transaction.id,
+                                    amount: Math.abs(transaction.amount),
+                                    type: transaction.type,
+                                  });
+                                  setConfirmDeleteDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                       </RecordInfoContextMenu>
@@ -1197,6 +1295,41 @@ export default function AccountDetail() {
               className="bg-destructive text-destructive-foreground"
             >
               Так, скасувати
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {selectedPayment && (
+        <DeleteTransactionDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          onConfirm={handleDeletePaymentConfirm}
+          transactionType="payment"
+          amount={selectedPayment.amount}
+          isLoading={deletePayment.isPending}
+        />
+      )}
+
+      <AlertDialog open={confirmDeleteDialogOpen} onOpenChange={setConfirmDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Видалити транзакцію?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ви впевнені, що хочете видалити цю транзакцію на суму {deletingTransaction ? formatCurrency(Math.abs(deletingTransaction.amount)) : 0}? Цю дію не можна скасувати.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteTransaction.isPending}>Скасувати</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteTransactionConfirm();
+              }}
+              disabled={deleteTransaction.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteTransaction.isPending ? 'Видалення...' : 'Видалити'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
