@@ -1010,6 +1010,7 @@ export default function AccountDetail() {
                     <TableHead>Дата</TableHead>
                     <TableHead>Тип</TableHead>
                     <TableHead>Платник</TableHead>
+                    <TableHead>Адресат</TableHead>
                     <TableHead>Опис</TableHead>
                     <TableHead className="text-right">Сума</TableHead>
                     <TableHead className="w-[100px] text-right">Дії</TableHead>
@@ -1056,6 +1057,35 @@ export default function AccountDetail() {
                           {(transaction as any).student_name ? (
                             <span className="text-sm font-medium">
                               {(transaction as any).student_name}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {transaction.type === 'salary' && transaction.staff_name ? (
+                            <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                              {transaction.staff_name}
+                            </span>
+                          ) : transaction.type === 'dividend' && (transaction as any).participant_name ? (
+                            <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                              {(transaction as any).participant_name}
+                            </span>
+                          ) : transaction.type === 'transfer' && relatedTransfer ? (
+                            <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                              {relatedTransfer.from_account_id === id ? (
+                                <span className="flex items-center gap-1">
+                                  ➔ {relatedTransfer.to_account?.name || 'Рахунок'}
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1">
+                                  ⬅ {relatedTransfer.from_account?.name || 'Рахунок'}
+                                </span>
+                              )}
+                            </span>
+                          ) : (transaction.type === 'expense' || transaction.type === 'household') && (transaction.staff_name || (transaction as any).activity_name) ? (
+                            <span className="text-sm font-medium">
+                              {transaction.staff_name || (transaction as any).activity_name}
                             </span>
                           ) : (
                             <span className="text-muted-foreground">—</span>
@@ -1162,7 +1192,7 @@ export default function AccountDetail() {
                     );
                   })}
                   <TableRow className="bg-muted/50 font-semibold border-t-2">
-                    <TableCell colSpan={4} className="text-right">
+                    <TableCell colSpan={5} className="text-right">
                       Разом
                     </TableCell>
                     <TableCell className="text-right">

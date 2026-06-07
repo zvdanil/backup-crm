@@ -183,6 +183,11 @@ export interface AccountTransactionItem {
   category?: string | null;
   student_id?: string | null;
   student_name?: string | null;
+  staff_id?: string | null;
+  staff_name?: string | null;
+  activity_id?: string | null;
+  activity_name?: string | null;
+  participant_name?: string | null;
   _source: 'finance_transaction' | 'dividend_leg';
 }
 
@@ -194,7 +199,7 @@ export function useAccountTransactions(accountId: string) {
         fetchAllRows<any>((from, to) =>
           supabaseAny
             .from('finance_transactions')
-            .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, cash_withdrawal_id, category, student_id, students(id, full_name), activities(is_actual_expense)')
+            .select('id, date, type, amount, description, account_id, transfer_id, dividend_payout_id, cash_withdrawal_id, category, student_id, students(id, full_name), staff_id, staff(id, full_name), activity_id, activities(id, name, is_actual_expense)')
             .eq('account_id', accountId)
             .order('date', { ascending: false })
             .order('created_at', { ascending: false })
@@ -250,6 +255,7 @@ export function useAccountTransactions(accountId: string) {
             amount: -Math.abs(Number(leg.amount) || 0),
             description: desc,
             transfer_id: null,
+            participant_name: participantName,
             _source: 'dividend_leg',
           };
         }
@@ -273,6 +279,10 @@ export function useAccountTransactions(accountId: string) {
           category: t.category ?? null,
           student_id: t.student_id ?? null,
           student_name: t.students?.full_name ?? null,
+          staff_id: t.staff_id ?? null,
+          staff_name: t.staff?.full_name ?? null,
+          activity_id: t.activity_id ?? null,
+          activity_name: t.activities?.name ?? null,
           _source: 'finance_transaction',
         };
       });
